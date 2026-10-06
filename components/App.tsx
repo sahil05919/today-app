@@ -10,6 +10,7 @@ import type { ISODate, Task } from "@/lib/types";
 import { Capture, type CaptureCommand } from "./Capture";
 import { CheckIn } from "./CheckIn";
 import { EventsSheet } from "./EventsSheet";
+import { BillsSheet, BoredSheet, GoalsSheet, ShoppingSheet } from "./ListSheets";
 import { EveningWrap } from "./EveningWrap";
 import { MorningPlan } from "./MorningPlan";
 import { PlanDay } from "./PlanDay";
@@ -81,6 +82,7 @@ export default function App() {
     setTab("today");
     if (t.kind === "morning") setPanel("morning");
     else if (t.kind === "wrap") setPanel("evening");
+    else if (t.kind === "review") setPanel("review");
     else if (task && task.status === "open") {
       if (t.kind === "checkin") {
         // "Behind" lives here: the check-in offers a new date or a small next step.
@@ -244,10 +246,14 @@ export default function App() {
       {panel === "menu" && <MenuSheet data={data} ctx={ctx} onClose={() => setPanel(null)} onCheckIn={startCheckIn} onPanel={setPanel} />}
       {panel === "morning" && <MorningPlan tasks={data.tasks} ctx={ctx} onClose={() => setPanel(null)} />}
       {panel === "evening" && <EveningWrap tasks={data.tasks} ctx={ctx} onClose={() => setPanel(null)} />}
-      {panel === "review" && <WeeklyReview tasks={data.tasks} ctx={ctx} onClose={() => setPanel(null)} onPatterns={() => setPanel("patterns")} />}
+      {panel === "review" && <WeeklyReview data={data} ctx={ctx} onClose={() => setPanel(null)} onPatterns={() => setPanel("patterns")} />}
       {panel === "patterns" && <Patterns tasks={data.tasks} ctx={ctx} onClose={() => setPanel(null)} />}
       {panel === "events" && <EventsSheet data={data} ctx={ctx} onClose={() => setPanel(null)} />}
-      {panel === "me" && <ProfileSheet profile={profile} ctx={ctx} onClose={() => setPanel(null)} />}
+      {panel === "shopping" && <ShoppingSheet data={data} ctx={ctx} onClose={() => setPanel(null)} />}
+      {panel === "bills" && <BillsSheet data={data} ctx={ctx} onClose={() => setPanel(null)} />}
+      {panel === "goals" && <GoalsSheet data={data} ctx={ctx} onClose={() => setPanel(null)} />}
+      {panel === "bored" && <BoredSheet data={data} ctx={ctx} onClose={() => setPanel(null)} />}
+      {panel === "me" && <ProfileSheet profile={profile} bills={data.bills ?? []} ctx={ctx} onClose={() => setPanel(null)} />}
       {panel === "plan" && <PlanDay data={data} ctx={ctx} onClose={() => setPanel(null)} />}
       {postponed && !openId && !when && !panel && !checkIn && (
         <PostponeSheet key={postponed.id} task={postponed} ctx={ctx} onClose={() => actions.update(postponed.id, { snoozeCount: 0 })} />

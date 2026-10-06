@@ -1,14 +1,24 @@
 import * as chrono from "chrono-node";
 import { toISO } from "./dates";
 import { normalizeHinglish } from "./hinglish";
+import { inferArea } from "./areas";
+import { inferCountsFor } from "./fixed";
 import { expandShortcuts, findArea, withDefaults } from "./profile";
 import { extractRecurrence, firstOccurrence } from "./recur";
 import type { ISODate, Profile, Recurrence, TemplateId } from "./types";
 
 export interface ParsedCapture {
+  /** What this capture creates: a task (default), a fixed event ("event …") or shopping-list items ("groceries: …"). */
+  kind?: "task" | "event" | "grocery";
+  /** For events: the block it occupies. No start = all day. */
+  event?: { start?: string; end?: string; countsFor?: string };
+  /** For "groceries: milk, sugar". */
+  groceryItems?: string[];
   title: string;
   due?: ISODate;
   dueTime?: string;
+  /** End of a range like "6pm to 8pm". */
+  dueEndTime?: string;
   important: boolean;
   tags: string[];
   estimateMin?: number;
@@ -43,6 +53,8 @@ export function extractEstimate(text: string): { text: string; estimateMin?: num
   return { text: text.replace(re, " "), estimateMin: Math.min(mins, 24 * 60) };
 }
 
+const toMinutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
+
 function endOfWeek(now: Date): Date {
   // Week ends Sunday.
   const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -60,6 +72,32 @@ function thisWeekend(now: Date): Date {
 
 export function parseCapture(raw: string, now = new Date(), profile?: Profile): ParsedCapture {
   const me = profile ?? withDefaults();
+
+  // "groceries: milk, sugar" fills the shopping list. Nothing else touches that list.
+  const shop = /^\s*(?:grocery|groceries|shopping(?:\s+list)?|list)\s*[:-]\s*(.+)$/is.exec(raw);
+  if (shop) {
+    const items = [...new Set(shop[1].split(/[,;\n]|\s+and\s+/i).map((x) => x.trim()).filter(Boolean).map((x) => x.charAt(0).toUpperCase() + x.slice(1)))];
+    return { kind: "grocery", groceryItems: items, title: items.join(", "), important: false, tags: [] };
+  }
+
+  // "event Wednesday 6pm dinner" is a fixed block: sessions flow around it.
+  const ev = /^\s*event\b\s*[:-]?\s*/i.exec(raw);
+  if (ev) {
+    const inner = parseCapture(raw.slice(ev[0].length), now, profile);
+    const start = inner.dueTime;
+    const dur = inner.estimateMin;
+    const end =
+      inner.dueEndTime ??
+      (start && dur ? `${String(Math.floor((toMinutes(start) + dur) / 60) % 24).padStart(2, "0")}:${String((toMinutes(start) + dur) % 60).padStart(2, "0")}` : undefined);
+    return {
+      ...inner,
+      kind: "event",
+      due: inner.due ?? toISO(now),
+      event: { start, end, countsFor: inferCountsFor(inner.title, me.areas) },
+      area: undefined,
+    };
+  }
+
   // Links first: their digits and slashes confuse the date parser.
   const urls: string[] = [];
   const noUrls = raw.replace(/https?:\/\/\S+/gi, (u) => {
@@ -113,6 +151,7 @@ export function parseCapture(raw: string, now = new Date(), profile?: Profile): 
 
   let due: ISODate | undefined;
   let dueTime: string | undefined;
+  let dueEndTime: string | undefined;
 
   const readTime = (hit: chrono.ParsedResult) => {
     if (!hit.start.isCertain("hour")) return undefined;
@@ -145,6 +184,10 @@ export function parseCapture(raw: string, now = new Date(), profile?: Profile): 
   } else if (hit) {
     due = toISO(hit.start.date());
     dueTime = readTime(hit);
+    if (hit.end && hit.end.isCertain("hour")) {
+      const e = hit.end.date();
+      dueEndTime = `${String(e.getHours()).padStart(2, "0")}:${String(e.getMinutes()).padStart(2, "0")}`;
+    }
     const before = text.slice(0, hit.index).replace(/\b(by|on|due|before|until|for|at)\s*$/i, "");
     text = before + " " + text.slice(hit.index + hit.text.length);
   } else if (dayOfMonth) {
@@ -163,11 +206,14 @@ export function parseCapture(raw: string, now = new Date(), profile?: Profile): 
     }
   }
   title = title.charAt(0).toUpperCase() + title.slice(1);
+  // No @area given: guess from the words, else Others.
+  area = area ?? inferArea(title, me.areas);
 
   return {
     title,
     due,
     dueTime,
+    dueEndTime,
     important,
     tags,
     estimateMin: est.estimateMin,

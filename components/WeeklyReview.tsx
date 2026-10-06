@@ -3,21 +3,26 @@ import { useMemo } from "react";
 import { addDays, dayOfMonth, formatMinutes, friendlyDate, weekdayShort } from "@/lib/dates";
 import { actions } from "@/lib/store";
 import { bestDay, buildDurationModel, completionRate, estimateAccuracy, weekStart, weekSummary } from "@/lib/stats";
-import type { Task } from "@/lib/types";
+import { billReminders } from "@/lib/bills";
+import { fromISO } from "@/lib/dates";
+import { planSessions } from "@/lib/schedule";
+import { weekProgress } from "@/lib/sessions";
+import type { AppData, Task } from "@/lib/types";
 import { btn, Chip, Sheet, type ViewCtx } from "./ui";
 
 /** Sunday review: what got done, what slipped, and a quick plan for next week. */
 export function WeeklyReview({
-  tasks,
+  data,
   ctx,
   onClose,
   onPatterns,
 }: {
-  tasks: Task[];
+  data: AppData;
   ctx: ViewCtx;
   onClose: () => void;
   onPatterns: () => void;
 }) {
+  const tasks = data.tasks;
   const sum = useMemo(() => weekSummary(tasks, ctx.today), [tasks, ctx.today]);
   const nextMonday = addDays(weekStart(ctx.today), 7);
   const nextDays = Array.from({ length: 7 }, (_, i) => addDays(nextMonday, i));
@@ -29,6 +34,12 @@ export function WeeklyReview({
     ...sum.slipped,
     ...open.filter((t) => !t.due && !sum.slipped.includes(t)).sort((a, b) => Number(b.important) - Number(a.important)),
   ].slice(0, 8);
+
+  // Sessions: how the week went against each target, and what next week looks like.
+  const progress = useMemo(() => weekProgress(data, ctx.today), [data, ctx.today]);
+  const nextWeek = useMemo(() => planSessions(data, fromISO(nextMonday)), [data, nextMonday]);
+  const nextEvents = (data.events ?? []).filter((e) => e.date >= nextMonday && e.date <= nextDays[6]).sort((a, b) => a.date.localeCompare(b.date));
+  const nextBills = useMemo(() => billReminders(data, nextMonday, nextDays[6], ctx.today), [data, nextMonday, nextDays]);
 
   const close = () => {
     actions.settings({ reviewWeek: weekStart(ctx.today) });
@@ -42,6 +53,62 @@ export function WeeklyReview({
   return (
     <Sheet title="Your week" onClose={close}>
       <div className="space-y-6">
+        {progress.length > 0 && (
+          <section>
+            <h3 className="mb-2 text-sm font-semibold">Sessions this week</h3>
+            <ul className="space-y-1.5">
+              {progress.map((r) => {
+                const met = r.done >= r.target;
+                return (
+                  <li key={r.area.id} className="flex items-center gap-2 text-[15px]">
+                    <span aria-hidden="true">{r.area.emoji}</span>
+                    <span className="min-w-0 flex-1 truncate">{r.area.name}</span>
+                    <span className={`tabular-nums ${met ? "font-semibold text-accent" : "text-muted"}`}>
+                      {met ? "✓ " : ""}
+                      {r.done} of {r.target}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            {progress.some((r) => r.done < r.target) && (
+              <p className="mt-2 text-xs text-muted">Short of a target? That's information, not failure. Next week re-plans around what actually fits.</p>
+            )}
+          </section>
+        )}
+
+        {(progress.length > 0 || nextEvents.length > 0 || nextBills.length > 0) && (
+          <section>
+            <h3 className="mb-2 text-sm font-semibold">Next week at a glance</h3>
+            {progress.length > 0 && (
+              <p className="text-sm text-muted">
+                {nextWeek.filter((s) => !s.done).length} sessions planned:{" "}
+                {progress
+                  .map((r) => `${r.area.emoji} ${nextWeek.filter((s) => s.areaId === r.area.id).length}/${r.target}`)
+                  .join("  ")}
+              </p>
+            )}
+            {nextEvents.length > 0 && (
+              <ul className="mt-2 space-y-1 text-[15px]">
+                {nextEvents.map((e) => (
+                  <li key={e.id}>
+                    📌 {e.title} <span className="text-muted">· {weekdayShort(e.date)} {dayOfMonth(e.date)}{e.start ? ` ${e.start}` : ""}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {nextBills.length > 0 && (
+              <ul className="mt-2 space-y-1 text-[15px]">
+                {nextBills.map((r) => (
+                  <li key={r.bill.id + r.date + r.offset}>
+                    {r.bill.kind === "chore" ? "🧹" : "💳"} {r.bill.name} <span className="text-muted">· {weekdayShort(r.date)} {dayOfMonth(r.date)}{r.offset > 0 ? ` (due in ${r.offset}d)` : ""}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        )}
+
         <section>
           <h3 className="mb-2 text-sm font-semibold">Done this week</h3>
           {sum.done.length ? (

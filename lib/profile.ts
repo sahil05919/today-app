@@ -1,3 +1,4 @@
+import { DEFAULT_RHYTHM, DEFAULT_SLOTS } from "./defaults";
 import type { Area, Profile, Shortcut } from "./types";
 
 export const DEFAULT_AREAS: Area[] = [
@@ -12,6 +13,10 @@ export const DEFAULT_AREAS: Area[] = [
 export function defaultProfile(): Profile {
   return {
     setupDone: false,
+    name: "Sahil",
+    officeDays: [1],
+    slots: DEFAULT_SLOTS.map((x) => ({ ...x })),
+    rhythm: DEFAULT_RHYTHM.map((x) => ({ ...x })),
     workDays: [1, 2, 3, 4, 5],
     workStart: "09:00",
     workEnd: "17:30",
@@ -30,14 +35,27 @@ export function defaultProfile(): Profile {
     eveningWrap: "21:00",
     areas: DEFAULT_AREAS.map((a) => ({ ...a })),
     shortcuts: [],
-    notify: { morning: true, taskCheckIns: true, wrap: true, reminders: true, slots: true },
+    eventLeadMin: 60,
+    nudgeTime: "21:00",
+    reviewTime: "18:30",
+    notify: { morning: true, taskCheckIns: true, wrap: true, reminders: true, slots: true, events: true, bills: true, nudges: true, review: true },
   };
 }
 
 /** Fills any gaps (older saves, partial imports) from the defaults. */
 export function withDefaults(p?: Partial<Profile>): Profile {
   const d = defaultProfile();
-  return { ...d, ...p, notify: { ...d.notify, ...p?.notify }, areas: p?.areas?.length ? p.areas : d.areas, shortcuts: p?.shortcuts ?? [] };
+  return {
+    ...d,
+    ...p,
+    notify: { ...d.notify, ...p?.notify },
+    areas: p?.areas?.length ? p.areas : d.areas,
+    shortcuts: p?.shortcuts ?? [],
+    slots: p?.slots?.length ? p.slots : d.slots,
+    rhythm: p?.rhythm ?? d.rhythm,
+    name: p?.name ?? d.name,
+    officeDays: p?.officeDays ?? d.officeDays,
+  };
 }
 
 /** "HH:mm" → minutes after midnight */

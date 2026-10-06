@@ -77,12 +77,16 @@ export function MenuSheet({
           <div className="grid grid-cols-2 gap-2">
             {(
               [
-                ["me", "🙂 Me"],
-              ["plan", "🗺️ Plan my day"],
-              ["morning", "☀️ Pick my 3"],
-                ["evening", "🌙 Wrap up"],
+                ["me", "⚙️ Settings"],
+                ["shopping", "🛒 Shopping list"],
+                ["bills", "💳 Bills & chores"],
+                ["goals", "🎯 Must-haves"],
                 ["review", "🗓️ Weekly review"],
                 ["patterns", "📈 My patterns"],
+                ["bored", "🎲 Getting bored?"],
+                ["plan", "🗺️ Plan my tasks"],
+                ["morning", "☀️ Pick my 3"],
+                ["evening", "🌙 Wrap up"],
                 ["events", "🎟️ London events"],
               ] as [Panel, string][]
             ).map(([p, label]) => (

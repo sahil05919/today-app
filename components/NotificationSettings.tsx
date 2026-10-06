@@ -19,6 +19,10 @@ const TOGGLES: [keyof Profile["notify"], string, string][] = [
   ["wrap", "Evening wrap-up", "A nudge to roll unfinished things forward"],
   ["reminders", "Reminders", "At a task's scheduled time"],
   ["slots", "Plan-my-day slots", "When a planned block starts"],
+  ["events", "Fixed events", "A heads-up before they start"],
+  ["bills", "Bills & chores", "Rent, card, clean room, grocery run"],
+  ["nudges", "Gentle nudges", "Empty day, neglected area, behind target"],
+  ["review", "Sunday review", "A reminder to look back and plan ahead"],
 ];
 
 /** Android-only: notification permissions, exact alarms and battery optimisation, with plain-English help. */

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { aiEnabled, needsAi, smartParse } from "@/lib/ai";
 import { friendlyDate } from "@/lib/dates";
 import { parseCapture } from "@/lib/parse";
 import { voiceSupported } from "@/lib/voice";
@@ -11,6 +12,9 @@ import { type ViewCtx } from "./ui";
 import { VoicePanel } from "./VoicePanel";
 
 /** Sent from outside (share target, app shortcuts) to drive the capture bar. */
+/** "Today" reads well in a sentence as "today"; "Sat 10 Oct" stays as it is. */
+const soft = (s: string) => (/^(Today|Tomorrow|Yesterday)$/.test(s) ? s.toLowerCase() : s);
+
 export interface CaptureCommand {
   kind: "new" | "voice" | "prefill";
   text?: string;
@@ -30,6 +34,7 @@ export function Capture({
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [autoStart, setAutoStart] = useState(false);
   const [voiceOk, setVoiceOk] = useState(false);
+  const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const parsed = useMemo(() => (text.trim() ? parseCapture(text, new Date(), ctx.profile) : null), [text, ctx.profile]);
 
@@ -59,15 +64,39 @@ export function Capture({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [command?.nonce]);
 
-  const save = (value: string) => {
-    const p = parseCapture(value, new Date(), ctx.profile);
-    if (!p.title) return;
-    const task = actions.addTask(p, defaultDate);
-    ctx.notify(
-      task.due
-        ? `Added for ${friendlyDate(task.due, ctx.today).toLowerCase()}${task.focus ? " and pinned to focus" : ""}`
-        : "Added to Later. Tap “Set date” there when you know.",
-    );
+  const save = async (value: string) => {
+    const rules = parseCapture(value, new Date(), ctx.profile);
+    if (!rules.title) return;
+
+    // Rules do the work. If you've added a Gemini key and the rules are unsure, it fills the gaps;
+    // offline, or on any problem, the rules' answer stands.
+    let p = rules;
+    if (aiEnabled() && needsAi(rules, value)) {
+      setBusy(true);
+      const r = await smartParse(value, rules, ctx.profile.areas, ctx.today);
+      setBusy(false);
+      p = r.parsed;
+      if (r.reason === "bad-key") ctx.notify("Gemini didn't accept the key, so I used the built-in rules.");
+      else if (r.reason === "rate-limit") ctx.notify("Gemini's free limit is reached for now. Used the built-in rules.");
+    }
+
+    if (p.kind === "grocery") {
+      const n = actions.addGrocery(p.groceryItems ?? []);
+      ctx.notify(n ? `Added ${n} to your shopping list` : "Already on your list");
+    } else if (p.kind === "event") {
+      const e = actions.addEvent(p);
+      ctx.notify(
+        `Event added for ${soft(friendlyDate(e.date, ctx.today))}${e.start ? ` at ${e.start}` : ""}. Sessions will move around it.`,
+        () => actions.removeEvent(e.id),
+      );
+    } else {
+      const task = actions.addTask(p, defaultDate);
+      ctx.notify(
+        task.due
+          ? `Added for ${soft(friendlyDate(task.due, ctx.today))}${task.focus ? " and pinned to focus" : ""}`
+          : "Added to Later. Tap “Set date” there when you know.",
+      );
+    }
   };
 
   return (
@@ -104,8 +133,9 @@ export function Capture({
         onSubmit={(e) => {
           e.preventDefault();
           if (!parsed) return;
-          save(text);
+          const value = text;
           setText("");
+          void save(value);
         }}
         className="flex items-center gap-1.5 rounded-2xl border border-line bg-surface py-1.5 pl-4 pr-1.5 shadow-sm focus-within:border-accent"
       >
@@ -136,8 +166,9 @@ export function Capture({
         <button
           type="submit"
           disabled={!parsed}
-          aria-label="Add task"
-          className="flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-accent-ink transition disabled:opacity-30"
+          aria-label="Add"
+          aria-busy={busy}
+          className={`flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-accent-ink transition disabled:opacity-30 ${busy ? "animate-pulse" : ""}`}
         >
           <ArrowUpIcon width={20} height={20} />
         </button>

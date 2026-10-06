@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import type { ISODate, Profile, Task } from "@/lib/types";
 import { CloseIcon } from "./icons";
 
-export type Panel = "menu" | "rescue" | "morning" | "evening" | "review" | "patterns" | "events" | "me" | "plan";
+export type Panel = "menu" | "rescue" | "morning" | "evening" | "review" | "patterns" | "events" | "me" | "plan" | "shopping" | "bills" | "goals" | "bored";
 
 /** Shared context passed down to every view. */
 export interface ViewCtx {

@@ -19,7 +19,7 @@ export function balanceNudge(data: AppData, today: ISODate): BalanceNudge | null
   const start = weekStart(today);
   const end = addDays(start, 6);
   const inWeek = data.tasks.filter((t) => {
-    if (!t.area) return false;
+    if (!t.area || t.area === "others") return false; // untagged and "Others" say nothing about balance
     const d = t.status === "done" && t.completedAt ? toISO(new Date(t.completedAt)) : t.due;
     return !!d && d >= start && d <= end;
   });

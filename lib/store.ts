@@ -5,9 +5,13 @@ import { emptyData, migrate } from "./backup";
 import { todayISO } from "./dates";
 import { isNative } from "./platform";
 import { nextOccurrence } from "./recur";
+import { seedIfNeeded } from "./seed";
+import { nextNumber, variantFor, wrapKey } from "./sessions";
+import { pendingOn, planSessions } from "./schedule";
 import type { ParsedCapture } from "./parse";
 import { TEMPLATES } from "./templates";
-import type { AppData, CheckInStatus, ISODate, Profile, Settings, Step, Task, TemplateId } from "./types";
+import { billKey } from "./bills";
+import type { AppData, Bill, BoredIdea, CheckInStatus, DayEntry, FixedEvent, Goal, ISODate, Profile, SessionLog, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
 /**
@@ -58,6 +62,16 @@ function saveNative(data: AppData) {
 }
 
 const native = isNative();
+
+/** Applies one-off defaults (see lib/seed.ts) to freshly loaded data and saves them if anything changed. */
+function prepare(d: AppData): AppData {
+  const seeded = seedIfNeeded(d);
+  if (seeded !== d) {
+    if (native) saveNative(seeded);
+    else adapter.save(seeded);
+  }
+  return seeded;
+}
 const adapter: StorageAdapter = localStorageAdapter;
 let state: AppData | null = null;
 let nativeLoading = false;
@@ -71,13 +85,13 @@ function peek(): AppData | null {
     if (!nativeLoading) {
       nativeLoading = true;
       loadNative().then((d) => {
-        state = d ?? emptyData();
+        state = prepare(d ?? emptyData());
         notify();
       });
     }
     return null;
   }
-  state = adapter.load() ?? emptyData();
+  state = prepare(adapter.load() ?? emptyData());
   return state;
 }
 
@@ -109,7 +123,7 @@ export function getData(): AppData {
 export async function reloadFromStorage() {
   const d = native ? await loadNative() : adapter.load();
   if (d) {
-    state = d;
+    state = prepare(d);
     notify();
   }
 }
@@ -130,7 +144,7 @@ function subscribe(l: () => void) {
   listeners.add(l);
   const onStorage = (e: StorageEvent) => {
     if (e.key === KEY && !native) {
-      state = adapter.load() ?? emptyData();
+      state = prepare(adapter.load() ?? emptyData());
       l();
     }
   };
@@ -331,6 +345,136 @@ export const actions = {
       return t;
     });
     commit({ ...d, tasks });
+  },
+
+  /**
+   * Counts a session: "Power BI session 14". One per area per day; calling it again for the same day undoes it.
+   * Returns the log that was added, or null if it was removed.
+   */
+  toggleSession(areaId: string, date: ISODate = todayISO(), source: SessionLog["source"] = "manual"): SessionLog | null {
+    const d = ensure();
+    const existing = (d.sessions ?? []).find((l) => l.areaId === areaId && l.date === date);
+    if (existing) {
+      commit({ ...d, sessions: (d.sessions ?? []).filter((l) => l.id !== existing.id) });
+      return null;
+    }
+    const area = d.profile?.areas.find((a) => a.id === areaId);
+    if (!area?.target) return null;
+    const n = nextNumber(d.sessions, areaId);
+    const log: SessionLog = {
+      id: uid(),
+      areaId,
+      date,
+      minutes: area.target.minutes,
+      n,
+      variant: variantFor(area, n),
+      at: Date.now(),
+      source,
+    };
+    // Counting a session also clears any "skipped" mark for it.
+    commit({ ...d, sessions: [...(d.sessions ?? []), log], log: (d.log ?? []).filter((e) => e.key !== `session:${areaId}:${date}`) });
+    return log;
+  },
+
+  /** Marks a check-in done / skipped / snoozed for a day. Pass status null to clear it. */
+  setEntry(key: string, status: DayEntry["status"] | null, until?: number) {
+    const d = ensure();
+    const cutoff = Date.now() - 60 * 86_400_000;
+    const rest = (d.log ?? []).filter((e) => e.key !== key && e.at > cutoff);
+    commit({ ...d, log: status ? [...rest, { key, status, at: Date.now(), until }] : rest });
+  },
+
+  /** "Did you do today's sessions?" → Done: counts everything still planned for that day. */
+  markDayDone(date: ISODate = todayISO()) {
+    const plan = planSessions(ensure(), new Date());
+    for (const s of pendingOn(plan, date)) actions.toggleSession(s.areaId, date, "checkin");
+    actions.setEntry(wrapKey(date), "done");
+  },
+
+  // --- Fixed events ---------------------------------------------------------
+  /** Adds a fixed block. Sessions re-plan around it on their own. */
+  addEvent(p: ParsedCapture): FixedEvent {
+    const d = ensure();
+    const event: FixedEvent = {
+      id: uid(),
+      title: p.title,
+      date: p.due ?? todayISO(),
+      start: p.event?.start,
+      end: p.event?.start ? p.event.end : undefined,
+      countsFor: p.event?.countsFor,
+      createdAt: Date.now(),
+    };
+    commit({ ...d, events: [...(d.events ?? []), event] });
+    return event;
+  },
+
+  updateEvent(id: string, patch: Partial<FixedEvent>) {
+    const d = ensure();
+    commit({ ...d, events: (d.events ?? []).map((e) => (e.id === id ? { ...e, ...patch } : e)) });
+  },
+
+  removeEvent(id: string) {
+    const d = ensure();
+    commit({ ...d, events: (d.events ?? []).filter((e) => e.id !== id) });
+  },
+
+  restoreEvent(event: FixedEvent) {
+    const d = ensure();
+    if (!(d.events ?? []).some((e) => e.id === event.id)) commit({ ...d, events: [...(d.events ?? []), event] });
+  },
+
+  // --- Shopping list (you fill it; nothing adds to it for you) -----------------
+  addGrocery(names: string[]) {
+    const d = ensure();
+    const have = new Set((d.grocery ?? []).filter((g) => !g.done).map((g) => g.name.toLowerCase()));
+    const fresh = names
+      .map((n) => n.trim())
+      .filter((n) => n && !have.has(n.toLowerCase()))
+      .map((name) => ({ id: uid(), name, done: false, addedAt: Date.now() }));
+    if (fresh.length) commit({ ...d, grocery: [...(d.grocery ?? []), ...fresh] });
+    return fresh.length;
+  },
+
+  toggleGrocery(id: string) {
+    const d = ensure();
+    commit({ ...d, grocery: (d.grocery ?? []).map((g) => (g.id === id ? { ...g, done: !g.done } : g)) });
+  },
+
+  removeGrocery(id: string) {
+    const d = ensure();
+    commit({ ...d, grocery: (d.grocery ?? []).filter((g) => g.id !== id) });
+  },
+
+  /** Clears everything you've ticked off as bought. */
+  clearBought() {
+    const d = ensure();
+    commit({ ...d, grocery: (d.grocery ?? []).filter((g) => !g.done) });
+  },
+
+  // --- Bills and recurring chores ---------------------------------------------
+  setBills(bills: Bill[]) {
+    const d = ensure();
+    commit({ ...d, bills });
+  },
+
+  /** Marks one due date done. "Every N days" chores start counting again from today. */
+  completeBill(id: string, due: ISODate, date: ISODate = todayISO()) {
+    const d = ensure();
+    const cutoff = Date.now() - 60 * 86_400_000;
+    const key = billKey(id, due);
+    const log = [...(d.log ?? []).filter((e) => e.key !== key && e.at > cutoff), { key, status: "done" as const, at: Date.now() }];
+    commit({ ...d, log, bills: (d.bills ?? []).map((b) => (b.id === id ? { ...b, lastDone: date } : b)) });
+  },
+
+  // --- Monthly must-haves, and "Getting bored?" ideas ---------------------------
+  setGoals(month: string, items: Goal[]) {
+    const d = ensure();
+    commit({ ...d, goals: { month, items } });
+  },
+
+  setIdeas(bored: BoredIdea[]) {
+    const d = ensure();
+    commit({ ...d, bored });
   },
 
   setProfile(profile: Profile) {

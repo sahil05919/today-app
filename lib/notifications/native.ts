@@ -12,6 +12,28 @@ import type { AppData } from "../types";
 const CH_REMINDERS = "today-reminders"; // timed reminders and slots: pop up
 const CH_GENTLE = "today-checkins"; //  morning, evening and task check-ins: quieter
 const TASK_ACTIONS = "TASK";
+const CHECKIN_ACTIONS = "CHECKIN";
+export const SNOOZE_MINUTES = 30;
+
+/**
+ * Done / Snooze / Skip on a session, chore or end-of-day check-in.
+ * `ref` is "session:<areaId>:<date>", "chore:<id>:<date>" or "wrap:<date>".
+ * Done counts the session ("Power BI session 14"); Snooze asks again later; Skip leaves it uncounted today.
+ */
+export function applyCheckInAction(actionId: string, ref: string, now = Date.now()) {
+  const [kind, ...rest] = ref.split(":");
+  const date = rest[rest.length - 1];
+  if (actionId === "done") {
+    if (kind === "session") {
+      // Already counted? Then Done is a no-op, never an undo.
+      const done = getData().sessions?.some((l) => l.areaId === rest[0] && l.date === date);
+      if (!done) actions.toggleSession(rest[0], date, "checkin");
+    } else if (kind === "wrap") actions.markDayDone(date);
+    else if (kind === "bill") actions.completeBill(rest[0], date);
+    else actions.setEntry(ref, "done");
+  } else if (actionId === "skip") actions.setEntry(ref, "skip");
+  else if (actionId === "snooze") actions.setEntry(ref, "snooze", now + SNOOZE_MINUTES * 60_000);
+}
 
 export type PermissionState = "granted" | "denied" | "prompt";
 
@@ -80,6 +102,15 @@ export async function initNotifications() {
             { id: "snooze", title: "Snooze 2h" },
           ],
         },
+        // Sessions, chores ("Have you sorted your email?") and the end-of-day question.
+        {
+          id: CHECKIN_ACTIONS,
+          actions: [
+            { id: "done", title: "✓ Done" },
+            { id: "snooze", title: "Snooze" },
+            { id: "skip", title: "Skip" },
+          ],
+        },
       ],
     });
   } catch (e) {
@@ -95,10 +126,10 @@ const toSchema = (n: PlannedNotification, exactAllowed: boolean) => ({
   largeBody: n.largeBody,
   schedule: { at: n.at, allowWhileIdle: true },
   channelId: n.exact ? CH_REMINDERS : CH_GENTLE,
-  actionTypeId: n.actions ? TASK_ACTIONS : undefined,
+  actionTypeId: n.actions ? (n.ref ? CHECKIN_ACTIONS : TASK_ACTIONS) : undefined,
   smallIcon: "ic_stat_today",
   autoCancel: true,
-  extra: { taskId: n.taskId, kind: n.kind, key: n.key },
+  extra: { taskId: n.taskId, kind: n.kind, key: n.key, ref: n.ref },
   // Only ask for a precise alarm when it's already allowed, so rescheduling never throws up a settings screen.
   isExactNotification: n.exact && exactAllowed,
   isExactMandatory: false,
@@ -164,7 +195,7 @@ export async function sendTest(): Promise<boolean> {
 }
 
 export interface TapTarget {
-  kind: "morning" | "checkin" | "wrap" | "reminder" | "slot";
+  kind: "morning" | "checkin" | "wrap" | "reminder" | "slot" | "session" | "chore" | "nudge" | "event" | "bill" | "review";
   taskId?: string;
 }
 
@@ -181,8 +212,20 @@ export const markActivated = () => {
 export async function listenForActions(onTap: (t: TapTarget) => void): Promise<() => void> {
   if (!isNative()) return () => {};
   const handle = await LocalNotifications.addListener("localNotificationActionPerformed", async (e: ActionPerformed) => {
-    const extra = (e.notification.extra ?? {}) as { taskId?: string; kind?: TapTarget["kind"] };
+    const extra = (e.notification.extra ?? {}) as { taskId?: string; kind?: TapTarget["kind"]; ref?: string };
     const { actionId } = e;
+
+    // Session / chore / end-of-day buttons.
+    if (extra.ref && ["done", "snooze", "skip"].includes(actionId)) {
+      await whenLoaded();
+      applyCheckInAction(actionId, extra.ref);
+      if (Date.now() - activatedAt < 5000) {
+        const { App } = await import("@capacitor/app");
+        App.minimizeApp().catch(() => {});
+      }
+      return;
+    }
+
     if (actionId === "tap" || actionId === "dismiss" || !extra.taskId) {
       if (actionId === "tap" && extra.kind) onTap({ kind: extra.kind, taskId: extra.taskId });
       return;

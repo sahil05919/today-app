@@ -1,5 +1,10 @@
 "use client";
+import { useMemo } from "react";
 import { addDays, dayOfMonth, diffDays, weekdayShort } from "@/lib/dates";
+import { toHHMM } from "@/lib/profile";
+import { billReminders } from "@/lib/bills";
+import { eventsOn } from "@/lib/fixed";
+import { plannedForDay } from "@/lib/schedule";
 import type { AppData, ISODate } from "@/lib/types";
 import { TaskCard } from "./TaskCard";
 import { Empty, SectionTitle, sortTasks, type ViewCtx } from "./ui";
@@ -20,6 +25,9 @@ export function WeekView({
   const overdue = sortTasks(open.filter((t) => t.due != null && diffDays(t.due, ctx.today) < 0));
   const onDay = (d: ISODate) => open.filter((t) => t.due === d);
   const dayTasks = sortTasks(onDay(selected));
+  const sessions = useMemo(() => plannedForDay(data, selected), [data, selected]);
+  const dayEvents = useMemo(() => eventsOn(data, selected), [data, selected]);
+  const dayBills = useMemo(() => billReminders(data, selected, selected, ctx.today), [data, selected]);
   const doneOnDay = data.tasks.filter((t) => t.status === "done" && t.due === selected);
 
   return (
@@ -64,6 +72,35 @@ export function WeekView({
       <SectionTitle right={`${dayTasks.length} task${dayTasks.length === 1 ? "" : "s"}`}>
         {selected === ctx.today ? "Today" : `${weekdayShort(selected)} ${dayOfMonth(selected)}`}
       </SectionTitle>
+      {(dayEvents.length > 0 || dayBills.length > 0) && (
+        <ul className="mb-3 divide-y divide-line rounded-2xl border border-line bg-surface px-3.5" aria-label="Events and bills">
+          {dayEvents.map((e) => (
+            <li key={e.id} className="flex min-h-11 items-center gap-2 text-[15px]">
+              <span aria-hidden="true">📌</span>
+              <span className="min-w-0 flex-1 truncate">{e.title}</span>
+              <span className="text-xs tabular-nums text-muted">{e.start ? `${e.start}${e.end ? "–" + e.end : ""}` : "All day"}</span>
+            </li>
+          ))}
+          {dayBills.map((r) => (
+            <li key={r.bill.id + r.offset} className="flex min-h-11 items-center gap-2 text-[15px]">
+              <span aria-hidden="true">{r.bill.kind === "chore" ? "🧹" : "💳"}</span>
+              <span className="min-w-0 flex-1 truncate">{r.bill.name}</span>
+              <span className="text-xs text-muted">{r.offset === 0 ? "due" : `due in ${r.offset}d`}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {sessions.length > 0 && (
+        <ul className="mb-3 divide-y divide-line rounded-2xl border border-line bg-surface px-3.5" aria-label="Sessions">
+          {sessions.map((x) => (
+            <li key={x.key} className="flex min-h-11 items-center gap-2 text-[15px]">
+              <span aria-hidden="true">{data.profile?.areas.find((a) => a.id === x.areaId)?.emoji}</span>
+              <span className={`min-w-0 flex-1 truncate ${x.done ? "text-muted line-through" : ""}`}>{x.title}</span>
+              <span className="text-xs tabular-nums text-muted">{x.done ? "✓" : toHHMM(x.start)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {dayTasks.length ? (
         <div className="space-y-2">
           {dayTasks.map((t) => (

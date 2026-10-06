@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { migrate } from "../lib/backup";
+import { seedIfNeeded } from "../lib/seed";
 import { parseCapture } from "../lib/parse";
 import { builtInShortcuts, defaultProfile, expandShortcuts, toHHMM, toMin, withDefaults } from "../lib/profile";
 
@@ -37,8 +38,10 @@ describe("life areas", () => {
     expect(parseCapture("Send invoice @Work", NOW, me()).area).toBe("work");
   });
   it("unknown @names are left alone", () => {
-    const p = parseCapture("email @sam about lunch", NOW, me());
-    expect(p.area).toBeUndefined();
+    const withOthers = { ...me(), areas: [...me().areas, { id: "others", name: "Others", emoji: "📥" }] };
+    const p = parseCapture("email @sam about lunch", NOW, withOthers);
+    expect(p.area).toBe("others"); // unclear → Others
+    expect(parseCapture("email @sam about lunch", NOW, me()).area).toBeUndefined(); // no Others area to use
     expect(p.title).toContain("@sam");
   });
   it("areas are editable", () => {
@@ -62,5 +65,23 @@ describe("profile helpers + backup", () => {
     expect(p.workStart).toBe("08:00");
     expect(p.quietStart).toBe("22:00");
     expect(p.areas).toHaveLength(6);
+  });
+});
+
+describe("area guessing", () => {
+  const seeded = seedIfNeeded({ version: 1, tasks: [], settings: { firstRunAt: 1 } }).profile!;
+  const area = (text: string) => parseCapture(text, NOW, seeded).area;
+  it("files tasks by their words, in English or Hinglish", () => {
+    expect(area("finish power bi dashboard")).toBe("powerbi");
+    expect(area("kal meditation karna hai")).toBe("meditation");
+    expect(area("apply to 3 jobs")).toBe("job");
+    expect(area("read two chapters of a book")).toBe("english");
+    expect(area("evening walk")).toBe("walking");
+    expect(area("pay rent in cash")).toBe("admin");
+    expect(area("mummy ko call")).toBe("family");
+  });
+  it("sends anything unclear to Others, and an explicit @area always wins", () => {
+    expect(area("fix the thing")).toBe("others");
+    expect(area("power bi dashboard @fun")).toBe("fun");
   });
 });

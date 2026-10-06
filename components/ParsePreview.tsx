@@ -20,6 +20,33 @@ export function ParsePreview({
 }) {
   const due = parsed.due ?? defaultDate;
   const area = parsed.area ? areas?.find((a) => a.id === parsed.area) : undefined;
+
+  if (parsed.kind === "grocery") {
+    return (
+      <div className="anim-fade flex flex-wrap items-center gap-1.5 px-1">
+        <Chip tone="accent">🛒 Shopping list</Chip>
+        {parsed.groceryItems?.map((g) => (
+          <Chip key={g} tone="accent">
+            {g}
+          </Chip>
+        ))}
+      </div>
+    );
+  }
+  if (parsed.kind === "event") {
+    const ev = parsed.event;
+    return (
+      <div className="anim-fade flex flex-wrap items-center gap-1.5 px-1">
+        <Chip tone="accent">📌 Fixed event</Chip>
+        <Chip tone="accent">
+          {friendlyDate(due ?? today, today)}
+          {ev?.start ? ` · ${ev.start}${ev.end ? "–" + ev.end : ""}` : " · all day"}
+        </Chip>
+        {ev?.countsFor && <Chip tone="accent">counts as a session</Chip>}
+        <Chip>sessions move around it</Chip>
+      </div>
+    );
+  }
   return (
     <div className="anim-fade flex flex-wrap items-center gap-1.5 px-1">
       <Chip tone="accent">
