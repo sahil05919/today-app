@@ -1,4 +1,5 @@
 import { LocalNotifications, type ActionPerformed } from "@capacitor/local-notifications";
+import { createAlarmChannel } from "../nativeBridge";
 import { isNative } from "../platform";
 import { actions, getData, whenLoaded } from "../store";
 import { planNotifications, signature, type PlannedNotification } from "./plan";
@@ -11,7 +12,10 @@ import type { AppData } from "../types";
  */
 const CH_REMINDERS = "today-reminders"; // timed reminders and slots: pop up
 const CH_GENTLE = "today-checkins"; //  morning, evening and task check-ins: quieter
+/** Timed reminders: alarm sound at alarm volume, created natively (see TodayNativePlugin.createAlarmChannel). */
+const CH_ALARM = "today-alarm";
 const TASK_ACTIONS = "TASK";
+const ALARM_ACTIONS = "ALARM";
 const CHECKIN_ACTIONS = "CHECKIN";
 export const SNOOZE_MINUTES = 30;
 
@@ -75,6 +79,17 @@ export async function initNotifications() {
   if (!isNative() || inited) return;
   inited = true;
   try {
+    // Alarm channel first: native code gives it the alarm sound. If that fails, a plain loud channel is the fallback.
+    if (!(await createAlarmChannel(CH_ALARM))) {
+      await LocalNotifications.createChannel({
+        id: CH_ALARM,
+        name: "Alarms",
+        description: "Reminders you set for a specific time",
+        importance: 5,
+        visibility: 1,
+        vibration: true,
+      });
+    }
     await LocalNotifications.createChannel({
       id: CH_REMINDERS,
       name: "Reminders",
@@ -94,6 +109,15 @@ export async function initNotifications() {
     // Android shows at most 3 buttons. "Behind" is what happens when you tap the notification itself.
     await LocalNotifications.registerActionTypes({
       types: [
+        // A timed reminder behaves like a phone alarm: Done, or snooze for a short or a long while.
+        {
+          id: ALARM_ACTIONS,
+          actions: [
+            { id: "done", title: "✓ Done" },
+            { id: "snooze10", title: "Snooze 10 min" },
+            { id: "snooze60", title: "Snooze 1 h" },
+          ],
+        },
         {
           id: TASK_ACTIONS,
           actions: [
@@ -125,11 +149,11 @@ const toSchema = (n: PlannedNotification, exactAllowed: boolean) => ({
   body: n.body,
   largeBody: n.largeBody,
   schedule: { at: n.at, allowWhileIdle: true },
-  channelId: n.exact ? CH_REMINDERS : CH_GENTLE,
-  actionTypeId: n.actions ? (n.ref ? CHECKIN_ACTIONS : TASK_ACTIONS) : undefined,
+  channelId: n.alarm ? CH_ALARM : n.exact ? CH_REMINDERS : CH_GENTLE,
+  actionTypeId: n.actions ? (n.alarm ? ALARM_ACTIONS : n.ref ? CHECKIN_ACTIONS : TASK_ACTIONS) : undefined,
   smallIcon: "ic_stat_today",
   autoCancel: true,
-  extra: { taskId: n.taskId, kind: n.kind, key: n.key, ref: n.ref },
+  extra: { taskId: n.taskId, kind: n.kind, key: n.key, ref: n.ref, at: n.at.getTime() },
   // Only ask for a precise alarm when it's already allowed, so rescheduling never throws up a settings screen.
   isExactNotification: n.exact && exactAllowed,
   isExactMandatory: false,
@@ -184,13 +208,28 @@ export async function sendTest(): Promise<boolean> {
       {
         id: 987654321,
         title: "It works 🎉",
-        body: "Sahil's Today can reach you here.",
+        body: "Sahil's Today can reach you here. This is how your timed reminders will sound.",
         schedule: { at: new Date(Date.now() + 5000), allowWhileIdle: true },
-        channelId: CH_REMINDERS,
+        channelId: CH_ALARM,
         smallIcon: "ic_stat_today",
       },
     ],
   });
+  return true;
+}
+
+/**
+ * Buttons on a timed reminder. "done" finishes the task; "snooze10" / "snooze60" ring again later;
+ * "ack" just means you saw it. Returns false when the action isn't an alarm one.
+ */
+export function applyAlarmAction(actionId: string, taskId: string, firedAt = Date.now(), now = Date.now()): boolean {
+  if (!["done", "snooze10", "snooze60", "ack"].includes(actionId)) return false;
+  const task = getData().tasks.find((t) => t.id === taskId);
+  if (!task || task.status !== "open") return true; // already finished or deleted: nothing to do
+  const ack = Math.max(firedAt, now);
+  if (actionId === "done") actions.toggleDone(taskId);
+  else if (actionId === "ack") actions.update(taskId, { alarmAck: ack });
+  else actions.update(taskId, { alarmAck: ack, remindAt: now + (actionId === "snooze10" ? 10 : 60) * 60_000 });
   return true;
 }
 
@@ -212,7 +251,7 @@ export const markActivated = () => {
 export async function listenForActions(onTap: (t: TapTarget) => void): Promise<() => void> {
   if (!isNative()) return () => {};
   const handle = await LocalNotifications.addListener("localNotificationActionPerformed", async (e: ActionPerformed) => {
-    const extra = (e.notification.extra ?? {}) as { taskId?: string; kind?: TapTarget["kind"]; ref?: string };
+    const extra = (e.notification.extra ?? {}) as { taskId?: string; kind?: TapTarget["kind"]; ref?: string; at?: number };
     const { actionId } = e;
 
     // Session / chore / end-of-day buttons.
@@ -227,16 +266,23 @@ export async function listenForActions(onTap: (t: TapTarget) => void): Promise<(
     }
 
     if (actionId === "tap" || actionId === "dismiss" || !extra.taskId) {
-      if (actionId === "tap" && extra.kind) onTap({ kind: extra.kind, taskId: extra.taskId });
+      if (actionId === "tap" && extra.kind) {
+        // Opening an alarm counts as seeing it: no more "Still waiting" follow-ups.
+        if (extra.taskId && extra.at) {
+          await whenLoaded();
+          applyAlarmAction("ack", extra.taskId, extra.at);
+        }
+        onTap({ kind: extra.kind, taskId: extra.taskId });
+      }
       return;
     }
     await whenLoaded(); // cold start: wait for the saved data before touching it
-    const task = getData().tasks.find((t) => t.id === extra.taskId);
-    if (!task || task.status !== "open") return;
-
-    if (actionId === "done") actions.toggleDone(task.id);
-    else if (actionId === "ontrack") actions.recordCheckIn(task.id, "on-track");
-    else if (actionId === "snooze") actions.update(task.id, { remindAt: Date.now() + 2 * 3600_000 });
+    if (!applyAlarmAction(actionId, extra.taskId, extra.at)) {
+      const task = getData().tasks.find((t) => t.id === extra.taskId);
+      if (!task || task.status !== "open") return;
+      if (actionId === "ontrack") actions.recordCheckIn(task.id, "on-track");
+      else if (actionId === "snooze") actions.update(task.id, { remindAt: Date.now() + 2 * 3600_000 });
+    }
 
     // If this button press is what brought the app forward, put it back where it was.
     if (Date.now() - activatedAt < 5000) {

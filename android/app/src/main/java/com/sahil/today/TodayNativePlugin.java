@@ -1,7 +1,11 @@
 package com.sahil.today;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
@@ -77,6 +81,42 @@ public class TodayNativePlugin extends Plugin {
             pending = null;
         }
         call.resolve(result);
+    }
+
+    /**
+     * Creates the notification channel timed reminders use: the phone's alarm ringtone, played at alarm volume,
+     * heads-up on the lock screen. Capacitor can only set a bundled sound file on a channel, so this is done natively.
+     * Safe to call repeatedly (Android keeps the first definition of a channel).
+     */
+    @PluginMethod
+    public void createAlarmChannel(PluginCall call) {
+        String id = call.getString("id", "today-alarm");
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            call.resolve();
+            return;
+        }
+        try {
+            NotificationManager nm = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+            Uri sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if (sound == null) sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            NotificationChannel channel = new NotificationChannel(id, "Alarms", NotificationManager.IMPORTANCE_HIGH);
+            channel.setDescription("Reminders you set for a specific time. Rings like an alarm.");
+            channel.setSound(
+                sound,
+                new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            );
+            channel.enableVibration(true);
+            channel.setVibrationPattern(new long[] { 0, 500, 300, 500, 300, 800 });
+            channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+            channel.setBypassDnd(true); // only takes effect if the user has granted Do Not Disturb access
+            nm.createNotificationChannel(channel);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not create the alarm channel");
+        }
     }
 
     /** { ignoring: true } when Android will not put the app to sleep to save battery. */

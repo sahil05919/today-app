@@ -164,6 +164,10 @@ export function Capture({
 
   const closeCard = useCallback(() => setResult(null), []);
 
+  // Read after mount: the key lives in the browser / phone, so the server render can't know it.
+  const [gemini, setGemini] = useState(false);
+  useEffect(() => setGemini(aiEnabled()), [result, voiceOpen]);
+
   return (
     <div>
       {result && <ConfirmCard key={result.id} result={result} data={data} ctx={ctx} onClose={closeCard} />}
@@ -241,6 +245,11 @@ export function Capture({
           <ArrowUpIcon width={20} height={20} />
         </button>
       </form>
+      {(gemini || busy) && (
+        <p className="mt-1.5 px-1 text-xs text-muted" role="status">
+          {busy ? "✨ Asking Gemini…" : "✨ Gemini is on. Write it the way you'd say it, like “remind me to call the bank next Tuesday evening”."}
+        </p>
+      )}
     </div>
   );
 }

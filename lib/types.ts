@@ -258,6 +258,8 @@ export interface Task {
   snoozeCount?: number;
   /** "Snooze 2h" from a notification: nudge me again at this time (epoch ms). */
   remindAt?: number;
+  /** You've seen the alarm that rang at or before this time (epoch ms): stop the "Still waiting" follow-ups. */
+  alarmAck?: number;
   /** Focus-timer sessions: when it was logged and how many minutes. */
   sessions?: { at: number; min: number }[];
   /** On a completed recurring task: the occurrence it spawned (removed again if you reopen it). */

@@ -7,6 +7,7 @@ import type { TapTarget } from "@/lib/notifications/native";
 import { withDefaults } from "@/lib/profile";
 import { actions, getData, useData } from "@/lib/store";
 import type { ISODate, Task } from "@/lib/types";
+import { AlarmRinger } from "./AlarmRinger";
 import type { CaptureCommand } from "./Capture";
 import { CheckIn } from "./CheckIn";
 import { EventsSheet } from "./EventsSheet";
@@ -157,6 +158,7 @@ export default function App() {
     <div className="mx-auto flex min-h-dvh max-w-md flex-col">
       <PWA />
       <NativeShell data={data} onTap={onNotificationTap} />
+      <AlarmRinger data={data} />
       <header className="flex items-start justify-between px-5 pb-2 pt-[max(1.5rem,env(safe-area-inset-top))]">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{greeting()}</h1>

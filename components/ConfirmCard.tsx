@@ -85,7 +85,7 @@ export function ConfirmCard({ result, data, ctx, onClose }: { result: CaptureRes
         <p className="min-w-0 flex-1 text-[15px] leading-snug">
           <span className="text-muted">Got it: </span>
           <span className="font-semibold">{result.summary ?? result.title}</span>
-          {result.source === "ai" && <span className="ml-1.5 text-xs text-muted" title="Understood with Gemini">✨</span>}
+          {result.source === "ai" && <span className="ml-1.5 whitespace-nowrap rounded-full bg-surface px-1.5 py-0.5 text-[11px] font-medium text-accent" title="Understood with Gemini">✨ Gemini</span>}
         </p>
         <button onClick={onClose} aria-label="Dismiss" className="-mr-1 -mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted">
           ✕

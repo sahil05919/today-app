@@ -51,14 +51,6 @@ export function NotificationSettings({
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [refresh]);
 
-  if (status && !status.supported) {
-    return (
-      <p className="rounded-xl bg-bg p-3 text-sm text-muted">
-        Notifications run inside the Android app, on the phone itself with no internet needed. You can still choose which ones you want below.
-      </p>
-    );
-  }
-
   const Status = ({ ok, label }: { ok: boolean | null; label: string }) => (
     <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${ok ? "bg-accent-soft text-accent" : "bg-warn-soft text-warn"}`}>
       {ok == null ? "…" : ok ? "✓ " : "! "}
@@ -87,6 +79,9 @@ export function NotificationSettings({
         ))}
       </ul>
 
+      {status && !status.supported && <WebAlarms />}
+
+      {status?.supported && (
       <div className="space-y-3 rounded-2xl border border-line p-3.5">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
@@ -166,6 +161,47 @@ export function NotificationSettings({
           Send a test notification
         </button>
       </div>
+      )}
+    </div>
+  );
+}
+
+/** The browser / installed-PWA version: alerts work while Today is open (or minimised on a computer). */
+function WebAlarms() {
+  const [perm, setPerm] = useState<NotificationPermission | "unsupported">("default");
+  useEffect(() => {
+    setPerm(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
+  }, []);
+
+  return (
+    <div className="space-y-3 rounded-2xl border border-line p-3.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Browser notifications</p>
+          <p className="text-xs text-muted">So a reminder can pop up when Today is in another tab or window.</p>
+        </div>
+        {perm === "granted" ? (
+          <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">✓ On</span>
+        ) : perm === "unsupported" ? (
+          <span className="text-xs text-muted">Not supported</span>
+        ) : (
+          <button
+            className={`${btn.primary} min-h-11`}
+            onClick={async () => setPerm(await Notification.requestPermission())}
+            disabled={perm === "denied"}
+          >
+            {perm === "denied" ? "Blocked" : "Allow"}
+          </button>
+        )}
+      </div>
+      {perm === "denied" && <p className="text-xs text-muted">Blocked in the browser. Click the lock icon next to the address bar and allow notifications for this site.</p>}
+      <button className={`${btn.ghost} min-h-11 w-full`} onClick={() => window.dispatchEvent(new Event("today:test-alarm"))}>
+        Ring a test alarm in 8 seconds
+      </button>
+      <p className="rounded-xl bg-warn-soft p-3 text-xs leading-relaxed text-ink">
+        <b>In the browser, Today can only ring while it is open</b> (a tab can stay in the background, but not if you close it or the phone puts the browser to sleep).
+        For an alarm that goes off with the app closed and the screen locked, like the Clock app, use the <b>Android app</b>: it sets real phone alarms.
+      </p>
     </div>
   );
 }

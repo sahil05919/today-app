@@ -37,11 +37,15 @@ export interface PlannedNotification {
   actions: boolean;
   /** Needs a precise time (reminders, slots). Others can drift a few minutes. */
   exact: boolean;
+  /** Rings like an alarm clock: loud alarm channel, Done / Snooze buttons, and a few follow-ups until you react. */
+  alarm?: boolean;
 }
 
 const DAYS_AHEAD = 7;
 const MAX_NOTIFICATIONS = 120;
 const MAX_CHECKINS_PER_DAY = 3;
+/** An alarm that nobody reacts to rings again this many minutes later. */
+export const NAG_AFTER_MIN = [5, 10, 15];
 
 export function hashId(key: string): number {
   let h = 2166136261;
@@ -127,10 +131,12 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
   const isWorkTask = (t: Task) => !!t.area && !!p.areas.find((a) => a.id === t.area)?.isWork;
   const out: PlannedNotification[] = [];
 
-  const push = (n: Omit<PlannedNotification, "id" | "at"> & { at: Date; work?: boolean }) => {
+  /** `exactTime`: you chose this moment yourself ("11:55 PM"), so quiet hours and work hours never move it. */
+  const push = (n: Omit<PlannedNotification, "id" | "at"> & { at: Date; work?: boolean; exactTime?: boolean }) => {
     // Judge "already passed" by the time it was meant for, before quiet hours / work hours shift it later.
     if (n.at.getTime() <= now.getTime() + 30_000) return;
-    out.push({ ...n, at: applyPolicy(n.at, !!n.work, p), id: hashId(n.key) });
+    const { exactTime, work, ...rest } = n;
+    out.push({ ...rest, at: exactTime ? new Date(n.at) : applyPolicy(n.at, !!work, p), id: hashId(n.key) });
   };
 
   const name = p.name || "friend";
@@ -177,6 +183,7 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
         body: `Starts at ${e.start}${p.eventLeadMin ? `, in ${p.eventLeadMin >= 60 && p.eventLeadMin % 60 === 0 ? `${p.eventLeadMin / 60} h` : `${p.eventLeadMin} min`}` : ""}`,
         actions: false,
         exact: true,
+        exactTime: true,
       });
     }
   }
@@ -351,39 +358,44 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
     }
   }
 
-  // --- Reminders at a task's scheduled time ----------------------------------
+  // --- Reminders at a task's scheduled time: they ring like an alarm clock ------------
   const horizon = addDays(today, DAYS_AHEAD);
+  const alarm = (t: Task) => ({ title: t.title, taskId: t.id, actions: true, exact: true, alarm: true, exactTime: true, work: isWorkTask(t) });
+  /** The same alarm again a few minutes later, until you react (Done, Snooze, or opening the task). */
+  const pushNags = (t: Task, key: string, first: Date) => {
+    if (t.alarmAck && t.alarmAck >= first.getTime()) return;
+    NAG_AFTER_MIN.forEach((m, i) =>
+      push({
+        ...alarm(t),
+        key: `${key}:nag${i + 1}`,
+        at: new Date(first.getTime() + m * 60_000),
+        kind: "reminder",
+        title: `Still waiting: ${t.title}`,
+        body: i === NAG_AFTER_MIN.length - 1 ? "Last reminder. Open Today to snooze or finish it." : "Tap Done, or snooze it for a while.",
+      }),
+    );
+  };
   if (p.notify.reminders) {
     for (const t of open) {
       if (!t.due || !t.dueTime || t.due > horizon) continue;
-      push({
-        key: `reminder:${t.id}`,
-        at: at(t.due, t.dueTime),
-        kind: "reminder",
-        title: t.title,
-        body: "It's time.",
-        taskId: t.id,
-        actions: true,
-        exact: true,
-        work: isWorkTask(t),
-      });
+      const first = at(t.due, t.dueTime);
+      push({ ...alarm(t), key: `reminder:${t.id}`, at: first, kind: "reminder", body: "It's time." });
+      // A reminder that has been snoozed is handled below; don't nag about the original time as well.
+      if (!(t.remindAt && t.remindAt > first.getTime())) pushNags(t, `reminder:${t.id}`, first);
     }
   }
 
-  // --- "Snooze 2h" from an earlier notification --------------------------------
+  // --- "Snooze" from an earlier notification --------------------------------
   for (const t of open) {
     if (!t.remindAt || t.remindAt <= now.getTime()) continue;
-    push({
-      key: `remind:${t.id}`,
-      at: new Date(t.remindAt),
-      kind: "checkin",
-      title: "Back to this?",
-      body: t.title,
-      taskId: t.id,
-      actions: true,
-      exact: false,
-      work: isWorkTask(t),
-    });
+    const when = new Date(t.remindAt);
+    if (t.dueTime) {
+      // A task with its own time is an alarm: the snooze rings the same way.
+      push({ ...alarm(t), key: `remind:${t.id}`, at: when, kind: "reminder", body: "Snoozed. It's time again." });
+      pushNags(t, `remind:${t.id}`, when);
+    } else {
+      push({ key: `remind:${t.id}`, at: when, kind: "checkin", title: "Back to this?", body: t.title, taskId: t.id, actions: true, exact: false, work: isWorkTask(t), exactTime: true });
+    }
   }
 
   // --- Start of a slot from "Plan my day" ------------------------------------

@@ -85,6 +85,7 @@ function cleanTask(v: any): Task | null {
     recur: cleanRecur(v.recur),
     area: str(v.area, 40),
     remindAt: num(v.remindAt),
+    alarmAck: num(v.alarmAck),
     slot:
       v.slot && isISO(v.slot.date) && /^\d{2}:\d{2}$/.test(v.slot.start) && typeof v.slot.min === "number"
         ? { date: v.slot.date, start: v.slot.start, min: Math.min(1440, Math.max(5, v.slot.min)) }

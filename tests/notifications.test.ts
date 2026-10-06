@@ -104,11 +104,38 @@ describe("planNotifications", () => {
     expect(r.actions).toBe(true);
   });
 
-  it("no pings mid-shift unless the task is Work", () => {
-    const personal = planNotifications(data([task({ title: "Call gran", due: "2026-10-06", dueTime: "11:00" })]), NOW);
-    expect(hm(personal.find((n) => n.kind === "reminder")!.at)).toBe("17:30");
-    const work = planNotifications(data([task({ title: "Send deck", area: "work", due: "2026-10-06", dueTime: "11:00" })]), NOW);
-    expect(hm(work.find((n) => n.kind === "reminder")!.at)).toBe("11:00");
+  it("a time you set yourself is never moved: not by work hours, not by quiet hours", () => {
+    const mid = planNotifications(data([task({ title: "Call gran", due: "2026-10-06", dueTime: "11:00" })]), NOW);
+    expect(hm(mid.find((n) => n.kind === "reminder")!.at)).toBe("11:00");
+    const late = planNotifications(data([task({ title: "Take medicine", due: "2026-10-06", dueTime: "23:55" })]), NOW);
+    const r = late.find((n) => n.kind === "reminder")!;
+    expect([iso(r.at), hm(r.at)]).toEqual(["2026-10-06", "23:55"]);
+    const early = planNotifications(data([task({ title: "Gym", due: "2026-10-07", dueTime: "06:00" })]), NOW);
+    expect(hm(early.find((n) => n.kind === "reminder")!.at)).toBe("06:00");
+  });
+
+  it("timed reminders are alarms with a loud channel, Done / Snooze, and follow-ups until you react", () => {
+    const t = task({ id: "t1", title: "Take medicine", due: "2026-10-06", dueTime: "23:55" });
+    const list = planNotifications(data([t]), NOW).filter((n) => n.taskId === "t1" && n.kind === "reminder");
+    expect(list.map((n) => hm(n.at))).toEqual(["23:55", "00:00", "00:05", "00:10"]);
+    expect(list.every((n) => n.alarm && n.exact && n.actions)).toBe(true);
+    expect(list[1].title).toBe("Still waiting: Take medicine");
+    // Seeing it (tapping, Done or Snooze) stops the follow-ups.
+    const seen = planNotifications(data([{ ...t, alarmAck: at("2026-10-06", 23, 56).getTime() }]), NOW).filter((n) => n.taskId === "t1" && n.kind === "reminder");
+    expect(seen).toHaveLength(1);
+  });
+
+  it("a snoozed alarm rings again at the snooze time, even in quiet hours, and drops the old follow-ups", () => {
+    const snoozeAt = at("2026-10-06", 23, 40);
+    const t = task({ id: "t2", title: "Take medicine", due: "2026-10-06", dueTime: "23:30", remindAt: snoozeAt.getTime(), alarmAck: at("2026-10-06", 23, 30).getTime() });
+    const list = planNotifications(data([t]), at("2026-10-06", 23, 31)).filter((n) => n.taskId === "t2" && n.kind === "reminder");
+    expect(list.map((n) => hm(n.at))).toEqual(["23:40", "23:45", "23:50", "23:55"]);
+    expect(list[0].alarm).toBe(true);
+  });
+
+  it("everyday check-ins still wait for quiet hours to end", () => {
+    const n = planNotifications(data([]), NOW).filter((x) => x.kind === "nudge" || x.kind === "wrap" || x.kind === "morning");
+    for (const x of n) expect(["22:", "23:", "00:", "01:", "02:", "03:", "04:", "05:", "06:"].some((h) => hm(x.at).startsWith(h))).toBe(false);
   });
 
   it("each slot from 'Plan my day' gets a notification at its start", () => {

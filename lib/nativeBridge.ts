@@ -9,6 +9,7 @@ export interface LaunchIntent {
 
 interface TodayNativePlugin {
   consumeLaunchIntent(): Promise<{ intent?: LaunchIntent }>;
+  createAlarmChannel(opts: { id: string }): Promise<void>;
   batteryStatus(): Promise<{ ignoring: boolean }>;
   openBatterySettings(): Promise<void>;
   addListener(event: "launchIntent", fn: (i: LaunchIntent) => void): Promise<{ remove: () => void }>;
@@ -35,6 +36,17 @@ export function listenForLaunchIntents(onIntent: (i: LaunchIntent) => void): () 
     gone = true;
     handle?.remove();
   };
+}
+
+/** Creates the alarm-sound notification channel. false when it couldn't be made (older app build, or not Android). */
+export async function createAlarmChannel(id: string): Promise<boolean> {
+  if (!isNative()) return false;
+  try {
+    await TodayNative.createAlarmChannel({ id });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** true = Android won't kill the app to save battery. null = not applicable (web). */
