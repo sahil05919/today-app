@@ -80,3 +80,14 @@ export const TrashIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M5 7h14M10 7V4.5h4V7M7 7l.8 12h8.4L17 7" />
   </Svg>
 );
+export const MicIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <rect x="9" y="3" width="6" height="11" rx="3" />
+    <path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v3" />
+  </Svg>
+);
+export const StopIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" />
+  </Svg>
+);

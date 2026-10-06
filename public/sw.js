@@ -1,5 +1,5 @@
 // Minimal offline support. Bump VERSION to force clients to drop old caches.
-const VERSION = "today-v1";
+const VERSION = "today-v2";
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -21,7 +21,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // Pages: network first, fall back to the cached shell when offline.
+  // Pages (including /?text=… from Share, /?voice=1 from shortcuts): network first, cached shell when offline.
   if (req.mode === "navigate") {
     event.respondWith(
       fetch(req)
@@ -35,18 +35,37 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Everything else (hashed JS/CSS, icons): cache first, then fill the cache.
+  // Hashed build files never change: cache first.
+  if (url.pathname.startsWith("/_next/static/")) {
+    event.respondWith(
+      caches.match(req).then(
+        (hit) =>
+          hit ||
+          fetch(req).then((res) => {
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(VERSION).then((c) => c.put(req, copy));
+            }
+            return res;
+          }),
+      ),
+    );
+    return;
+  }
+
+  // Everything else (manifest, icons): serve the cached copy but refresh it in the background.
   event.respondWith(
-    caches.match(req).then(
-      (hit) =>
-        hit ||
-        fetch(req).then((res) => {
+    caches.match(req).then((hit) => {
+      const fresh = fetch(req)
+        .then((res) => {
           if (res.ok) {
             const copy = res.clone();
             caches.open(VERSION).then((c) => c.put(req, copy));
           }
           return res;
-        }),
-    ),
+        })
+        .catch(() => hit);
+      return hit || fresh;
+    }),
   );
 });

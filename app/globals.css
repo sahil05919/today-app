@@ -14,8 +14,9 @@
   color-scheme: light;
 }
 
+/* Dark: follows the system unless the user picked a theme (data-theme on <html>). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
     --bg: #1b1a18;
     --surface: #252321;
     --ink: #ece8e1;
@@ -28,6 +29,31 @@
     --warn-soft: #3a2d1d;
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #1b1a18;
+  --surface: #252321;
+  --ink: #ece8e1;
+  --muted: #9a958b;
+  --line: #34312d;
+  --accent: #7fb097;
+  --accent-ink: #14201a;
+  --accent-soft: #263a30;
+  --warn: #e0a15f;
+  --warn-soft: #3a2d1d;
+  color-scheme: dark;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 14px transparent;
+  }
+}
+.anim-pulse {
+  animation: pulse-ring 1.2s ease-out infinite;
 }
 
 @theme inline {

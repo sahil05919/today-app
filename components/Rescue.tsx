@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { formatMinutes, friendlyDate } from "@/lib/dates";
 import { planRescue } from "@/lib/rescue";
+import { buildDurationModel } from "@/lib/stats";
 import { actions } from "@/lib/store";
 import type { Task } from "@/lib/types";
 import { MAX_FOCUS } from "@/lib/types";
@@ -11,7 +12,8 @@ const PRESETS = [15, 30, 45, 60, 90, 120];
 
 export function Rescue({ tasks, ctx, onClose }: { tasks: Task[]; ctx: ViewCtx; onClose: () => void }) {
   const [minutes, setMinutes] = useState(45);
-  const plan = useMemo(() => planRescue(tasks, minutes, ctx.today), [tasks, minutes, ctx.today]);
+  const model = useMemo(() => buildDurationModel(tasks), [tasks]);
+  const plan = useMemo(() => planRescue(tasks, minutes, ctx.today, model), [tasks, minutes, ctx.today, model]);
 
   return (
     <Sheet title="Rescue my day" onClose={onClose}>
@@ -48,7 +50,7 @@ export function Rescue({ tasks, ctx, onClose }: { tasks: Task[]; ctx: ViewCtx; o
         {plan.items.length ? (
           <>
             <ul className="space-y-2">
-              {plan.items.map(({ task, minutes: m, guessed, partial }) => (
+              {plan.items.map(({ task, minutes: m, guessed, learned, partial }) => (
                 <li key={task.id} className="rounded-2xl border border-line bg-bg px-3.5 py-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -60,6 +62,7 @@ export function Rescue({ tasks, ctx, onClose }: { tasks: Task[]; ctx: ViewCtx; o
                       <div className="mt-1.5 flex gap-1.5">
                         {task.due && <Chip tone={task.due < ctx.today ? "warn" : "plain"}>{friendlyDate(task.due, ctx.today)}</Chip>}
                         {guessed && <Chip>estimated</Chip>}
+                        {learned && <Chip tone="accent">your average</Chip>}
                       </div>
                     </div>
                     <span className="shrink-0 text-sm font-semibold tabular-nums text-accent">

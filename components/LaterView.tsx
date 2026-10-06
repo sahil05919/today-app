@@ -39,7 +39,7 @@ export function LaterView({ data, ctx }: { data: AppData; ctx: ViewCtx }) {
       {someday.length ? (
         <div className="space-y-2">
           {someday.map((t) => (
-            <TaskCard key={t.id} task={t} ctx={ctx} quickToday />
+            <TaskCard key={t.id} task={t} ctx={ctx} quickWhen />
           ))}
         </div>
       ) : (

@@ -1,3 +1,4 @@
+import { taskKey, type DurationModel } from "./stats";
 import type { Task } from "./types";
 
 const DEFAULT_STEP_MIN = 15;
@@ -20,14 +21,37 @@ export function nextStep(task: Task) {
   return task.steps.find((s) => !s.done);
 }
 
+export interface Remaining {
+  minutes: number;
+  /** A rough guess (no estimate on the task). */
+  guessed: boolean;
+  /** Adjusted using what the focus timer has learned about you. */
+  learned?: boolean;
+}
+
 /**
  * Minutes of work left.
  * - Steps all have estimates: their sum.
  * - Some don't, but the task has its own estimate: that estimate, scaled by the share of steps still open.
  * - Otherwise: sum, with a default for un-timed steps.
  * An open task never drops below 5 minutes (there's always a "wrap it up").
+ *
+ * With a `model` (built from timer logs): your own estimates are scaled by how much you usually
+ * over/under-run them, and un-timed tasks use your real average for similar tasks.
  */
-export function remainingMinutes(task: Task): { minutes: number; guessed: boolean } {
+export function remainingMinutes(task: Task, model?: DurationModel): Remaining {
+  const base = baseMinutes(task);
+  if (!model) return base;
+
+  if (!base.guessed && model.multiplier && Math.abs(model.multiplier - 1) > 0.1) {
+    return { minutes: Math.max(5, Math.round((base.minutes * model.multiplier) / 5) * 5), guessed: false, learned: true };
+  }
+  const known = model.byKey[taskKey(task)];
+  if (base.guessed && known && !task.steps.length) return { minutes: Math.max(5, known.avg), guessed: false, learned: true };
+  return base;
+}
+
+function baseMinutes(task: Task): Remaining {
   if (task.steps.length) {
     const open = task.steps.filter((s) => !s.done);
     if (open.every((s) => s.estimateMin != null)) {

@@ -1,19 +1,27 @@
 "use client";
+import { Preferences } from "@capacitor/preferences";
 import { useSyncExternalStore } from "react";
 import { emptyData, migrate } from "./backup";
 import { todayISO } from "./dates";
+import { isNative } from "./platform";
+import { nextOccurrence } from "./recur";
 import type { ParsedCapture } from "./parse";
 import { TEMPLATES } from "./templates";
-import type { AppData, CheckInStatus, ISODate, Settings, Step, Task, TemplateId } from "./types";
+import type { AppData, CheckInStatus, ISODate, Profile, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
-/** Swap for a Supabase-backed adapter later; the rest of the app only talks to the store. */
+/**
+ * Where data lives. The rest of the app only talks to the store below, so this can change freely.
+ * - Web / PWA: `localStorage` (synchronous).
+ * - Android app: Capacitor Preferences (SharedPreferences), which is loaded asynchronously at start-up.
+ * - Later: a Supabase-backed adapter.
+ */
 export interface StorageAdapter {
   load(): AppData | null;
   save(data: AppData): void;
 }
 
-const KEY = "today:v1";
+export const KEY = "today:v1";
 
 export const localStorageAdapter: StorageAdapter = {
   load() {
@@ -33,25 +41,95 @@ export const localStorageAdapter: StorageAdapter = {
   },
 };
 
+/** Reads the saved JSON out of Android's Preferences. Falls back to the WebView's own localStorage once. */
+async function loadNative(): Promise<AppData | null> {
+  try {
+    const { value } = await Preferences.get({ key: KEY });
+    if (value) return migrate(JSON.parse(value));
+  } catch (e) {
+    console.warn("Could not read Preferences", e);
+  }
+  // One-time carry-over if this WebView already holds data from an earlier build.
+  return localStorageAdapter.load();
+}
+
+function saveNative(data: AppData) {
+  Preferences.set({ key: KEY, value: JSON.stringify(data) }).catch((e) => console.warn("Could not save", e));
+}
+
+const native = isNative();
 const adapter: StorageAdapter = localStorageAdapter;
 let state: AppData | null = null;
+let nativeLoading = false;
 const listeners = new Set<() => void>();
+const notify = () => listeners.forEach((l) => l());
 
-function ensure(): AppData {
-  if (!state) state = adapter.load() ?? emptyData();
+/** The current data, or null while the Android app is still reading its storage. */
+function peek(): AppData | null {
+  if (state) return state;
+  if (native) {
+    if (!nativeLoading) {
+      nativeLoading = true;
+      loadNative().then((d) => {
+        state = d ?? emptyData();
+        notify();
+      });
+    }
+    return null;
+  }
+  state = adapter.load() ?? emptyData();
   return state;
 }
 
+function ensure(): AppData {
+  return peek() ?? emptyData();
+}
+
+/** Resolves once the data is available (immediately on the web). For notification handlers on a cold start. */
+export function whenLoaded(): Promise<AppData> {
+  const now = peek();
+  if (now) return Promise.resolve(now);
+  return new Promise((resolve) => {
+    const off = subscribe(() => {
+      const d = peek();
+      if (d) {
+        off();
+        resolve(d);
+      }
+    });
+  });
+}
+
+/** For code outside React (notification handlers). */
+export function getData(): AppData {
+  return ensure();
+}
+
+/** Re-reads storage, e.g. when the Android app comes back to the foreground. */
+export async function reloadFromStorage() {
+  const d = native ? await loadNative() : adapter.load();
+  if (d) {
+    state = d;
+    notify();
+  }
+}
+
 function commit(next: AppData) {
+  // Android: never write before the saved data has been read, or we'd overwrite it with an empty list.
+  if (native && !state) {
+    console.warn("Ignored a change made before storage finished loading");
+    return;
+  }
   state = next;
-  adapter.save(next);
-  listeners.forEach((l) => l());
+  if (native) saveNative(next);
+  else adapter.save(next);
+  notify();
 }
 
 function subscribe(l: () => void) {
   listeners.add(l);
   const onStorage = (e: StorageEvent) => {
-    if (e.key === KEY) {
+    if (e.key === KEY && !native) {
       state = adapter.load() ?? emptyData();
       l();
     }
@@ -63,9 +141,9 @@ function subscribe(l: () => void) {
   };
 }
 
-/** null during SSR and the first hydration pass. */
+/** null during SSR, the first hydration pass, and (on Android) while storage loads. */
 export function useData(): AppData | null {
-  return useSyncExternalStore(subscribe, ensure, () => null);
+  return useSyncExternalStore(subscribe, peek, () => null);
 }
 
 const uid = () => crypto.randomUUID();
@@ -74,6 +152,15 @@ const mapTask = (id: string, fn: (t: Task) => Task) => {
   commit({ ...d, tasks: d.tasks.map((t) => (t.id === id ? fn(t) : t)) });
 };
 const openFocusCount = (d: AppData) => d.tasks.filter((t) => t.focus && t.status === "open").length;
+
+/** Applies a patch, counting it as a postponement when the date moves later. */
+function withPostponeCount(t: Task, patch: Partial<Task>): Task {
+  const next = { ...t, ...patch };
+  if (!("snoozeCount" in patch) && patch.due && t.due && patch.due > t.due) {
+    next.snoozeCount = (t.snoozeCount ?? 0) + 1;
+  }
+  return next;
+}
 
 function applyTemplateTo(task: Task, id: TemplateId): Task {
   const have = new Set(task.steps.map((s) => s.title));
@@ -93,6 +180,9 @@ export const actions = {
       title: p.title,
       due,
       dueTime: p.due ? p.dueTime : undefined,
+      notes: p.notes,
+      recur: p.recur,
+      area: p.area,
       important: p.important,
       tags: p.tags,
       estimateMin: p.estimateMin,
@@ -109,19 +199,82 @@ export const actions = {
   },
 
   update(id: string, patch: Partial<Task>) {
-    mapTask(id, (t) => ({ ...t, ...patch }));
+    mapTask(id, (t) => withPostponeCount(t, patch));
   },
 
   setDue(id: string, due?: ISODate, dueTime?: string) {
-    mapTask(id, (t) => ({ ...t, due, dueTime: due ? dueTime : undefined }));
+    mapTask(id, (t) => withPostponeCount(t, { due, dueTime: due ? dueTime : undefined }));
   },
 
-  toggleDone(id: string) {
-    mapTask(id, (t) =>
-      t.status === "done"
-        ? { ...t, status: "open", completedAt: undefined }
-        : { ...t, status: "done", completedAt: Date.now(), focus: false },
+  /** Puts a deleted task back (for Undo). */
+  restore(task: Task) {
+    const d = ensure();
+    if (!d.tasks.some((t) => t.id === task.id)) commit({ ...d, tasks: [task, ...d.tasks] });
+  },
+
+  /** Starts the focus timer on a task, logging any timer that was already running. */
+  startTimer(id: string) {
+    if (ensure().settings.timer) actions.stopTimer();
+    actions.settings({ timer: { taskId: id, startedAt: Date.now() } });
+  },
+
+  /** Stops the timer and logs the session on the task. Returns what was logged. */
+  stopTimer(): { task: Task; minutes: number } | null {
+    const d = ensure();
+    const timer = d.settings.timer;
+    if (!timer) return null;
+    const minutes = Math.min(240, Math.max(1, Math.round((Date.now() - timer.startedAt) / 60000)));
+    const task = d.tasks.find((t) => t.id === timer.taskId);
+    const tasks = d.tasks.map((t) =>
+      t.id === timer.taskId ? { ...t, sessions: [...(t.sessions ?? []), { at: Date.now(), min: minutes }] } : t,
     );
+    commit({ ...d, tasks, settings: { ...d.settings, timer: undefined } });
+    return task ? { task, minutes } : null;
+  },
+
+  /** Throws the running timer away without logging it. */
+  discardTimer() {
+    actions.settings({ timer: undefined });
+  },
+
+  /**
+   * Completes (or reopens) a task. Completing a recurring task spawns its next occurrence and returns it;
+   * reopening removes that spawned occurrence again so nothing is duplicated.
+   */
+  toggleDone(id: string): Task | null {
+    const d = ensure();
+    const t = d.tasks.find((x) => x.id === id);
+    if (!t) return null;
+
+    if (t.status === "done") {
+      const tasks = d.tasks
+        .filter((x) => !(t.nextId && x.id === t.nextId && x.status === "open"))
+        .map((x) => (x.id === id ? { ...x, status: "open" as const, completedAt: undefined, nextId: undefined } : x));
+      commit({ ...d, tasks });
+      return null;
+    }
+
+    const today = todayISO();
+    let next: Task | null = null;
+    if (t.recur) {
+      // If it's overdue, count from today so we don't spawn a pile of missed occurrences.
+      const base = t.due && t.due > today ? t.due : today;
+      next = {
+        ...t,
+        id: uid(),
+        due: nextOccurrence(t.recur, base),
+        steps: t.steps.map((s) => ({ ...s, id: uid(), done: false })),
+        status: "open",
+        completedAt: undefined,
+        nextId: undefined,
+        focus: false,
+        lastCheckIn: undefined,
+        createdAt: Date.now(),
+      };
+    }
+    const done: Task = { ...t, status: "done", completedAt: Date.now(), focus: false, nextId: next?.id };
+    commit({ ...d, tasks: [...(next ? [next] : []), ...d.tasks.map((x) => (x.id === id ? done : x))] });
+    return next;
   },
 
   remove(id: string) {
@@ -165,6 +318,24 @@ export const actions = {
 
   recordCheckIn(id: string, status: CheckInStatus) {
     mapTask(id, (t) => ({ ...t, lastCheckIn: { date: todayISO(), status } }));
+  },
+
+  /** Saves "Plan my day": each task gets a time slot, and slots left over from an older plan are cleared. */
+  applyPlan(date: ISODate, slots: { taskId: string; start: string; min: number }[]) {
+    const d = ensure();
+    const byId = new Map(slots.map((s) => [s.taskId, s]));
+    const tasks = d.tasks.map((t) => {
+      const s = byId.get(t.id);
+      if (s) return { ...t, slot: { date, start: s.start, min: s.min }, due: t.due ?? date };
+      if (t.slot?.date === date) return { ...t, slot: undefined };
+      return t;
+    });
+    commit({ ...d, tasks });
+  },
+
+  setProfile(profile: Profile) {
+    const d = ensure();
+    commit({ ...d, profile });
   },
 
   settings(patch: Partial<Settings>) {

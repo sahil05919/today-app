@@ -1,16 +1,19 @@
 import { diffDays } from "./dates";
 import { nextStep, remainingMinutes } from "./estimate";
+import type { DurationModel } from "./stats";
 import type { ISODate, Step, Task } from "./types";
 
 export interface RescueItem {
   task: Task;
   minutes: number;
   guessed: boolean;
+  /** Minutes come from your own timer history. */
+  learned?: boolean;
   /** Set when the whole task doesn't fit but its next step does. */
   partial?: Step;
 }
 
-function score(t: Task, today: ISODate): number {
+export function priorityScore(t: Task, today: ISODate): number {
   let s = 10;
   if (t.due) {
     const d = diffDays(t.due, today);
@@ -26,18 +29,18 @@ function score(t: Task, today: ISODate): number {
 }
 
 /** Picks what fits into `available` minutes: most urgent / important first, then fills the gaps. */
-export function planRescue(tasks: Task[], available: number, today: ISODate) {
+export function planRescue(tasks: Task[], available: number, today: ISODate, model?: DurationModel) {
   const open = tasks
     .filter((t) => t.status === "open")
-    .sort((a, b) => score(b, today) - score(a, today) || a.createdAt - b.createdAt);
+    .sort((a, b) => priorityScore(b, today) - priorityScore(a, today) || a.createdAt - b.createdAt);
 
   const items: RescueItem[] = [];
   let left = available;
   for (const task of open) {
     if (left <= 0) break;
-    const { minutes, guessed } = remainingMinutes(task);
+    const { minutes, guessed, learned } = remainingMinutes(task, model);
     if (minutes <= left) {
-      items.push({ task, minutes, guessed });
+      items.push({ task, minutes, guessed, learned });
       left -= minutes;
       continue;
     }

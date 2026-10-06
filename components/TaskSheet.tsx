@@ -1,7 +1,10 @@
 "use client";
 import { useState } from "react";
-import { formatMinutes } from "@/lib/dates";
+import { formatMinutes, fromISO } from "@/lib/dates";
+import { recurLabel } from "@/lib/recur";
+import type { Recurrence } from "@/lib/types";
 import { remainingMinutes, stepProgress } from "@/lib/estimate";
+import { actualMinutes } from "@/lib/stats";
 import { downloadICS, googleCalendarUrl } from "@/lib/ics";
 import { extractEstimate } from "@/lib/parse";
 import { actions } from "@/lib/store";
@@ -9,9 +12,29 @@ import { TEMPLATE_LIST } from "@/lib/templates";
 import type { Task } from "@/lib/types";
 import { MAX_FOCUS } from "@/lib/types";
 import { CheckIcon, CloseIcon, TrashIcon } from "./icons";
+import { completeWithToast } from "./TaskCard";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
 
-export function TaskSheet({ task, ctx, onClose }: { task: Task; ctx: ViewCtx; onClose: () => void }) {
+function recurKey(r?: Recurrence): string {
+  if (!r) return "none";
+  const wd = r.weekdays ?? [];
+  if (r.interval !== 1) return "custom";
+  if (r.freq === "daily") return "daily";
+  if (r.freq === "monthly") return "monthly";
+  if (wd.length === 5 && [1, 2, 3, 4, 5].every((d) => wd.includes(d))) return "weekdays";
+  return wd.length > 1 ? "custom" : "weekly";
+}
+
+function buildRecur(key: string, anchor: string): Recurrence | undefined {
+  const d = fromISO(anchor);
+  if (key === "daily") return { freq: "daily", interval: 1 };
+  if (key === "weekdays") return { freq: "weekly", interval: 1, weekdays: [1, 2, 3, 4, 5] };
+  if (key === "weekly") return { freq: "weekly", interval: 1, weekdays: [d.getDay()] };
+  if (key === "monthly") return { freq: "monthly", interval: 1, monthDay: d.getDate() };
+  return undefined;
+}
+
+export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task; ctx: ViewCtx; onClose: () => void; timerOn?: boolean }) {
   const [stepText, setStepText] = useState("");
   const [tagsText, setTagsText] = useState(task.tags.map((t) => `#${t}`).join(" "));
   const prog = stepProgress(task);
@@ -46,13 +69,24 @@ export function TaskSheet({ task, ctx, onClose }: { task: Task; ctx: ViewCtx; on
         <div className="flex gap-2">
           <button
             onClick={() => {
-              actions.toggleDone(task.id);
+              completeWithToast(task, ctx);
               onClose();
             }}
             className={`${task.status === "done" ? btn.ghost : btn.primary} flex flex-1 items-center justify-center gap-1.5`}
           >
             <CheckIcon width={16} height={16} /> {task.status === "done" ? "Reopen" : "Mark done"}
           </button>
+          {task.status === "open" && (
+            <button
+              onClick={() => {
+                onClose();
+                ctx.when(task.id, "snooze");
+              }}
+              className={`${btn.ghost} px-4`}
+            >
+              Snooze
+            </button>
+          )}
           {task.status === "open" && (
             <button
               onClick={() => {
@@ -65,6 +99,41 @@ export function TaskSheet({ task, ctx, onClose }: { task: Task; ctx: ViewCtx; on
             </button>
           )}
         </div>
+
+        {task.status === "open" && (
+          <div className="flex items-center gap-3 rounded-xl border border-line bg-bg px-3 py-2">
+            <div className="min-w-0 flex-1 text-sm">
+              <p className="font-medium">Focus timer</p>
+              <p className="text-xs text-muted">
+                {actualMinutes(task) > 0
+                  ? `${formatMinutes(actualMinutes(task))} logged over ${task.sessions?.length} session${task.sessions?.length === 1 ? "" : "s"}`
+                  : "Time it, and Rescue learns how long things take you."}
+              </p>
+            </div>
+            {timerOn ? (
+              <button
+                className={`${btn.primary} min-h-11`}
+                onClick={() => {
+                  const l = actions.stopTimer();
+                  if (l) ctx.notify(`Logged ${l.minutes} min`);
+                }}
+              >
+                Stop
+              </button>
+            ) : (
+              <button
+                className={`${btn.soft} min-h-11`}
+                onClick={() => {
+                  actions.startTimer(task.id);
+                  ctx.notify("Timer running. Go for it.");
+                  onClose();
+                }}
+              >
+                ▶ Start
+              </button>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -120,6 +189,45 @@ export function TaskSheet({ task, ctx, onClose }: { task: Task; ctx: ViewCtx; on
               className={field}
             />
           </div>
+        </div>
+
+        <div>
+          <label className={label} htmlFor="area">
+            Life area
+          </label>
+          <select
+            id="area"
+            value={task.area && ctx.profile.areas.some((a) => a.id === task.area) ? task.area : ""}
+            onChange={(e) => actions.update(task.id, { area: e.target.value || undefined })}
+            className={field}
+          >
+            <option value="">No area</option>
+            {ctx.profile.areas.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.emoji} {a.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className={label} htmlFor="repeat">
+            Repeat
+          </label>
+          <select
+            id="repeat"
+            value={recurKey(task.recur)}
+            onChange={(e) => actions.update(task.id, { recur: buildRecur(e.target.value, task.due ?? ctx.today) ?? (e.target.value === "custom" ? task.recur : undefined) })}
+            className={field}
+          >
+            <option value="none">Doesn't repeat</option>
+            <option value="daily">Every day</option>
+            <option value="weekdays">Weekdays (Mon–Fri)</option>
+            <option value="weekly">Every week</option>
+            <option value="monthly">Every month</option>
+            {task.recur && recurKey(task.recur) === "custom" && <option value="custom">{recurLabel(task.recur)}</option>}
+          </select>
+          {task.recur && <p className="mt-1 text-xs text-muted">Finishing it creates the next one automatically.</p>}
         </div>
 
         <label className="flex items-center justify-between rounded-xl border border-line bg-bg px-3 py-2.5 text-sm">

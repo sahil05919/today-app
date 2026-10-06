@@ -65,3 +65,14 @@ export function greeting(now = new Date()): string {
 export function longDate(now = new Date()): string {
   return `${WD_LONG[now.getDay()]} ${now.getDate()} ${MO[now.getMonth()]}`;
 }
+
+/** "15 Oct" */
+export function shortDate(s: ISODate): string {
+  const d = fromISO(s);
+  return `${d.getDate()} ${MO[d.getMonth()]}`;
+}
+
+/** "15 Oct" or "15 Oct – 15 Nov" */
+export function rangeLabel(start: ISODate, end: ISODate): string {
+  return start === end ? shortDate(start) : `${shortDate(start)} – ${shortDate(end)}`;
+}

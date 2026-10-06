@@ -1,13 +1,20 @@
 "use client";
 import { useEffect } from "react";
-import type { ISODate, Task } from "@/lib/types";
+import type { ISODate, Profile, Task } from "@/lib/types";
 import { CloseIcon } from "./icons";
+
+export type Panel = "menu" | "rescue" | "morning" | "evening" | "review" | "patterns" | "events" | "me" | "plan";
 
 /** Shared context passed down to every view. */
 export interface ViewCtx {
   today: ISODate;
+  /** "Me": routines, life areas and personal shortcuts (defaults filled in). */
+  profile: Profile;
   open: (id: string) => void;
-  notify: (msg: string) => void;
+  /** Shows a toast. Pass `undo` to add an Undo button. */
+  notify: (msg: string, undo?: () => void) => void;
+  /** Opens the snooze / "when?" sheet for a task. */
+  when: (id: string, mode: "snooze" | "schedule") => void;
 }
 
 export function sortTasks(tasks: Task[]): Task[] {
@@ -89,7 +96,7 @@ export function Sheet({
       <div className="anim-sheet relative flex max-h-[92dvh] w-full max-w-md flex-col rounded-t-3xl bg-surface shadow-xl sm:rounded-3xl">
         <div className="flex items-center justify-between px-5 pb-1 pt-4">
           <h2 className="text-base font-semibold">{title}</h2>
-          <button onClick={onClose} aria-label="Close" className="-mr-2 rounded-full p-2 text-muted hover:bg-bg">
+          <button onClick={onClose} aria-label="Close" className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-bg">
             <CloseIcon />
           </button>
         </div>
