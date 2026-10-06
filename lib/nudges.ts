@@ -1,6 +1,7 @@
 import { billReminders } from "./bills";
 import { addDays, fromISO, toISO } from "./dates";
 import { eventsOn } from "./fixed";
+import { isOffDay } from "./offday";
 import { planSessions, plannedForDay } from "./schedule";
 import { entryFor, weekProgress } from "./sessions";
 import type { AppData, ISODate } from "./types";
@@ -30,6 +31,8 @@ const isWeekend = (d: ISODate) => [0, 6].includes(fromISO(d).getDay());
 export function computeNudges(data: AppData, now: Date = new Date()): Nudge[] {
   const today = toISO(now);
   const out: Nudge[] = [];
+  // An off day is for resting: no nudges.
+  if (isOffDay(data, today)) return out;
   const dismissed = (id: string) => entryFor(data.log, nudgeKey(id, today))?.status === "skip";
 
   // --- Behind on a weekly target: what's done plus what still fits is short of the goal -----------

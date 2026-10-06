@@ -39,9 +39,9 @@ describe("life areas", () => {
   });
   it("unknown @names are left alone", () => {
     const withOthers = { ...me(), areas: [...me().areas, { id: "others", name: "Others", emoji: "📥" }] };
-    const p = parseCapture("email @sam about lunch", NOW, withOthers);
+    const p = parseCapture("ping @sam about the thing", NOW, withOthers);
     expect(p.area).toBe("others"); // unclear → Others
-    expect(parseCapture("email @sam about lunch", NOW, me()).area).toBeUndefined(); // no Others area to use
+    expect(parseCapture("ping @sam about the thing", NOW, me()).area).toBeUndefined(); // no Others area to use
     expect(p.title).toContain("@sam");
   });
   it("areas are editable", () => {
@@ -77,7 +77,7 @@ describe("area guessing", () => {
     expect(area("apply to 3 jobs")).toBe("job");
     expect(area("read two chapters of a book")).toBe("english");
     expect(area("evening walk")).toBe("walking");
-    expect(area("pay rent in cash")).toBe("admin");
+    expect(area("pay rent in cash")).toBe("finance");
     expect(area("mummy ko call")).toBe("family");
   });
   it("sends anything unclear to Others, and an explicit @area always wins", () => {

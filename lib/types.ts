@@ -172,6 +172,21 @@ export interface BoredIdea {
   areaId?: string;
 }
 
+/**
+ * Something the app learned from a correction: "when a task looks like these words, file it under this area
+ * (and/or at this time)". Kept on the device, applied offline and online.
+ */
+export interface LearnedRule {
+  id: string;
+  /** The meaningful words of the corrected title, e.g. ["starred", "email"]. A new title matching all of them gets the fix. */
+  words: string[];
+  areaId?: string;
+  /** "HH:mm" */
+  time?: string;
+  hits: number;
+  at: number;
+}
+
 export interface Profile {
   /** false until the first-run setup has been saved or skipped. */
   setupDone: boolean;
@@ -291,6 +306,10 @@ export interface AppData {
   grocery?: GroceryItem[];
   goals?: MonthGoals;
   bored?: BoredIdea[];
+  /** Corrections remembered for next time (see lib/learn.ts). */
+  learned?: LearnedRule[];
+  /** Days marked as off days (at most 2 per Mon–Sun week). */
+  offDays?: ISODate[];
 }
 
 export const MAX_FOCUS = 3;

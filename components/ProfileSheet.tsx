@@ -1,9 +1,9 @@
 "use client";
 import { useState } from "react";
-import { buildPrompt, callGemini, DEFAULT_MODEL, getGeminiKey, getGeminiModel, setGeminiKey, setGeminiModel } from "@/lib/ai";
+import { cleanKey, getAutoModel, getGeminiKey, getGeminiModel, setGeminiKey, setGeminiModel, testGeminiKey } from "@/lib/ai";
 import { builtInShortcuts } from "@/lib/profile";
 import { actions } from "@/lib/store";
-import type { Area, AreaTarget, Bill, Profile, RhythmItem, Slot } from "@/lib/types";
+import type { Area, AreaTarget, Bill, LearnedRule, Profile, RhythmItem, Slot } from "@/lib/types";
 import { NotificationSettings } from "./NotificationSettings";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
 
@@ -149,12 +149,13 @@ function TargetEditor({ target, slots, onChange }: { target: AreaTarget; slots: 
 }
 
 /** Settings: set up once, editable any time. Everything is stored on this phone. */
-export function ProfileSheet({ profile, bills, ctx, onClose }: { profile: Profile; bills: Bill[]; ctx: ViewCtx; onClose: () => void }) {
+export function ProfileSheet({ profile, bills, learned, ctx, onClose }: { profile: Profile; bills: Bill[]; learned: LearnedRule[]; ctx: ViewCtx; onClose: () => void }) {
   const [p, setP] = useState<Profile>(profile);
   const [bs, setBs] = useState<Bill[]>(bills);
   const [aiKey, setAiKey] = useState(() => getGeminiKey());
   const [aiModel, setAiModel] = useState(() => getGeminiModel());
-  const [aiTest, setAiTest] = useState<string>("");
+  const [aiTest, setAiTest] = useState<{ busy?: boolean; ok?: boolean; lines: string[] }>({ lines: [] });
+  const [autoModel, setAutoModel] = useState(() => getAutoModel());
   const set = <K extends keyof Profile>(k: K, v: Profile[K]) => setP((x) => ({ ...x, [k]: v }));
   const first = !profile.setupDone;
 
@@ -451,38 +452,77 @@ export function ProfileSheet({ profile, bills, ctx, onClose }: { profile: Profil
               autoComplete="off"
               value={aiKey}
               onChange={(e) => {
-                setAiKey(e.target.value);
-                setAiTest("");
+                const k = cleanKey(e.target.value);
+                setAiKey(k);
+                setAutoModel(getAutoModel(k));
+                setAiTest({ lines: [] });
               }}
               placeholder="Paste your key (optional)"
               className={field}
             />
           </Field>
+          <p className="text-sm">
+            <span className="text-muted">Model in use: </span>
+            <span className="font-medium">{aiModel.trim() ? `${aiModel.trim()} (typed by you)` : autoModel ? `${autoModel} (picked automatically)` : "not chosen yet. Tap Test key and one is picked for you."}</span>
+          </p>
           <details className="text-sm">
-            <summary className="cursor-pointer text-muted">Advanced: model name</summary>
-            <input value={aiModel} onChange={(e) => setAiModel(e.target.value)} className={`${field} mt-2`} aria-label="Model" />
-            <p className="mt-1 text-xs text-muted">Default: {DEFAULT_MODEL}. If Google renames it, put the new name here.</p>
+            <summary className="cursor-pointer text-muted">Advanced: choose the model yourself</summary>
+            <input value={aiModel} onChange={(e) => setAiModel(e.target.value)} placeholder="Leave empty to pick automatically" className={`${field} mt-2`} aria-label="Model" />
+            <p className="mt-1 text-xs text-muted">Normally leave this empty: the newest free Flash model is picked from Google's own list.</p>
           </details>
           <div className="flex items-center gap-3">
             <button
               type="button"
               className={`${btn.soft} min-h-11`}
-              disabled={!aiKey.trim()}
+              disabled={!aiKey.trim() || aiTest.busy}
               onClick={async () => {
-                setAiTest("Testing…");
-                const r = await callGemini(buildPrompt("kal 6 baje mummy ko call karna hai", p.areas, ctx.today), { key: aiKey.trim(), model: aiModel.trim() || DEFAULT_MODEL });
-                setAiTest(
-                  r.ok
-                    ? `Works. It read: ${JSON.stringify(r.result).slice(0, 110)}`
-                    : { "bad-key": "Google didn't accept that key.", offline: "Couldn't reach Google. Are you online?", "rate-limit": "Free limit reached. Try again later.", failed: "That didn't work.", "no-key": "Paste a key first." }[r.reason],
-                );
+                setAiTest({ busy: true, lines: ["Testing…"] });
+                const r = await testGeminiKey(aiKey, { model: aiModel });
+                if (r.model && !aiModel.trim()) setAutoModel(r.model);
+                setAiTest({ ok: r.ok, lines: r.lines });
               }}
             >
-              Test key
+              {aiTest.busy ? "Testing…" : "Test key"}
             </button>
-            {aiTest && <span className="text-xs text-muted">{aiTest}</span>}
           </div>
-          <p className="text-xs text-muted">When it's on, the text you type is sent to Google for those unsure notes. Leave the key empty to keep everything on the phone.</p>
+          {aiTest.lines.length > 0 && !aiTest.busy && (
+            <pre className={`whitespace-pre-wrap break-words rounded-xl bg-bg p-3 text-xs ${aiTest.ok ? "" : "text-warn"}`} role="status">
+              {aiTest.lines.join("\n")}
+            </pre>
+          )}
+          <p className="text-xs text-muted">
+            With a key, what you type or say is sent to Google (with today's date, your area names and today's schedule) so it can be understood.
+            If it's slow, offline or fails, the built-in rules answer instead, silently. Leave the key empty to keep everything on the phone.
+          </p>
+        </Section>
+
+        <Section title="What I've learned from you" hint={learned.length ? `${learned.length} fix${learned.length === 1 ? "" : "es"} remembered` : "Fix a category or time once and I remember"}>
+          {learned.length === 0 ? (
+            <p className="text-sm text-muted">Nothing yet. When you correct an area or a time on the “Got it” card, it shows up here and is used next time, online or offline.</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {learned.map((r) => {
+                const a = p.areas.find((x) => x.id === r.areaId);
+                return (
+                  <li key={r.id} className="flex min-h-11 items-center gap-2 rounded-xl bg-bg px-3 text-sm">
+                    <span className="min-w-0 flex-1 truncate">
+                      “{r.words.join(" ")}” → {a ? `${a.emoji} ${a.name}` : ""}
+                      {a && r.time ? " · " : ""}
+                      {r.time ? `at ${r.time}` : ""}
+                    </span>
+                    <button type="button" aria-label={`Forget ${r.words.join(" ")}`} onClick={() => actions.forgetLearned(r.id)} className="flex h-10 w-10 items-center justify-center text-muted">
+                      ✕
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {learned.length > 0 && (
+            <button type="button" className={`${btn.ghost} min-h-11`} onClick={() => actions.clearLearned()}>
+              Forget everything I've learned
+            </button>
+          )}
         </Section>
 
         <Section title="Notifications" hint="Permissions, battery and what you want to hear about">

@@ -1,5 +1,5 @@
 import { toISO } from "./dates";
-import { DEFAULT_BILLS, DEFAULT_BORED, SEED_VERSION, SESSION_AREAS } from "./defaults";
+import { AREA_ORDER, DEFAULT_BILLS, DEFAULT_BORED, EXTRA_AREAS, SEED_VERSION, SESSION_AREAS } from "./defaults";
 import { toMin, withDefaults } from "./profile";
 import type { AppData } from "./types";
 
@@ -10,6 +10,7 @@ import type { AppData } from "./types";
  *  1. your session areas (Power BI, Meditation, …) next to the ones you have, and hours that fit your routine
  *     (WFH 09:00–17:00, end-of-day check at 22:00)
  *  2. bills, chores and weekend admin, plus the "Getting bored?" ideas
+ *  3. the rest of your categories (Home, Finance, Travel, Learning, Shopping, Ideas & Notes), tidily ordered
  */
 export function seedIfNeeded(d: AppData, today = new Date()): AppData {
   const from = d.settings.seeded ?? 0;
@@ -48,6 +49,18 @@ export function seedIfNeeded(d: AppData, today = new Date()): AppData {
       bills: out.bills ?? DEFAULT_BILLS.map((b) => ({ ...structuredClone(b), startDate: b.schedule.type === "every" ? start : undefined })),
       bored: out.bored ?? structuredClone(DEFAULT_BORED),
     };
+  }
+
+  if (from < 3) {
+    // The full set of categories: add what's missing, give the two generic ones their clearer names, tidy the order.
+    const p = withDefaults(out.profile);
+    const have = new Set(p.areas.map((a) => a.id));
+    const renamed = p.areas.map((a) =>
+      a.id === "family" && a.name === "Family" ? { ...a, name: "Family & Friends" } : a.id === "fun" && a.name === "Fun" ? { ...a, name: "Going out" } : a,
+    );
+    const all = [...renamed, ...EXTRA_AREAS.filter((a) => !have.has(a.id)).map((a) => structuredClone(a))];
+    const rank = (id: string) => (id === "others" ? 1000 : AREA_ORDER.includes(id) ? AREA_ORDER.indexOf(id) : 500);
+    out = { ...out, profile: { ...p, areas: [...all].sort((a, b) => rank(a.id) - rank(b.id)) } };
   }
 
   return { ...out, settings: { ...out.settings, seeded: SEED_VERSION } };

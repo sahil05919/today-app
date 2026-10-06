@@ -5,7 +5,7 @@ import { fromISO } from "@/lib/dates";
 import { eventSpan, eventsOn } from "@/lib/fixed";
 import { toHHMM, withDefaults } from "@/lib/profile";
 import { planSessions, plannedForDay, type PlannedSession } from "@/lib/schedule";
-import { choreKey, entryFor, sessionKey, weekProgress, type ProgressRow } from "@/lib/sessions";
+import { choreKey, entryFor, sessionKey, weekProgress } from "@/lib/sessions";
 import { actions } from "@/lib/store";
 import type { AppData, Bill, FixedEvent, RhythmItem } from "@/lib/types";
 import { CheckIcon } from "./icons";
@@ -22,7 +22,7 @@ const hm = (min: number) => toHHMM(min);
 const minOf = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3));
 
 /** The day at a glance: events, sessions, bills and check-ins in order. Tap the circle to count it. */
-export function TodayPlan({ data, ctx, onProgress, openPanel }: { data: AppData; ctx: ViewCtx; onProgress: () => void; openPanel?: (p: Panel) => void }) {
+export function TodayPlan({ data, ctx, openPanel }: { data: AppData; ctx: ViewCtx; openPanel?: (p: Panel) => void }) {
   const [open, setOpen] = useState<Row | null>(null);
   const p = useMemo(() => withDefaults(data.profile), [data.profile]);
   const dow = fromISO(ctx.today).getDay();
@@ -50,8 +50,7 @@ export function TodayPlan({ data, ctx, onProgress, openPanel }: { data: AppData;
     return out.sort((a, b) => a.time - b.time);
   }, [data, p.rhythm, ctx.today, dow]);
 
-  const progress = useMemo(() => weekProgress(data, ctx.today), [data, ctx.today]);
-  if (!progress.length && !rows.length) return null;
+  if (!rows.length && !(data.profile?.areas ?? []).some((a) => a.target)) return null;
 
   const toggle = (row: Row) => {
     if (row.kind === "session") {
@@ -130,34 +129,9 @@ export function TodayPlan({ data, ctx, onProgress, openPanel }: { data: AppData;
         <p className="px-0.5 py-2 text-sm text-muted">Nothing planned for today. A light day is fine.</p>
       )}
 
-      {progress.length > 0 && (
-        <button onClick={onProgress} className="mt-2 grid w-full grid-cols-5 gap-2 border-t border-line pt-3 text-left" aria-label="Weekly progress">
-          {progress.slice(0, 5).map((r) => (
-            <ProgressMini key={r.area.id} r={r} />
-          ))}
-        </button>
-      )}
-
       {open && open.kind === "event" && <EventSheet event={open.e} data={data} ctx={ctx} onClose={() => setOpen(null)} />}
       {open && open.kind !== "event" && <SessionSheet row={open} ctx={ctx} onClose={() => setOpen(null)} openPanel={openPanel} />}
     </section>
-  );
-}
-
-function ProgressMini({ r }: { r: ProgressRow }) {
-  const pct = Math.min(100, Math.round((r.done / r.target) * 100));
-  return (
-    <span className="block text-center">
-      <span className="block text-base leading-none" aria-hidden="true">
-        {r.area.emoji}
-      </span>
-      <span className="mt-1 block text-[11px] font-semibold tabular-nums">
-        {r.done}/{r.target}
-      </span>
-      <span className="mt-0.5 block h-1 overflow-hidden rounded-full bg-line">
-        <span className={`block h-full rounded-full ${r.done >= r.target ? "bg-accent" : "bg-accent/60"}`} style={{ width: `${pct}%` }} />
-      </span>
-    </span>
   );
 }
 
@@ -243,7 +217,7 @@ function SessionSheet({ row, ctx, onClose, openPanel }: { row: Exclude<Row, { ki
 }
 
 /** Edit or delete a fixed event. Changing it re-plans the week's sessions around the new time. */
-function EventSheet({ event, data, ctx, onClose }: { event: FixedEvent; data: AppData; ctx: ViewCtx; onClose: () => void }) {
+export function EventSheet({ event, data, ctx, onClose }: { event: FixedEvent; data: AppData; ctx: ViewCtx; onClose: () => void }) {
   const areas = withDefaults(data.profile).areas.filter((a) => a.target);
   const set = (patch: Partial<FixedEvent>) => actions.updateEvent(event.id, patch);
   const label = "mb-1 block text-xs font-medium text-muted";

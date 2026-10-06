@@ -53,6 +53,35 @@ sessions?". Notifications have **Done / Snooze / Skip**; all times and on/off sw
 area) only when the built-in rules are unsure. Offline or on any error, the rules answer is used. The key stays on the device
 and is not in your backup. Defaults are applied once per install (`lib/seed.ts`); anything you change sticks.
 
+## One button: type or say anything
+
+The home screen is the ring on top, one big input (with a mic), and today's list. Everything else is in the menu.
+Whatever you type or say is understood and filed (`lib/understand.ts`), in English, Hinglish or Hindi:
+
+| You say | It does |
+|---|---|
+| `did Power BI`, `meditation kiya`, `kal walk kar li` | counts the session ("Power BI session 15") |
+| `milk khatam`, `need sugar`, `doodh lana hai` | straight to the shopping list |
+| `event Wednesday 6pm dinner`, `movie friday 8pm` | a fixed block; sessions re-flow around it |
+| `paid rent`, `rent bhar diya` | marks the bill paid |
+| `reply starred email` | Work, at your email time (20:00), not "Later" |
+| `pay electricity bill friday` | Finance, that day |
+| `idea: a habit app` | Ideas & Notes |
+
+After every capture a "Got it: Reply to starred email · Work · today 20:00" card appears. Tap the area or the time to
+fix it, and it remembers that fix next time, offline too (Settings → What I've learned).
+
+**Two brains, one pipeline.** Offline rules (`lib/dictionary.ts`: ~18 categories of English, Hinglish and Devanagari keywords)
+always work. With a free Gemini key (Settings → Smart parsing) Gemini reads your profile, rhythm, bills and today's schedule and
+answers in JSON; it must be confident, every field is validated, a typed date or @area always wins, and on any problem
+(offline, slow over 5 s, rate-limited) the rules answer silently. Your learned fixes win over both. The key is stored only
+on the device (never in code, logs or backups).
+
+**Off days.** Up to 2 a week (Mon–Sun). An off day keeps one short session (≤ 20 min) and spreads the rest across the
+remaining days. After 2, the button disables.
+
+**Progress.** One ring ("This week: 72%"), dots per area, your streak (off days don't break it), one kind line a day.
+
 ## Capture syntax
 
 `kal shaam 6 baje mummy ko call karna hai !`  ·  `Report by end of this week #work ~1h30m @work`  ·  `har somvar gym`

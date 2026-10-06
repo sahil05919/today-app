@@ -8,8 +8,25 @@ import { extractRecurrence, firstOccurrence } from "./recur";
 import type { ISODate, Profile, Recurrence, TemplateId } from "./types";
 
 export interface ParsedCapture {
-  /** What this capture creates: a task (default), a fixed event ("event …") or shopping-list items ("groceries: …"). */
-  kind?: "task" | "event" | "grocery";
+  /**
+   * What this capture becomes: a task (default; reminders and chores are tasks with a time), a fixed event,
+   * shopping-list items, a finished session ("did Power BI"), a paid bill, or a note / idea.
+   */
+  kind?: "task" | "event" | "grocery" | "session" | "paid" | "note";
+  /** For a finished session: which area, and the day it was done. */
+  session?: { areaId: string; date: ISODate };
+  /** For "paid rent": which bill. */
+  paidBillId?: string;
+  /** Where the area came from. A typed @area beats anything learned or guessed. */
+  areaSource?: "explicit" | "learned" | "ai" | "guess";
+  /** Where the time came from. A typed time beats anything suggested. */
+  timeSource?: "typed" | "learned" | "ai" | "suggested";
+  /** Why a time was suggested ("emails time", "after work"), for the confirmation card. */
+  slotReason?: string;
+  /** Which brain produced this. */
+  source?: "rules" | "ai";
+  /** Gemini's hint for where an undated task fits the rhythm ("emails", "after-work", …). */
+  slotHint?: string;
   /** For events: the block it occupies. No start = all day. */
   event?: { start?: string; end?: string; countsFor?: string };
   /** For "groceries: milk, sugar". */
@@ -108,6 +125,7 @@ export function parseCapture(raw: string, now = new Date(), profile?: Profile): 
   // Personal phrases first ("office ke baad" → "at 18:30"), then Hinglish → English.
   let text = ` ${normalizeHinglish(expandShortcuts(noUrls, me))} `;
   let area: string | undefined;
+  let areaSource: ParsedCapture["areaSource"];
   let important = false;
   const tags: string[] = [];
   let template: TemplateId | undefined;
@@ -126,6 +144,7 @@ export function parseCapture(raw: string, now = new Date(), profile?: Profile): 
     const a = findArea(me.areas, String(word));
     if (!a) return full;
     area = a.id;
+    areaSource = "explicit";
     return sp;
   });
 
@@ -182,14 +201,25 @@ export function parseCapture(raw: string, now = new Date(), profile?: Profile): 
     due = toISO(thisWeekend(now));
     text = text.replace(weekend[0], " ");
   } else if (hit) {
-    due = toISO(hit.start.date());
-    dueTime = readTime(hit);
-    if (hit.end && hit.end.isCertain("hour")) {
-      const e = hit.end.date();
+    // A sentence can put the day and the time apart ("dentist 3pm 15 oct", "7 baje dinner kal"):
+    // take the day from whichever part names one, and the time from whichever part names one.
+    const names = (h: chrono.ParsedResult) => h.start.isCertain("day") || h.start.isCertain("weekday") || h.start.isCertain("month");
+    const dateHit = hits.find((h) => h.text.trim().length >= 3 && names(h)) ?? hit;
+    const timeHit = hits.find((h) => h.start.isCertain("hour"));
+    // No part names a day but one names a time: that part's own (forward-looking) date is the day.
+    const dayFrom = names(dateHit) ? dateHit : (timeHit ?? dateHit);
+    due = toISO(dayFrom.start.date());
+    dueTime = timeHit ? readTime(timeHit) : undefined;
+    if (timeHit?.end && timeHit.end.isCertain("hour")) {
+      const e = timeHit.end.date();
       dueEndTime = `${String(e.getHours()).padStart(2, "0")}:${String(e.getMinutes()).padStart(2, "0")}`;
     }
-    const before = text.slice(0, hit.index).replace(/\b(by|on|due|before|until|for|at)\s*$/i, "");
-    text = before + " " + text.slice(hit.index + hit.text.length);
+    // Remove every part we used from the title, last one first so the earlier positions stay valid.
+    const used = [...new Set([dateHit, timeHit, dayFrom].filter((h): h is chrono.ParsedResult => !!h))].sort((a, b) => b.index - a.index);
+    for (const h of used) {
+      const before = text.slice(0, h.index).replace(/\b(by|on|due|before|until|for|at)\s*$/i, "");
+      text = before + " " + text.slice(h.index + h.text.length);
+    }
   } else if (dayOfMonth) {
     // A bare "15th" (chrono ignores it): the next 15th, counting today.
     due = firstOccurrence({ freq: "monthly", interval: 1, monthDay: Math.min(31, +dayOfMonth[1]) }, toISO(now));
@@ -207,7 +237,10 @@ export function parseCapture(raw: string, now = new Date(), profile?: Profile): 
   }
   title = title.charAt(0).toUpperCase() + title.slice(1);
   // No @area given: guess from the words, else Others.
-  area = area ?? inferArea(title, me.areas);
+  if (!area) {
+    area = inferArea(title, me.areas);
+    areaSource = area ? "guess" : undefined;
+  }
 
   return {
     title,
@@ -220,6 +253,9 @@ export function parseCapture(raw: string, now = new Date(), profile?: Profile): 
     template,
     recur: rec.recur,
     area,
+    areaSource,
+    timeSource: dueTime ? "typed" : undefined,
+    source: "rules",
     notes: urls.length ? urls.join("\n") : undefined,
   };
 }

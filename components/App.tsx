@@ -7,7 +7,7 @@ import type { TapTarget } from "@/lib/notifications/native";
 import { withDefaults } from "@/lib/profile";
 import { actions, getData, useData } from "@/lib/store";
 import type { ISODate, Task } from "@/lib/types";
-import { Capture, type CaptureCommand } from "./Capture";
+import type { CaptureCommand } from "./Capture";
 import { CheckIn } from "./CheckIn";
 import { EventsSheet } from "./EventsSheet";
 import { BillsSheet, BoredSheet, GoalsSheet, ShoppingSheet } from "./ListSheets";
@@ -18,7 +18,7 @@ import { PostponeSheet } from "./PostponeSheet";
 import { ProfileSheet } from "./ProfileSheet";
 import { TimerBar } from "./TimerBar";
 import { Patterns, WeeklyReview } from "./WeeklyReview";
-import { CalendarIcon, InboxIcon, LifebuoyIcon, MenuIcon, SunIcon } from "./icons";
+import { MenuIcon } from "./icons";
 import { LaterView } from "./LaterView";
 import { MenuSheet } from "./MenuSheet";
 import { NativeShell } from "./NativeShell";
@@ -27,10 +27,8 @@ import { Rescue } from "./Rescue";
 import { TaskSheet } from "./TaskSheet";
 import { TodayView } from "./TodayView";
 import { WhenSheet } from "./WhenSheet";
-import type { Panel, ViewCtx } from "./ui";
+import { Sheet, type Panel, type ViewCtx } from "./ui";
 import { WeekView } from "./WeekView";
-
-type Tab = "today" | "week" | "later";
 
 /** Re-renders when the date rolls over (e.g. app left open overnight). */
 function useToday(): ISODate {
@@ -50,7 +48,6 @@ function useToday(): ISODate {
 export default function App() {
   const data = useData();
   const today = useToday();
-  const [tab, setTab] = useState<Tab>("today");
   const [weekDay, setWeekDay] = useState<ISODate | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
@@ -79,7 +76,6 @@ export default function App() {
   // Tapping a notification takes you to the right place.
   const onNotificationTap = useCallback((t: TapTarget) => {
     const task = t.taskId ? getData().tasks.find((x) => x.id === t.taskId) : undefined;
-    setTab("today");
     if (t.kind === "morning") setPanel("morning");
     else if (t.kind === "wrap") setPanel("evening");
     else if (t.kind === "review") setPanel("review");
@@ -100,7 +96,6 @@ export default function App() {
     if (shared.length) {
       // Many apps repeat the link in both text and url; keep each distinct piece once.
       const parts = shared.filter((p, i) => !shared.some((o, j) => j !== i && o.includes(p) && (o.length > p.length || j < i)));
-      setTab("today");
       setCommand({ kind: "prefill", text: parts.join(" ").trim(), nonce });
     } else if (q.get("voice")) setCommand({ kind: "voice", nonce });
     else if (q.get("new")) setCommand({ kind: "new", nonce });
@@ -113,7 +108,6 @@ export default function App() {
     () =>
       listenForLaunchIntents((i) => {
         const nonce = Date.now();
-        setTab("today");
         if (i.kind === "share") {
           const parts = [i.title, i.text].filter((v): v is string => !!v?.trim());
           const dedup = parts.filter((p, k) => !parts.some((o, j) => j !== k && o.includes(p) && (o.length > p.length || j < k)));
@@ -158,50 +152,33 @@ export default function App() {
   const postponed = data.tasks.find((t) => t.status === "open" && (t.snoozeCount ?? 0) >= 3);
   const openTask = openId ? data.tasks.find((t) => t.id === openId) : undefined;
   const selectedDay = weekDay && weekDay >= today ? weekDay : today;
-  const title = tab === "today" ? greeting() : tab === "week" ? "This week" : "Later";
-  const subtitle = tab === "today" ? longDate() : tab === "week" ? "The next seven days" : "No rush on these";
-
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: "today", label: "Today", icon: <SunIcon /> },
-    { id: "week", label: "This week", icon: <CalendarIcon /> },
-    { id: "later", label: "Later", icon: <InboxIcon /> },
-  ];
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col">
       <PWA />
       <NativeShell data={data} onTap={onNotificationTap} />
-      <header className="flex items-start justify-between px-5 pb-1 pt-[max(1.5rem,env(safe-area-inset-top))]">
+      <header className="flex items-start justify-between px-5 pb-2 pt-[max(1.5rem,env(safe-area-inset-top))]">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          <p className="text-sm text-muted">{subtitle}</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{greeting()}</h1>
+          <p className="text-sm text-muted">{longDate()}</p>
         </div>
-        <div className="-mr-2 flex gap-1">
-          <button onClick={() => setPanel("rescue")} aria-label="Rescue my day" className="flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-surface hover:text-accent">
-            <LifebuoyIcon />
-          </button>
-          <button onClick={() => setPanel("menu")} aria-label="Menu" className="flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-surface">
-            <MenuIcon />
-          </button>
-        </div>
+        <button onClick={() => setPanel("menu")} aria-label="Menu" className="-mr-2 flex h-12 w-12 items-center justify-center rounded-full text-muted hover:bg-surface">
+          <MenuIcon width={24} height={24} />
+        </button>
       </header>
 
-      <main className="flex-1 px-4 pb-52">
-        {tab === "today" && (
-          <TodayView
-            data={data}
-            ctx={ctx}
-            onRescue={() => setPanel("rescue")}
-            openPanel={setPanel}
-            onPrefill={(text) => setCommand({ kind: "prefill", text, nonce: Date.now() })}
-          />
-        )}
-        {tab === "week" && <WeekView data={data} ctx={ctx} selected={selectedDay} onSelect={setWeekDay} />}
-        {tab === "later" && <LaterView data={data} ctx={ctx} />}
+      <main className={`flex-1 px-4 ${data.settings.timer ? "pb-32" : "pb-10"}`}>
+        <TodayView
+          data={data}
+          ctx={ctx}
+          command={command}
+          openPanel={setPanel}
+          onPrefill={(text) => setCommand({ kind: "prefill", text, nonce: Date.now() })}
+        />
       </main>
 
       {toast && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-40 z-30 flex justify-center px-4" role="status">
+        <div className={`pointer-events-none fixed inset-x-0 z-30 flex justify-center px-4 ${data.settings.timer ? "bottom-28" : "bottom-6"}`} role="status">
           <div className="anim-fade pointer-events-auto flex items-center gap-3 rounded-full bg-ink py-2 pl-4 pr-2 text-sm text-bg shadow-lg">
             <span>{toast.msg}</span>
             {toast.undo && (
@@ -219,28 +196,26 @@ export default function App() {
         </div>
       )}
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg/90 backdrop-blur">
-        <div className="mx-auto max-w-md px-4 pt-3">
-          <TimerBar data={data} ctx={ctx} />
-          <Capture ctx={ctx} defaultDate={tab === "week" ? selectedDay : undefined} command={command} />
-          <nav className="mt-1 grid grid-cols-3 pb-[max(0.5rem,env(safe-area-inset-bottom))]" aria-label="Views">
-            {tabs.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                aria-current={tab === t.id ? "page" : undefined}
-                className={`flex min-h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium ${tab === t.id ? "text-accent" : "text-muted"}`}
-              >
-                {t.icon}
-                {t.label}
-              </button>
-            ))}
-          </nav>
+      {data.settings.timer && (
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg/90 backdrop-blur">
+          <div className="mx-auto max-w-md px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
+            <TimerBar data={data} ctx={ctx} />
+          </div>
         </div>
-      </div>
+      )}
 
       {openTask && (
         <TaskSheet key={openTask.id} task={openTask} ctx={ctx} onClose={() => setOpenId(null)} timerOn={data.settings.timer?.taskId === openTask.id} />
+      )}
+      {panel === "week" && (
+        <Sheet title="This week" onClose={() => setPanel(null)}>
+          <WeekView data={data} ctx={ctx} selected={selectedDay} onSelect={setWeekDay} />
+        </Sheet>
+      )}
+      {panel === "later" && (
+        <Sheet title="Later" onClose={() => setPanel(null)}>
+          <LaterView data={data} ctx={ctx} />
+        </Sheet>
       )}
       {panel === "rescue" && <Rescue tasks={data.tasks} ctx={ctx} onClose={() => setPanel(null)} />}
       {panel === "menu" && <MenuSheet data={data} ctx={ctx} onClose={() => setPanel(null)} onCheckIn={startCheckIn} onPanel={setPanel} />}
@@ -253,7 +228,7 @@ export default function App() {
       {panel === "bills" && <BillsSheet data={data} ctx={ctx} onClose={() => setPanel(null)} />}
       {panel === "goals" && <GoalsSheet data={data} ctx={ctx} onClose={() => setPanel(null)} />}
       {panel === "bored" && <BoredSheet data={data} ctx={ctx} onClose={() => setPanel(null)} />}
-      {panel === "me" && <ProfileSheet profile={profile} bills={data.bills ?? []} ctx={ctx} onClose={() => setPanel(null)} />}
+      {panel === "me" && <ProfileSheet profile={profile} bills={data.bills ?? []} learned={data.learned ?? []} ctx={ctx} onClose={() => setPanel(null)} />}
       {panel === "plan" && <PlanDay data={data} ctx={ctx} onClose={() => setPanel(null)} />}
       {postponed && !openId && !when && !panel && !checkIn && (
         <PostponeSheet key={postponed.id} task={postponed} ctx={ctx} onClose={() => actions.update(postponed.id, { snoozeCount: 0 })} />

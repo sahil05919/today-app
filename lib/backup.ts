@@ -10,6 +10,7 @@ import type {
   DayEntry,
   FixedEvent,
   GroceryItem,
+  LearnedRule,
   MonthGoals,
   Profile,
   Recurrence,
@@ -213,6 +214,21 @@ function cleanGoals(v: any): MonthGoals | undefined {
   };
 }
 
+function cleanLearned(v: any): LearnedRule[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .filter((r: any) => r && Array.isArray(r.words) && r.words.length && r.words.every((w: unknown) => typeof w === "string"))
+    .slice(0, 200)
+    .map((r: any) => ({
+      id: str(r.id, 64) || crypto.randomUUID(),
+      words: r.words.slice(0, 5).map((w: string) => w.slice(0, 40)),
+      areaId: str(r.areaId, 40),
+      time: hhmmOf(r.time),
+      hits: Number.isInteger(r.hits) && r.hits > 0 ? r.hits : 1,
+      at: num(r.at) ?? Date.now(),
+    }));
+}
+
 function cleanIdeas(v: any): BoredIdea[] | undefined {
   if (!Array.isArray(v)) return undefined;
   return v
@@ -327,6 +343,8 @@ export function migrate(raw: unknown): AppData {
     grocery: cleanGrocery(r.grocery),
     goals: cleanGoals(r.goals),
     bored: cleanIdeas(r.bored),
+    learned: cleanLearned(r.learned),
+    offDays: Array.isArray(r.offDays) ? [...new Set<string>(r.offDays.filter((d: unknown) => isISO(d)))].slice(-120) : undefined,
     tasks: r.tasks.map(cleanTask).filter((t: Task | null): t is Task => !!t),
     settings: {
       firstRunAt: num(s.firstRunAt) ?? Date.now(),

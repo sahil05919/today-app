@@ -11,6 +11,8 @@ import { pendingOn, planSessions } from "./schedule";
 import type { ParsedCapture } from "./parse";
 import { TEMPLATES } from "./templates";
 import { billKey } from "./bills";
+import { forget, learnFix } from "./learn";
+import { canTakeOffDay } from "./offday";
 import type { AppData, Bill, BoredIdea, CheckInStatus, DayEntry, FixedEvent, Goal, ISODate, Profile, SessionLog, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
@@ -391,6 +393,20 @@ export const actions = {
     actions.setEntry(wrapKey(date), "done");
   },
 
+  // --- Off days (at most 2 a week; see lib/offday.ts) ---------------------------------
+  /** Marks a day off. Returns false if it's already off or the week's two are used up. */
+  takeOffDay(date: ISODate = todayISO()): boolean {
+    const d = ensure();
+    if (!canTakeOffDay(d, date)) return false;
+    commit({ ...d, offDays: [...(d.offDays ?? []), date].sort().slice(-120) });
+    return true;
+  },
+
+  cancelOffDay(date: ISODate = todayISO()) {
+    const d = ensure();
+    commit({ ...d, offDays: (d.offDays ?? []).filter((x) => x !== date) });
+  },
+
   // --- Fixed events ---------------------------------------------------------
   /** Adds a fixed block. Sessions re-plan around it on their own. */
   addEvent(p: ParsedCapture): FixedEvent {
@@ -432,7 +448,7 @@ export const actions = {
       .filter((n) => n && !have.has(n.toLowerCase()))
       .map((name) => ({ id: uid(), name, done: false, addedAt: Date.now() }));
     if (fresh.length) commit({ ...d, grocery: [...(d.grocery ?? []), ...fresh] });
-    return fresh.length;
+    return fresh.map((g) => g.id);
   },
 
   toggleGrocery(id: string) {
@@ -455,6 +471,33 @@ export const actions = {
   setBills(bills: Bill[]) {
     const d = ensure();
     commit({ ...d, bills });
+  },
+
+  /** Takes back "paid": clears the done mark and restores the previous last-done date. */
+  uncompleteBill(id: string, due: ISODate, prevLastDone?: ISODate) {
+    const d = ensure();
+    commit({
+      ...d,
+      log: (d.log ?? []).filter((e) => e.key !== billKey(id, due)),
+      bills: (d.bills ?? []).map((b) => (b.id === id ? { ...b, lastDone: prevLastDone } : b)),
+    });
+  },
+
+  // --- Learning from your fixes (offline, on this device) -----------------------------
+  /** Remembers "titles like this go to this area / time". Used next time, offline and online. */
+  learn(title: string, fix: { areaId?: string; time?: string }) {
+    const d = ensure();
+    commit({ ...d, learned: learnFix(d.learned, title, fix) });
+  },
+
+  forgetLearned(id: string) {
+    const d = ensure();
+    commit({ ...d, learned: forget(d.learned, id) });
+  },
+
+  clearLearned() {
+    const d = ensure();
+    commit({ ...d, learned: [] });
   },
 
   /** Marks one due date done. "Every N days" chores start counting again from today. */

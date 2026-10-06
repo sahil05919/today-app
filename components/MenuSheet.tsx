@@ -53,6 +53,53 @@ export function MenuSheet({
   return (
     <Sheet title="Menu" onClose={onClose}>
       <div className="space-y-6">
+        <section aria-label="Go to">
+          <button className={`${btn.primary} min-h-12 w-full text-left`} onClick={() => onPanel("me")}>
+            ⚙️ Settings
+          </button>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {(
+              [
+                ["week", "📅 This week"],
+                ["later", "📥 Later"],
+                ["shopping", "🛒 Shopping list"],
+                ["bills", "💳 Bills & chores"],
+                ["goals", "🎯 Must-haves"],
+                ["review", "🗓️ Weekly review"],
+              ] as [Panel, string][]
+            ).map(([p, label]) => (
+              <button key={p} className={`${btn.ghost} min-h-12 text-left`} onClick={() => onPanel(p)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <details className="mt-2 rounded-2xl border border-line">
+            <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between px-4 text-sm font-medium [&::-webkit-details-marker]:hidden">
+              More
+              <span aria-hidden="true" className="text-muted">
+                ›
+              </span>
+            </summary>
+            <div className="grid grid-cols-2 gap-2 border-t border-line p-3">
+              {(
+                [
+                  ["rescue", "🛟 Rescue my day"],
+                  ["plan", "🗺️ Plan my tasks"],
+                  ["morning", "☀️ Pick my 3"],
+                  ["evening", "🌙 Wrap up"],
+                  ["patterns", "📈 My patterns"],
+                  ["bored", "🎲 Getting bored?"],
+                  ["events", "🎟️ London events"],
+                ] as [Panel, string][]
+              ).map(([p, label]) => (
+                <button key={p} className={`${btn.ghost} min-h-12 text-left`} onClick={() => onPanel(p)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </details>
+        </section>
+
         <section>
           <h3 className="mb-2 text-sm font-semibold">Appearance</h3>
           <div className="flex rounded-xl bg-bg p-1 text-sm font-medium" role="group" aria-label="Theme">
@@ -67,31 +114,6 @@ export function MenuSheet({
                 className={`min-h-11 flex-1 rounded-lg capitalize ${theme === t ? "bg-surface shadow-sm" : "text-muted"}`}
               >
                 {t === "system" ? "Follow phone" : t}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section>
-          <h3 className="mb-2 text-sm font-semibold">Plan & reflect</h3>
-          <div className="grid grid-cols-2 gap-2">
-            {(
-              [
-                ["me", "⚙️ Settings"],
-                ["shopping", "🛒 Shopping list"],
-                ["bills", "💳 Bills & chores"],
-                ["goals", "🎯 Must-haves"],
-                ["review", "🗓️ Weekly review"],
-                ["patterns", "📈 My patterns"],
-                ["bored", "🎲 Getting bored?"],
-                ["plan", "🗺️ Plan my tasks"],
-                ["morning", "☀️ Pick my 3"],
-                ["evening", "🌙 Wrap up"],
-                ["events", "🎟️ London events"],
-              ] as [Panel, string][]
-            ).map(([p, label]) => (
-              <button key={p} className={`${btn.ghost} min-h-12 text-left`} onClick={() => onPanel(p)}>
-                {label}
               </button>
             ))}
           </div>

@@ -1,7 +1,7 @@
 import type { Area, Bill, BoredIdea, RhythmItem, Slot } from "./types";
 
 /** Bump when new default areas / rhythm should be offered to existing installs (see lib/seed.ts). */
-export const SEED_VERSION = 2;
+export const SEED_VERSION = 3;
 
 const WEEKDAYS = [1, 2, 3, 4, 5];
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
@@ -182,4 +182,39 @@ export const DEFAULT_BORED: BoredIdea[] = [
   { id: "b5", text: "Tidy one drawer or shelf" },
   { id: "b6", text: "Plan a weekend outing", areaId: "fun" },
   { id: "b7", text: "Write down three things going well" },
+];
+
+/**
+ * The rest of your categories. Together with the session areas and the originals this gives:
+ * Work, Career, Health, Learning, Home, Shopping, Finance, Family & Friends, Travel, Admin, Going out,
+ * Ideas & Notes, Others (plus Power BI / Meditation / Job / English / Walking with their weekly targets).
+ */
+export const EXTRA_AREAS: Area[] = [
+  { id: "learning", name: "Learning", emoji: "📚" },
+  { id: "home", name: "Home", emoji: "🏠" },
+  { id: "shopping", name: "Shopping", emoji: "🛍️" },
+  { id: "finance", name: "Finance", emoji: "💰" },
+  { id: "travel", name: "Travel", emoji: "✈️" },
+  { id: "notes", name: "Ideas & Notes", emoji: "📝" },
+];
+
+/** Tidy order for the area list. Unknown (your own) areas go before "Others". */
+export const AREA_ORDER = [
+  "powerbi",
+  "meditation",
+  "job",
+  "english",
+  "walking",
+  "work",
+  "career",
+  "health",
+  "learning",
+  "home",
+  "shopping",
+  "finance",
+  "family",
+  "travel",
+  "admin",
+  "fun",
+  "notes",
 ];

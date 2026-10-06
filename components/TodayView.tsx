@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { backupDue, exportBackup } from "@/lib/backup";
 import { diffDays, toISO } from "@/lib/dates";
+import { OFF_LIMIT_MESSAGE, MAX_OFF_DAYS, isOffDay, offDaysLeft } from "@/lib/offday";
 import { actions } from "@/lib/store";
 import type { AppData } from "@/lib/types";
 import { MAX_FOCUS } from "@/lib/types";
@@ -9,10 +10,10 @@ import { balanceNudge } from "@/lib/balance";
 import { computeNudges, nudgeKey } from "@/lib/nudges";
 import { isNative } from "@/lib/platform";
 import { weekStart } from "@/lib/stats";
-import { EventsStrip } from "./EventsSheet";
+import { Capture, type CaptureCommand } from "./Capture";
+import { ProgressCard } from "./ProgressCard";
 import { TaskCard } from "./TaskCard";
 import { ProgressSheet, TodayPlan } from "./TodayPlan";
-import { CheckIcon } from "./icons";
 import { btn, Empty, SectionTitle, sortTasks, type Panel, type ViewCtx } from "./ui";
 
 function Nudge({ emoji, title, body, action, onAction }: { emoji: string; title: string; body: string; action: string; onAction: () => void }) {
@@ -30,16 +31,20 @@ function Nudge({ emoji, title, body, action, onAction }: { emoji: string; title:
   );
 }
 
+/**
+ * The home screen, built to be one glance and one button:
+ * progress on top, then the big input (type or speak), then today's list. Everything else lives in the menu.
+ */
 export function TodayView({
   data,
   ctx,
-  onRescue,
+  command,
   openPanel,
   onPrefill,
 }: {
   data: AppData;
   ctx: ViewCtx;
-  onRescue: () => void;
+  command?: CaptureCommand;
   openPanel: (p: Panel) => void;
   onPrefill: (text: string) => void;
 }) {
@@ -132,105 +137,79 @@ export function TodayView({
       </div>,
     );
 
+  const left = offDaysLeft(data, ctx.today);
+  const off = isOffDay(data, ctx.today);
+  const takeOff = () => {
+    if (actions.takeOffDay(ctx.today)) ctx.notify("Off day. Today is lighter, and the rest moves later in the week.", () => actions.cancelOffDay(ctx.today));
+  };
+
   return (
-    <div>
-      {nudges[0] && <div className="mb-3">{nudges[0]}</div>}
+    <div className="space-y-3.5">
+      {nudges[0]}
 
-      {goals && goals.items.length > 0 && (
-        <section aria-label="This month's must-haves" className="mb-3 rounded-2xl border border-line bg-surface px-3.5 py-2.5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">🎯 This month</h2>
-            <button onClick={() => openPanel("goals")} className="min-h-9 px-1 text-xs text-muted underline-offset-2 hover:underline">
-              Edit
-            </button>
-          </div>
-          <ul>
-            {goals.items.map((g) => (
-              <li key={g.id}>
-                <button
-                  onClick={() => actions.setGoals(goals.month, goals.items.map((x) => (x.id === g.id ? { ...x, done: !x.done } : x)))}
-                  className="flex min-h-11 w-full items-center gap-3 text-left"
-                  aria-pressed={g.done}
-                >
-                  <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${g.done ? "border-accent bg-accent text-accent-ink" : "border-muted/40 text-transparent"}`}>
-                    <CheckIcon width={11} height={11} />
-                  </span>
-                  <span className={`text-[15px] ${g.done ? "text-muted line-through" : "font-medium"}`}>{g.text}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <TodayPlan data={data} ctx={ctx} onProgress={() => setProgress(true)} openPanel={openPanel} />
+      <ProgressCard data={data} ctx={ctx} onOpen={() => setProgress(true)} onGoals={() => openPanel("goals")} />
       {progress && <ProgressSheet data={data} ctx={ctx} onClose={() => setProgress(false)} />}
 
-      {(focus.length > 0 || !hasSessions) && <SectionTitle right={`${focus.length}/${MAX_FOCUS}`}>Your focus</SectionTitle>}
-      {focus.length ? (
-        <div className="space-y-2.5">
-          {focus.map((t) => (
-            <TaskCard key={t.id} task={t} ctx={ctx} big />
+      <Capture ctx={ctx} data={data} command={command} />
+
+      <TodayPlan data={data} ctx={ctx} openPanel={openPanel} />
+
+      {(focus.length > 0 || dueNow.length > 0) && (
+        <div className="space-y-2">
+          {[...focus, ...dueNow].map((t) => (
+            <TaskCard key={t.id} task={t} ctx={ctx} big={t.focus} />
           ))}
         </div>
-      ) : hasSessions ? null : (
+      )}
+
+      {!hasSessions && open.length === 0 && doneToday.length === 0 && (
         <Empty>
-          {open.length || doneToday.length
-            ? "Nothing pinned yet. Tap the target on up to three things that would make today a good day."
-            : isNative()
-              ? "A clear page. Type or speak a task below. Coming from the web version? Menu → Import JSON brings your tasks across."
-              : "A clear page. Type something below to get started. Dates, ! and #tags are understood."}
+          {isNative()
+            ? "A clear page. Type or speak a task above. Coming from the web version? Menu → Import JSON brings your tasks across."
+            : "A clear page. Type or speak something above. I'll work out the day, the time and where it belongs."}
         </Empty>
       )}
 
-      {dueNow.length > 0 && (
-        <>
-          <SectionTitle>Due or slipped</SectionTitle>
-          <div className="space-y-2">
-            {dueNow.map((t) => (
-              <TaskCard key={t.id} task={t} ctx={ctx} />
-            ))}
-          </div>
-        </>
-      )}
-
-      <EventsStrip data={data} ctx={ctx} onAll={() => openPanel("events")} />
-
-      {open.length > 0 && (
-        <div className="mt-6 flex justify-center gap-5 text-sm">
-          <button onClick={() => openPanel("plan")} className="min-h-11 font-medium text-accent">
-            Plan my tasks
-          </button>
-          <button onClick={onRescue} className="min-h-11 font-medium text-muted">
-            Short on time?
-          </button>
-          <button onClick={() => openPanel("bored")} className="min-h-11 font-medium text-muted">
-            Bored?
-          </button>
-        </div>
-      )}
+      {/* Off day: at most two a week. */}
+      <div className="flex flex-col items-center gap-1.5 pt-1 text-center">
+        {off ? (
+          <>
+            <p className="text-sm text-muted">🌿 Off day. Today is lighter: one small session, the rest moves on.</p>
+            <button className="min-h-11 px-3 text-sm font-medium text-accent" onClick={() => actions.cancelOffDay(ctx.today)}>
+              Actually, I'll do today
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={takeOff}
+              disabled={left === 0}
+              aria-describedby="off-left"
+              className="min-h-11 rounded-xl border border-line bg-surface px-5 text-sm font-medium disabled:opacity-45"
+            >
+              🌿 Take an off day
+            </button>
+            <p id="off-left" className="text-xs text-muted">
+              Off days left: {left} of {MAX_OFF_DAYS}
+            </p>
+            {left === 0 && <p className="max-w-xs text-sm text-ink">{OFF_LIMIT_MESSAGE}</p>}
+          </>
+        )}
+      </div>
 
       {doneToday.length > 0 && (
-        <>
-          <SectionTitle
-            right={
-              <button onClick={() => setShowDone((s) => !s)} className="underline-offset-2 hover:underline">
-                {showDone ? "Hide" : "Show"}
-              </button>
-            }
-          >
-            Done today · {doneToday.length}
-          </SectionTitle>
-          {showDone ? (
-            <div className="space-y-2">
+        <div className="pt-1">
+          <button onClick={() => setShowDone((v) => !v)} className="min-h-11 text-sm text-muted underline-offset-2 hover:underline">
+            Done today · {doneToday.length} {showDone ? "(hide)" : "(show)"}
+          </button>
+          {showDone && (
+            <div className="mt-1 space-y-2">
               {doneToday.map((t) => (
                 <TaskCard key={t.id} task={t} ctx={ctx} />
               ))}
             </div>
-          ) : (
-            <p className="px-1 text-sm text-muted">Nice work. {doneToday.length === 1 ? "One thing" : `${doneToday.length} things`} off your plate.</p>
           )}
-        </>
+        </div>
       )}
     </div>
   );

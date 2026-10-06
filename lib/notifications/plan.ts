@@ -6,6 +6,7 @@ import { backupDue } from "../backup";
 import { billReminders, reminderText } from "../bills";
 import { eventsOn } from "../fixed";
 import { computeNudges } from "../nudges";
+import { isOffDay } from "../offday";
 import { plannedForDay, planSessions } from "../schedule";
 import { weekStart } from "../stats";
 import { choreKey, entryFor, wrapKey } from "../sessions";
@@ -203,6 +204,7 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
     const day = addDays(today, i);
     const dow = fromISO(day).getDay();
     const dayPlan = plannedForDay(data, day);
+    const off = isOffDay(data, day);
 
     // --- The conscience: one gentle nudge a day (empty day, neglected area, behind target) ---
     if (p.notify.nudges && i < 2) {
@@ -229,7 +231,8 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
 
     // --- Daily rhythm: midday nudge, wrap up work, "Have you sorted your email?" ---
     for (const r of p.rhythm) {
-      if (!r.enabled || !r.days.includes(dow)) continue;
+      // On an off day the daily pings (midday, wrap up work, emails) stay quiet.
+      if (off || !r.enabled || !r.days.includes(dow)) continue;
       const tracked = r.kind === "chore";
       const key = choreKey(r.id, day);
       const when = tracked ? resolve(key, at(day, r.time)) : at(day, r.time);
@@ -278,8 +281,8 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
             top.length ? `${top.length} ${top.length === 1 ? "task" : "tasks"}` : "",
             dayBills.length ? `${dayBills.length} ${dayBills.length === 1 ? "reminder" : "reminders"}` : "",
           ];
-          title = `Good morning, ${name}`;
-          body = bits.filter(Boolean).join(" · ");
+          title = off ? `Easy day, ${name}` : `Good morning, ${name}`;
+          body = off ? `Off day: ${[bits[0] ? bits[0].replace("sessions", "short session") : "", ...bits.slice(1)].filter(Boolean).join(" · ") || "just rest"}` : bits.filter(Boolean).join(" · ");
         }
         push({
           key: `morning:${day}`,

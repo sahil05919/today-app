@@ -1,5 +1,6 @@
 import { addDays, fromISO, toISO } from "./dates";
 import { countedByEvent, eventBusy } from "./fixed";
+import { isOffDay, OFF_DAY_MAX_MIN } from "./offday";
 import { toMin, withDefaults } from "./profile";
 import { entryFor, nextNumber, sessionKey, sessionTitle, variantFor } from "./sessions";
 import { weekStart } from "./stats";
@@ -110,6 +111,8 @@ export function planSessions(data: AppData, now: Date = new Date(), busyOverride
     week.filter((d) => {
       if (d < today || doneOn(a, d) || skipped(a, d)) return false;
       if (!a.target!.weekends && isWeekend(d)) return false;
+      // An off day keeps one SHORT session; anything longer waits for another day.
+      if (isOffDay(data, d) && (a.target!.minutes > OFF_DAY_MAX_MIN || logs.some((l) => l.date === d))) return false;
       return slotsFor(a, d).some((s) => windows(s, d, earliest(d), busy).some(([ws, we]) => we - ws >= a.target!.minutes));
     });
 
@@ -119,7 +122,11 @@ export function planSessions(data: AppData, now: Date = new Date(), busyOverride
   const dayMinutes = (d: ISODate) =>
     [...cells.entries()].filter(([k]) => k.startsWith(d)).reduce((n, [, items]) => n + items.reduce((m, i) => m + i.minutes, 0), 0);
 
+  const itemsOn = (d: ISODate) => [...cells.entries()].filter(([k]) => k.startsWith(d)).reduce((n, [, items]) => n + items.length, 0);
+
   const tryPlace = (a: Area, d: ISODate): boolean => {
+    // Off day: at most ONE session, and a short one. The rest of the week absorbs everything else.
+    if (isOffDay(data, d) && (itemsOn(d) >= 1 || a.target!.minutes > OFF_DAY_MAX_MIN || logs.some((l) => l.date === d))) return false;
     const cap = isWeekend(d) ? WEEKEND_CAP : WEEKDAY_CAP;
     if (dayMinutes(d) + a.target!.minutes > cap) return false;
     for (const s of slotsFor(a, d)) {
