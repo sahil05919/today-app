@@ -160,7 +160,7 @@ export function TodayView({
       )}
       {banner}
 
-      <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} openPanel={(p) => openPanel(p)} />
+      <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} />
 
       {hasSessions && (
         <button onClick={() => setSheet({ k: "progress" })} className="block w-full rounded-2xl border border-line bg-surface px-4 py-3 text-left" aria-label="This week's progress, tap for details">

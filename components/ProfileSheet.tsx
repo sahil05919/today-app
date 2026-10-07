@@ -615,7 +615,28 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
           </p>
         </Section>
 
-        <Section title="What I've learned from you" hint={learned.length ? `${learned.length} fix${learned.length === 1 ? "" : "es"} remembered` : "Fix a category or time once and I remember"}>
+        <Section
+          title="What I've learned from you"
+          hint={learned.length + (data.userWords?.length ?? 0) ? `${learned.length} fix${learned.length === 1 ? "" : "es"} · ${data.userWords?.length ?? 0} word${(data.userWords?.length ?? 0) === 1 ? "" : "s"}` : "Fix a category or time once and I remember"}
+        >
+          {(data.userWords?.length ?? 0) > 0 && (
+            <div>
+              <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">My dictionary</h4>
+              <ul className="flex flex-wrap gap-1.5">
+                {data.userWords!.map((u) => {
+                  const a = p.areas.find((x) => x.id === u.areaId);
+                  return (
+                    <li key={u.word} className="flex min-h-9 items-center gap-1 rounded-full bg-bg pl-3 pr-1 text-sm">
+                      “{u.word}” → {a ? `${a.emoji} ${a.name}` : u.areaId}
+                      <button type="button" aria-label={`Forget ${u.word}`} onClick={() => actions.removeUserWord(u.word)} className="flex h-8 w-8 items-center justify-center text-muted">
+                        ✕
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
           {learned.length === 0 ? (
             <p className="text-sm text-muted">Nothing yet. When you correct an area or a time on the “Got it” card, it shows up here and is used next time, online or offline.</p>
           ) : (

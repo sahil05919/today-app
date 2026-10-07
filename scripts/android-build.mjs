@@ -24,7 +24,7 @@ run("npx", ["cap", "sync", "android"]);
 
 if (process.argv.includes("--apk")) {
   console.log("3/3  Building the debug APK…");
-  run(win ? ".\gradlew.bat" : "./gradlew", ["assembleDebug"], { cwd: "android" });
+  run(win ? ".\\gradlew.bat" : "./gradlew", ["assembleDebug"], { cwd: "android" });
   const apk = join("android", "app", "build", "outputs", "apk", "debug", "app-debug.apk");
   console.log(existsSync(apk) ? `\nDone! Your APK: ${apk}` : "\nBuild finished, but I couldn't find the APK.");
 } else {

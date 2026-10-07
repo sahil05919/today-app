@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { friendlyDate } from "@/lib/dates";
 import { toHHMM, toMin } from "@/lib/profile";
+import type { Teach } from "@/lib/teach";
 import { buildTimeline } from "@/lib/timeline";
 import { whenDate } from "@/lib/snooze";
 import { actions } from "@/lib/store";
@@ -19,6 +20,8 @@ export interface CaptureResult {
   taskId?: string;
   /** What had to move to fit it ("Moved Power BI to 18:30 to fit “Fill form”."). */
   note?: string;
+  /** A word the dictionary doesn't know: offer to teach it. */
+  teach?: Teach;
   source: "rules" | "ai";
   undo: () => void;
   /** Opens the editor for an event. */
@@ -33,14 +36,18 @@ const whenText = (due: ISODate | undefined, time: string | undefined, today: ISO
 export function ConfirmCard({ result, data, ctx, onClose }: { result: CaptureResult; data: AppData; ctx: ViewCtx; onClose: () => void }) {
   const [picker, setPicker] = useState<"area" | "time" | null>(null);
   const [fixed, setFixed] = useState(false);
+  /** "Add to my dictionary?" has been answered. */
+  const [taught, setTaught] = useState<"yes" | "no" | null>(null);
+  const [pickTeach, setPickTeach] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // Tidies itself away after a while, unless you're in the middle of fixing something.
   useEffect(() => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(onClose, picker ? 25_000 : 12_000);
+    const open = picker || (result.teach && !taught);
+    timer.current = setTimeout(onClose, open ? 25_000 : 12_000);
     return () => clearTimeout(timer.current);
-  }, [result.id, picker, fixed, onClose]);
+  }, [result.id, picker, fixed, taught, result.teach, onClose]);
 
   const task = result.taskId ? data.tasks.find((t) => t.id === result.taskId) : undefined;
   const area = task?.area ? ctx.profile.areas.find((a) => a.id === task.area) : undefined;
@@ -69,6 +76,15 @@ export function ConfirmCard({ result, data, ctx, onClose }: { result: CaptureRes
     setFixed(true);
     setPicker(null);
   };
+
+  const teach = (areaId: string) => {
+    if (!result.teach) return;
+    actions.addUserWords(result.teach.words, areaId);
+    if (task) actions.update(task.id, { area: areaId });
+    setTaught("yes");
+    setPickTeach(false);
+  };
+  const teachArea = result.teach?.suggested ? p.areas.find((a) => a.id === result.teach!.suggested) : undefined;
 
   const times: Array<[string, string | undefined]> = [
     ["Morning", "09:00"],
@@ -129,6 +145,41 @@ export function ConfirmCard({ result, data, ctx, onClose }: { result: CaptureRes
         </button>
         {fixed && <Chip tone="accent">Updated. I'll remember that.</Chip>}
       </div>
+
+      {result.teach && task && taught !== "no" && (
+        <div className="mt-2 rounded-xl bg-surface p-2.5 text-sm" role="group" aria-label="Teach me">
+          {taught === "yes" ? (
+            <p className="font-medium text-accent">Added to my dictionary. I'll know “{result.teach.words.join(" ")}” next time, offline.</p>
+          ) : (
+            <>
+              <p>
+                New to me: <span className="font-semibold">“{result.teach.words.join(" ")}”</span>. {teachArea ? `It looks like ${teachArea.emoji} ${teachArea.name}. Add it to my dictionary?` : "Which area is it? I'll remember."}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {teachArea && !pickTeach && (
+                  <>
+                    <button onClick={() => teach(teachArea.id)} className="min-h-9 rounded-full bg-accent px-3.5 text-sm font-semibold text-accent-ink">
+                      Yes, add it
+                    </button>
+                    <button onClick={() => setPickTeach(true)} className="min-h-9 rounded-full border border-line px-3 text-sm">
+                      Other area
+                    </button>
+                  </>
+                )}
+                {(!teachArea || pickTeach) &&
+                  p.areas.map((a) => (
+                    <button key={a.id} onClick={() => teach(a.id)} className="min-h-9 rounded-full border border-line bg-bg px-3 text-sm">
+                      {a.emoji} {a.name}
+                    </button>
+                  ))}
+                <button onClick={() => setTaught("no")} className="min-h-9 rounded-full px-3 text-sm text-muted">
+                  No thanks
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {picker === "area" && task && (
         <div className="mt-2 flex flex-wrap gap-1.5" role="listbox" aria-label="Choose an area">

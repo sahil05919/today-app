@@ -203,6 +203,8 @@ export interface AiIntent {
   items?: string[] | null;
   /** For bills: true when the note says it's already paid. */
   done?: boolean | null;
+  /** Voice notes only: what was said. */
+  transcript?: string;
 }
 
 const RESPONSE_SCHEMA = {
@@ -277,8 +279,16 @@ export function buildSystemPrompt(data: AppData, now: Date): string {
   ].join("\n");
 }
 
+/** What a call can carry besides plain text: audio parts and a different answer shape (voice transcription). */
+export interface GeminiRequest {
+  system?: string;
+  user: string;
+  parts?: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }>;
+  schema?: unknown;
+}
+
 /** One generateContent call against a specific model. */
-async function generateOnce(key: string, model: string, req: { system?: string; user: string }, fetcher: Fetcher, ms: number): Promise<{ ok: true; result: AiIntent } | AiFail> {
+async function generateOnce(key: string, model: string, req: GeminiRequest, fetcher: Fetcher, ms: number): Promise<{ ok: true; result: AiIntent } | AiFail> {
   return guarded(ms, async (signal) => {
     const res = await fetcher(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
@@ -286,11 +296,11 @@ async function generateOnce(key: string, model: string, req: { system?: string; 
       headers: { "content-type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
         ...(req.system ? { systemInstruction: { parts: [{ text: req.system }] } } : {}),
-        contents: [{ role: "user", parts: [{ text: req.user }] }],
+        contents: [{ role: "user", parts: req.parts ?? [{ text: req.user }] }],
         generationConfig: {
           temperature: 0,
           responseMimeType: "application/json",
-          responseSchema: RESPONSE_SCHEMA,
+          responseSchema: req.schema ?? RESPONSE_SCHEMA,
           // Reading a note doesn't need deep reasoning; this keeps it quick (only some models accept it).
           ...(model.includes("2.5") ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
         },
@@ -316,7 +326,7 @@ async function generateOnce(key: string, model: string, req: { system?: string; 
  * and picked again if Google says it no longer exists).
  */
 export async function callGemini(
-  req: { system?: string; user: string },
+  req: GeminiRequest,
   opts: { key?: string; model?: string; fetcher?: Fetcher; timeoutMs?: number } = {},
 ): Promise<{ ok: true; result: AiIntent; model: string } | AiFail> {
   const key = cleanKey(opts.key ?? getGeminiKey());
@@ -558,4 +568,35 @@ export async function interpret(
   } catch {
     return { parsed: rules, used: "rules", reason: "failed" };
   }
+}
+
+// ---- Voice: Gemini listens, then the usual reading takes over --------------------------------------------------
+
+const TRANSCRIPT_SCHEMA = { type: "OBJECT", properties: { transcript: { type: "STRING" } }, required: ["transcript"] };
+
+/** Audio takes longer to upload and read than a line of text. */
+export const AUDIO_TIMEOUT_MS = 25_000;
+
+const TRANSCRIBE_PROMPT = [
+  "Transcribe this short voice note exactly as it was spoken. It is someone telling their daily planner a task, reminder, event or note.",
+  "The speaker mixes English, Hinglish (Hindi in Roman letters) and Hindi. Write Hindi words in Roman letters (Hinglish), the way people type them in a chat, e.g. \"kal shaam 6 baje mummy ko call karna hai\".",
+  "Write numbers and times as digits. Do not translate, summarise, correct, or add anything. If nothing intelligible was said, return an empty transcript.",
+].join(" ");
+
+/** Sends a recording to Gemini and returns the words. Never throws: { ok:false } with the reason otherwise. */
+export async function transcribeAudio(
+  audio: { base64: string; mime: string },
+  opts: { key?: string; model?: string; fetcher?: Fetcher; timeoutMs?: number } = {},
+): Promise<{ ok: true; text: string } | AiFail> {
+  const r = await callGemini(
+    {
+      user: "",
+      parts: [{ inlineData: { mimeType: audio.mime, data: audio.base64 } }, { text: TRANSCRIBE_PROMPT }],
+      schema: TRANSCRIPT_SCHEMA,
+    },
+    { timeoutMs: AUDIO_TIMEOUT_MS, ...opts },
+  );
+  if (!r.ok) return r;
+  const text = (r.result.transcript ?? "").replace(/\s+/g, " ").trim();
+  return { ok: true, text };
 }

@@ -25,6 +25,29 @@ npm run android:apk     # debug APK from the command line (needs Android Studio'
 The web build and the Android build come from the same code; only `BUILD_TARGET=android` (set by the script)
 switches Next.js to a static export.
 
+## The simple version (after the polish)
+
+Open it and you see **what's next** (Start / Done / Snooze), your top must-have as one line, then **the day as one timeline**.
+The input is at the bottom: type or speak anything. One button, **Adjust my day**, rebuilds today around how much time and energy you have.
+
+- **Menu** has five things: Calendar, Shopping list, Bills & chores, Must-haves, Settings (backup and appearance live in Settings).
+- **The timeline** (`lib/timeline.ts`) puts everything with a time in its exact place and fits everything else into the best free gap.
+  No overlaps, 10-minute buffers, a protected 17:00-18:00 tea/food break on weekdays, an evening capped at about 2.5 hours
+  (lighter on office days, Monday by default, with the commute counted), and overflow moves to the next day with room.
+  Add "fill form at 3pm" and anything that had to shift says so in one line ("Moved Power BI to 18:30 to fit your form").
+- **Pending work can't pile up**: overdue things are placed first and marked "carried over"; a task can be snoozed twice, the third time
+  you choose (do it now for 15 min / fixed slot / drop). Three or more overdue, or behind on targets, and the morning card offers a
+  one-tap catch-up plan. The Sunday review makes you decide on everything still pending.
+- **Calendar**: week and month views, plus a read-only copy of your phone's calendar (Android Calendar Provider, offline, asked once;
+  Settings → Calendar). Open an `.ics` invite with "Today", or share/select text in any app, and it lands in the input.
+- **Night mode**: after 23:00 (Settings → Night mode) home only says "Time to sleep. Tomorrow starts with: …" and keeps the input.
+- **Understanding**: an offline dictionary of 500+ words and phrases (English, Hinglish, Devanagari; `lib/words.ts`) tested on 1900+ generated
+  phrases (`tests/phrases.test.ts`). Words it doesn't know: it asks "Add to my dictionary?" and learns on the device. Gemini handles the rest.
+- **Voice**: with a Gemini key the phone records you (native, 16 kHz WAV) and Gemini writes down what you said, shown editable before saving.
+  Offline or without a key it falls back to Android's recogniser (English India, patient with pauses). Settings → Voice hides the mic.
+- **Session numbers**: Settings → Areas → "Next session is number" (Power BI at 14). Weekly dots stay separate.
+- **On pace**: "This week 72% · On track / Slightly behind", judged against what's expected by today's weekday.
+
 ## Sessions, events, bills and nudges
 
 **Sessions.** Areas have weekly targets (Settings → Areas & weekly targets): Power BI 4×60 min, Meditation 3×15, Job Prep &
@@ -98,11 +121,12 @@ remaining days. After 2, the button disables.
 
 - `lib/store.ts`: the single data store. `localStorage` on the web, Capacitor Preferences in the Android app.
 - `lib/parse.ts`, `hinglish.ts`, `recur.ts`, `profile.ts`: capture parsing
+- `lib/timeline.ts`, `busy.ts`, `settle.ts`, `adjust.ts`, `pileup.ts`, `pace.ts`, `calendar.ts`, `teach.ts`: the day timeline and its rules (pure, tested)
 - `lib/schedule.ts`, `sessions.ts`, `fixed.ts`, `bills.ts`, `nudges.ts`, `ai.ts`: the session / event / bill / nudge logic (pure, tested)
 - `lib/planday.ts`, `rescue.ts`, `checkin.ts`, `balance.ts`, `stats.ts`: task planning logic (pure, tested)
 - `lib/notifications/plan.ts`: decides every notification (pure, tested); `native.ts` schedules them on Android
 - `lib/events/`: curated London events (offline); a live-source interface is ready for later
-- `android/…/TodayNativePlugin.java`: share-to-Today, icon shortcuts, battery-optimisation status
+- `android/…/TodayNativePlugin.java`: share / select-text / .ics intents, phone calendar reader, audio recorder, vibration, battery status
 - `scripts/generate-icons.mjs`: regenerates the PWA icons in `public/`
 
 ## Roadmap (structure is ready, not built)

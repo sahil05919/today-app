@@ -45,6 +45,8 @@ export interface ParsedCapture {
   area?: string;
   /** Any links in the text are kept here, out of the way of the date parser. */
   notes?: string;
+  /** What was actually written (without links), for matching words you taught the dictionary. */
+  raw?: string;
 }
 
 const TEMPLATE_WORDS: Record<string, TemplateId> = {
@@ -238,7 +240,8 @@ export function parseCapture(raw: string, now = new Date(), profile?: Profile): 
   title = title.charAt(0).toUpperCase() + title.slice(1);
   // No @area given: guess from the words, else Others.
   if (!area) {
-    area = inferArea(title, me.areas);
+    // Judged on what you actually wrote: the date parser can swallow words from the title ("for the hr round", "game night").
+    area = inferArea(noUrls, me.areas);
     areaSource = area ? "guess" : undefined;
   }
 
@@ -257,5 +260,6 @@ export function parseCapture(raw: string, now = new Date(), profile?: Profile): 
     timeSource: dueTime ? "typed" : undefined,
     source: "rules",
     notes: urls.length ? urls.join("\n") : undefined,
+    raw: noUrls.trim(),
   };
 }

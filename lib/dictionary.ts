@@ -1,4 +1,6 @@
 import { AREA_ORDER } from "./defaults";
+import type { UserWord } from "./types";
+import { EXTRA_WORDS } from "./words";
 
 /**
  * The offline brain: keyword and phrase dictionaries for every category, in English, Roman Hinglish and
@@ -86,6 +88,25 @@ export const CATEGORY_WORDS: Record<string, Weighted[]> = {
   career: [w(String.raw`networking|personal\s+brand|side\s+project|promotion|appraisal|performance\s+review|mentor\w*|certification`, 3)],
 };
 
+const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** "fill the form" → a pattern that matches it with any amount of white space. */
+const phraseSrc = (phrase: string) => escapeRe(phrase.trim()).replace(/\s+/g, "\\s+");
+
+/**
+ * The longer word lists (lib/words.ts). They're scored on their own and merged with the lists above by taking the higher
+ * of the two, so a word that appears in both (salary, bank, form…) isn't counted twice.
+ */
+const EXTRA: Record<string, Weighted[]> = {};
+for (const [id, groups] of Object.entries(EXTRA_WORDS)) {
+  EXTRA[id] = groups.map(([phrases, weight]) => w(phrases.map(phraseSrc).join("|"), weight));
+}
+
+/** How many distinct words and phrases the offline dictionary knows (for the Settings page and the tests). */
+export const dictionarySize = () => Object.values(EXTRA_WORDS).reduce((n, groups) => n + groups.reduce((m, [p]) => m + p.length, 0), 0);
+
+/** A word you taught it counts a lot: it's your own. */
+const USER_WORD_WEIGHT = 6;
+
 /** Ties go to the earlier area in this list, so your session areas win. */
 const PRIORITY = AREA_ORDER;
 
@@ -94,19 +115,20 @@ export interface AreaGuess {
   score: number;
 }
 
-export function scoreAreas(text: string): Record<string, number> {
+export function scoreAreas(text: string, userWords?: UserWord[]): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const [id, list] of Object.entries(CATEGORY_WORDS)) {
-    let s = 0;
-    for (const [re, weight] of list) if (re.test(text)) s += weight;
-    if (s) out[id] = s;
+  for (const u of userWords ?? []) if (u.word && kw(phraseSrc(u.word)).test(text)) out[u.areaId] = (out[u.areaId] ?? 0) + USER_WORD_WEIGHT;
+  const sum = (list: Weighted[] | undefined) => (list ?? []).reduce((n, [re, weight]) => n + (re.test(text) ? weight : 0), 0);
+  for (const id of new Set([...Object.keys(CATEGORY_WORDS), ...Object.keys(EXTRA)])) {
+    const s = Math.max(sum(CATEGORY_WORDS[id]), sum(EXTRA[id]));
+    if (s) out[id] = Math.max(out[id] ?? 0, s);
   }
   return out;
 }
 
 /** Best category for a piece of text among the areas you have. null when nothing scores at least 2. */
-export function bestArea(text: string, available: Set<string>): AreaGuess | null {
-  const scores = scoreAreas(text);
+export function bestArea(text: string, available: Set<string>, userWords?: UserWord[]): AreaGuess | null {
+  const scores = scoreAreas(text, userWords);
   let best: AreaGuess | null = null;
   for (const [id, score] of Object.entries(scores)) {
     if (!available.has(id) || score < 2) continue;
@@ -129,7 +151,7 @@ const ITEMS = [
   String.raw`tea|chai(?:\s+patti)?|चाय|coffee|कॉफी|biscuits?|cookies|snacks?|namkeen|chips|chocolates?|juice|soda|cola|water\s+bottles?|mineral\s+water|squash`,
   // fresh
   String.raw`vegetables?|veggies?|sabzi|sabji|subzi|सब्ज़ी|सब्जी|onions?|pyaaz|pyaz|प्याज|potato(?:es)?|aloo|आलू|tomato(?:es)?|tamatar|टमाटर|garlic|lahsun|लहसुन|ginger|adrak|अदरक|chill(?:i|ies)|lemons?|nimbu|नींबू|coriander|dhaniya|धनिया|spinach|palak|पालक|carrots?|gajar|गाजर|cucumber|kheera|peas|matar|mushrooms?|capsicum|cabbage|cauliflower|gobi|brinjal|baingan|okra|bhindi|भिंडी|salad|lettuce|curry\s+leaves|mint|pudina`,
-  String.raw`fruits?|phal|फल|bananas?|kela|केला|apples?|seb|सेब|oranges?|santra|mangoe?s?|aam|आम|grapes|angoor|papaya|pomegranate|anar|watermelon|berries|strawberr(?:y|ies)|avocados?|coconut|nariyal`,
+  String.raw`fruits?|phal|फल|bananas?(?!\s+(?:hai|h|hoga|hogi|है))|kela|केला|apples?|seb|सेब|oranges?|santra|mangoe?s?|aam|आम|grapes|angoor|papaya|pomegranate|anar|watermelon|berries|strawberr(?:y|ies)|avocados?|coconut|nariyal`,
   // household
   String.raw`soap|sabun|साबुन|shampoo|conditioner|toothpaste|toothbrush|detergent|surf|dishwash\w*|dish\s+soap|tissues?|toilet\s?(?:paper|roll)s?|handwash|hand\s+wash|sanitizer|bin\s+bags?|garbage\s+bags?|foil|cling\s?film|batteries|bulbs?|sponge|scrub|phenyl|floor\s+cleaner|deodorant|razor|sanitary\s+(?:pads|napkins)|diapers?|baby\s+food|pet\s+food|dog\s+food|cat\s+food|groceries|ration`,
 ].join("|");
@@ -163,3 +185,19 @@ export function groceryList(text: string): string[] | null {
   }
   return [...new Set(items)];
 }
+
+/** The area your own taught words point to for this text (the strongest one), or null. */
+export function userWordArea(text: string, userWords: UserWord[] | undefined, available?: Set<string>): string | null {
+  const hits = new Map<string, number>();
+  for (const u of userWords ?? []) {
+    if (!u.word || (available && !available.has(u.areaId)) || !kw(phraseSrc(u.word)).test(text)) continue;
+    hits.set(u.areaId, (hits.get(u.areaId) ?? 0) + 1);
+  }
+  let best: string | null = null;
+  let n = 0;
+  for (const [id, c] of hits) if (c > n) [best, n] = [id, c];
+  return best;
+}
+
+/** True when nothing in the built-in dictionary (or your own words) says what area this text belongs to. */
+export const isUnknown = (text: string, userWords?: UserWord[]) => Object.keys(scoreAreas(text, userWords)).length === 0;

@@ -60,6 +60,13 @@ function startWeb(lang: VoiceLang, h: VoiceHandlers): VoiceSession | null {
   return { stop: () => r.stop(), abort: () => r.abort() };
 }
 
+/**
+ * Android's own recogniser, set up to be patient: it stops by itself after a short silence, so we start it again
+ * (keeping what was heard) until you tap stop, it hears nothing twice, or about a minute has gone by. Partial results
+ * show as you speak, and the language defaults to English (India), which also understands Hinglish well.
+ */
+const MAX_ROUNDS = 10;
+
 async function startNative(lang: VoiceLang, h: VoiceHandlers): Promise<VoiceSession | null> {
   try {
     const { available } = await SpeechRecognition.available();
@@ -72,29 +79,62 @@ async function startNative(lang: VoiceLang, h: VoiceHandlers): Promise<VoiceSess
       h.onError(VOICE_ERRORS["not-allowed"]);
       return null;
     }
-    await SpeechRecognition.removeAllListeners();
+    let committed = "";
+    let current = "";
+    let rounds = 0;
+    let emptyRounds = 0;
+    let stoppedByUser = false;
     let ended = false;
+
+    const emit = () => h.onText(`${committed} ${current}`.trim());
     const finish = () => {
       if (ended) return;
       ended = true;
       SpeechRecognition.removeAllListeners().catch(() => {});
       h.onEnd();
     };
-    await SpeechRecognition.addListener("partialResults", (d) => {
-      if (d.matches?.[0]) h.onText(d.matches[0]);
-    });
-    await SpeechRecognition.addListener("listeningState", (d) => {
-      if (d.status === "stopped") finish();
-    });
-    // partialResults:true → resolves right away; text arrives through the listener above.
-    SpeechRecognition.start({ language: lang, maxResults: 1, partialResults: true, popup: false }).catch((e) => {
-      h.onError(/offline|network/i.test(String(e)) ? VOICE_ERRORS.network : "Voice didn't work this time. Typing still works.");
-      finish();
-    });
+    const onRoundEnd = () => {
+      if (ended) return;
+      if (current) {
+        committed = `${committed} ${current}`.trim();
+        emptyRounds = 0;
+      } else emptyRounds++;
+      current = "";
+      const quiet = emptyRounds >= 2 || (!committed && rounds >= 2);
+      if (!stoppedByUser && !quiet && rounds < MAX_ROUNDS) void begin();
+      else finish();
+    };
+    const begin = async () => {
+      rounds++;
+      try {
+        await SpeechRecognition.removeAllListeners();
+        await SpeechRecognition.addListener("partialResults", (d) => {
+          if (d.matches?.[0]) {
+            current = d.matches[0];
+            emit();
+          }
+        });
+        await SpeechRecognition.addListener("listeningState", (d) => {
+          if (d.status === "stopped") onRoundEnd();
+        });
+        // partialResults:true → resolves right away; text arrives through the listener above.
+        SpeechRecognition.start({ language: lang, maxResults: 3, partialResults: true, popup: false }).catch((e) => {
+          h.onError(/offline|network/i.test(String(e)) ? VOICE_ERRORS.network : "Voice didn't work this time. Typing still works.");
+          finish();
+        });
+      } catch {
+        finish();
+      }
+    };
+    await begin();
     return {
-      stop: () => void SpeechRecognition.stop().catch(() => finish()),
+      stop: () => {
+        stoppedByUser = true;
+        void SpeechRecognition.stop().catch(() => finish());
+      },
       abort: () => {
         ended = true;
+        stoppedByUser = true;
         SpeechRecognition.removeAllListeners().catch(() => {});
         SpeechRecognition.stop().catch(() => {});
       },

@@ -1,7 +1,7 @@
 import { inferCountsFor } from "./fixed";
 import { detectIntent } from "./intents";
 import { applyLearned } from "./learn";
-import { kw } from "./dictionary";
+import { kw, userWordArea } from "./dictionary";
 import { parseCapture, type ParsedCapture } from "./parse";
 import { withDefaults } from "./profile";
 import { suggestSlot } from "./slots";
@@ -46,6 +46,11 @@ export function promoteEvent(p: ParsedCapture): ParsedCapture {
 export function finalize(p: ParsedCapture, data: AppData, now: Date): ParsedCapture {
   const profile = withDefaults(data.profile);
   let out = applyLearned(p, data.learned);
+  // Words you taught the dictionary beat its own guess, but never an @area you typed or a fix you made on a card.
+  if (out.areaSource !== "explicit" && out.areaSource !== "learned" && (!out.kind || out.kind === "task" || out.kind === "note")) {
+    const mine = userWordArea(out.raw ?? out.title, data.userWords, new Set(profile.areas.map((a) => a.id)));
+    if (mine) out = { ...out, area: mine, areaSource: "learned" };
+  }
   if (out.kind === "event") {
     return { ...out, event: { ...out.event, countsFor: out.event?.countsFor ?? inferCountsFor(out.title, profile.areas) } };
   }

@@ -614,6 +614,19 @@ export const actions = {
     commit({ ...d, learned: learnFix(d.learned, title, fix) });
   },
 
+  /** "Add to my dictionary?": these words now mean this area, offline, from then on. */
+  addUserWords(words: string[], areaId: string) {
+    const d = ensure();
+    const clean = [...new Set(words.map((w) => w.trim().toLowerCase()).filter((w) => w.length >= 2))];
+    const kept = (d.userWords ?? []).filter((u) => !clean.includes(u.word));
+    commit({ ...d, userWords: [...kept, ...clean.map((word) => ({ word, areaId, at: Date.now() }))].slice(-1000) });
+  },
+
+  removeUserWord(word: string) {
+    const d = ensure();
+    commit({ ...d, userWords: (d.userWords ?? []).filter((u) => u.word !== word) });
+  },
+
   forgetLearned(id: string) {
     const d = ensure();
     commit({ ...d, learned: forget(d.learned, id) });
@@ -621,7 +634,7 @@ export const actions = {
 
   clearLearned() {
     const d = ensure();
-    commit({ ...d, learned: [] });
+    commit({ ...d, learned: [], userWords: [] });
   },
 
   /** Marks one due date done. "Every N days" chores start counting again from today. */

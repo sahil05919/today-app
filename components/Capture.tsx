@@ -5,6 +5,7 @@ import { nextDue } from "@/lib/bills";
 import { diffDays, friendlyDate, toISO } from "@/lib/dates";
 import type { ParsedCapture } from "@/lib/parse";
 import { sessionTitle } from "@/lib/sessions";
+import { teachSuggestion } from "@/lib/teach";
 import { actions, getData } from "@/lib/store";
 import { buildTimeline, movedNote } from "@/lib/timeline";
 import { understand } from "@/lib/understand";
@@ -154,6 +155,7 @@ export function Capture({
       taskId: task.id,
       source,
       note: planNote(d, task.due, task.title),
+      teach: p.kind === "note" ? undefined : (teachSuggestion(p, d) ?? undefined),
       undo: () => actions.remove(task.id),
     };
   };
