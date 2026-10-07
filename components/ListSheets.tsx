@@ -159,8 +159,8 @@ export function GoalsSheet({ data, ctx, onClose }: { data: AppData; ctx: ViewCtx
   );
 }
 
-/** "Getting bored?": ideas to pull from when you have free time. */
-export function BoredSheet({ data, ctx, onClose }: { data: AppData; ctx: ViewCtx; onClose: () => void }) {
+/** Ideas to pull from when you have free time (the "Ideas" half of Free time ideas). */
+export function BoredBody({ data, ctx, onClose }: { data: AppData; ctx: ViewCtx; onClose: () => void }) {
   const ideas = data.bored ?? [];
   const [pick, setPick] = useState<BoredIdea | null>(null);
   const [text, setText] = useState("");
@@ -171,7 +171,7 @@ export function BoredSheet({ data, ctx, onClose }: { data: AppData; ctx: ViewCtx
   };
 
   return (
-    <Sheet title="Getting bored?" onClose={onClose}>
+    <div>
       {pick ? (
         <div className="rounded-2xl bg-accent-soft p-4 text-center">
           <p className="text-lg font-semibold">{pick.text}</p>
@@ -224,6 +224,6 @@ export function BoredSheet({ data, ctx, onClose }: { data: AppData; ctx: ViewCtx
           Add
         </button>
       </form>
-    </Sheet>
+    </div>
   );
 }

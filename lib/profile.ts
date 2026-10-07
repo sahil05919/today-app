@@ -38,6 +38,15 @@ export function defaultProfile(): Profile {
     eventLeadMin: 60,
     nudgeTime: "21:00",
     reviewTime: "18:30",
+    breakStart: "17:00",
+    breakEnd: "18:00",
+    bufferMin: 10,
+    eveningCapMin: 150,
+    officeCommuteMin: 45,
+    sleepStart: "23:00",
+    wakeTime: "06:00",
+    hideMic: false,
+    calendarSync: true,
     notify: { morning: true, taskCheckIns: true, wrap: true, reminders: true, slots: true, events: true, bills: true, nudges: true, review: true },
   };
 }

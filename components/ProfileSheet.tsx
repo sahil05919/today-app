@@ -1,9 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cleanKey, getAutoModel, getGeminiKey, getGeminiModel, setGeminiKey, setGeminiModel, testGeminiKey } from "@/lib/ai";
+import { exportBackup, readBackupFile } from "@/lib/backup";
+import { getTheme, setTheme, type ThemePref } from "@/lib/theme";
 import { builtInShortcuts } from "@/lib/profile";
 import { actions } from "@/lib/store";
-import type { Area, AreaTarget, Bill, LearnedRule, Profile, RhythmItem, Slot } from "@/lib/types";
+import type { AppData, Area, AreaTarget, Bill, LearnedRule, Profile, RhythmItem, Slot } from "@/lib/types";
 import { NotificationSettings } from "./NotificationSettings";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
 
@@ -130,6 +132,21 @@ function TargetEditor({ target, slots, onChange }: { target: AreaTarget; slots: 
           className={field}
         />
       </Field>
+      <Field label="Next session is number" hint="Continues your count from before (e.g. Power BI at 14). Leave empty to count on automatically. Weekly dots are separate.">
+        <input
+          type="number"
+          min={1}
+          max={99999}
+          inputMode="numeric"
+          placeholder="auto"
+          value={target.startAt ?? ""}
+          onChange={(e) => {
+            const n = parseInt(e.target.value, 10);
+            set({ startAt: Number.isFinite(n) && n >= 1 ? Math.min(99999, n) : undefined });
+          }}
+          className={`${field} w-28`}
+        />
+      </Field>
       <div className="flex flex-wrap items-end gap-x-5 gap-y-1">
         <Check checked={target.weekends} onChange={(v) => set({ weekends: v })}>
           Allow on weekends
@@ -149,7 +166,7 @@ function TargetEditor({ target, slots, onChange }: { target: AreaTarget; slots: 
 }
 
 /** Settings: set up once, editable any time. Everything is stored on this phone. */
-export function ProfileSheet({ profile, bills, learned, ctx, onClose }: { profile: Profile; bills: Bill[]; learned: LearnedRule[]; ctx: ViewCtx; onClose: () => void }) {
+export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { profile: Profile; bills: Bill[]; learned: LearnedRule[]; data: AppData; ctx: ViewCtx; onClose: () => void }) {
   const [p, setP] = useState<Profile>(profile);
   const [bs, setBs] = useState<Bill[]>(bills);
   const [aiKey, setAiKey] = useState(() => getGeminiKey());
@@ -176,6 +193,31 @@ export function ProfileSheet({ profile, bills, learned, ctx, onClose }: { profil
   const addArea = () => set("areas", [...p.areas, { id: `area-${Date.now().toString(36)}`, name: "New area", emoji: "⭐" }]);
   const updateSlot = (i: number, patch: Partial<Slot>) => set("slots", p.slots.map((s, k) => (k === i ? { ...s, ...patch } : s)));
   const updateRhythm = (i: number, patch: Partial<RhythmItem>) => set("rhythm", p.rhythm.map((r, k) => (k === i ? { ...r, ...patch } : r)));
+  const [theme, setThemeState] = useState<ThemePref>("system");
+  const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [backupError, setBackupError] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    setThemeState(getTheme());
+    navigator.storage?.persisted?.().then(setPersisted).catch(() => setPersisted(null));
+  }, []);
+  const lastBackup = data.settings.lastBackupAt;
+  const onFile = async (file?: File) => {
+    if (!file) return;
+    setBackupError("");
+    try {
+      const incoming = await readBackupFile(file);
+      const ok = confirm(`Replace your current ${data.tasks.length} task(s) with the ${incoming.tasks.length} from this backup? Your current data will be overwritten.`);
+      if (!ok) return;
+      actions.replaceAll({ ...incoming, settings: { ...incoming.settings, lastBackupAt: Date.now() } });
+      ctx.notify("Backup restored");
+      onClose();
+    } catch (e) {
+      setBackupError(e instanceof Error ? e.message : "Couldn't read that file.");
+    } finally {
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
   const [phrase, setPhrase] = useState("");
   const [phraseTime, setPhraseTime] = useState("18:00");
 
@@ -189,9 +231,6 @@ export function ProfileSheet({ profile, bills, learned, ctx, onClose }: { profil
         <Section title="You" open={first}>
           <Field label="Your name" hint="Used in friendly reminders.">
             <input value={p.name} onChange={(e) => set("name", e.target.value.slice(0, 40))} className={field} />
-          </Field>
-          <Field label="Office days">
-            <DayChips label="Office days" value={p.officeDays} onChange={(v) => set("officeDays", v)} />
           </Field>
         </Section>
 
@@ -380,6 +419,81 @@ export function ProfileSheet({ profile, bills, learned, ctx, onClose }: { profil
             + Add a bill or chore
           </button>
           <p className="text-xs text-muted">Rent is due on the 1st with a reminder 3 days before, so you can withdraw cash on the 28th or 29th.</p>
+        </Section>
+
+        <Section title="Planning rules" hint="Breaks, buffers and how full an evening can get">
+          <div className="grid grid-cols-2 gap-3">
+            <Time label="Tea / food break from" value={p.breakStart} onChange={(v) => set("breakStart", v)} />
+            <Time label="Break until" value={p.breakEnd} onChange={(v) => set("breakEnd", v)} />
+            <Num label="Buffer between things (min)" value={p.bufferMin} min={0} max={60} onChange={(v) => set("bufferMin", v)} />
+            <Num label="Evening limit (minutes)" value={p.eveningCapMin} min={30} max={480} onChange={(v) => set("eveningCapMin", v)} />
+            <Num label="Office commute, each way (min)" value={p.officeCommuteMin} min={0} max={240} onChange={(v) => set("officeCommuteMin", v)} />
+          </div>
+          <Field label="Office days" hint="On these days the commute is counted and the evening is lighter. Monday by default.">
+            <DayChips label="Office days" value={p.officeDays} onChange={(v) => set("officeDays", v)} />
+          </Field>
+          <p className="text-xs text-muted">The break is kept free on weekdays. Nothing is ever planned on top of anything else, and what doesn't fit the evening moves to the next day with room.</p>
+        </Section>
+
+        <Section title="Night mode" hint="Home goes quiet at bedtime">
+          <div className="grid grid-cols-2 gap-3">
+            <Time label="Time to sleep from" value={p.sleepStart} onChange={(v) => set("sleepStart", v)} />
+            <Time label="Full plan returns at" value={p.wakeTime} onChange={(v) => set("wakeTime", v)} />
+          </div>
+          <p className="text-xs text-muted">In between, home only says goodnight and shows what tomorrow starts with. The input box is still there.</p>
+        </Section>
+
+        <Section title="Voice" hint="The microphone next to the input">
+          <Check checked={!p.hideMic} onChange={(v) => set("hideMic", !v)}>
+            Show the microphone button
+          </Check>
+          <p className="text-xs text-muted">Hide it if you'd rather use your keyboard's own mic. Typing and the keyboard mic always work.</p>
+        </Section>
+
+        <Section title="Appearance">
+          <div className="flex rounded-xl bg-bg p-1 text-sm font-medium" role="group" aria-label="Theme">
+            {(["system", "light", "dark"] as ThemePref[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                aria-pressed={theme === t}
+                onClick={() => {
+                  setThemeState(t);
+                  setTheme(t);
+                }}
+                className={`min-h-11 flex-1 rounded-lg capitalize ${theme === t ? "bg-surface shadow-sm" : "text-muted"}`}
+              >
+                {t === "system" ? "Follow phone" : t}
+              </button>
+            ))}
+          </div>
+        </Section>
+
+        <Section title="Backup & data" hint={lastBackup ? `Last backup ${new Date(lastBackup).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : "No backup yet"}>
+          <p className="text-sm text-muted">Everything lives on this device only. I'll remind you every 2 weeks.</p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={`${btn.primary} min-h-11 flex-1`}
+              onClick={() => {
+                exportBackup(data);
+                actions.settings({ lastBackupAt: Date.now() });
+                ctx.notify("Backup downloaded");
+              }}
+            >
+              Export JSON
+            </button>
+            <button type="button" className={`${btn.ghost} min-h-11 flex-1`} onClick={() => fileRef.current?.click()}>
+              Import JSON
+            </button>
+            <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={(e) => onFile(e.target.files?.[0])} />
+          </div>
+          {backupError && <p className="text-sm text-warn">{backupError}</p>}
+          <p className="text-xs text-muted">
+            {persisted === true && "Your browser has promised not to clear this data automatically. "}
+            {persisted === false && "Your browser may clear data if the device runs low on space, so keep a backup. "}
+            Importing replaces what's here.
+          </p>
         </Section>
 
         <Section title="Work">

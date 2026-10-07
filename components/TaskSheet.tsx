@@ -10,7 +10,6 @@ import { extractEstimate } from "@/lib/parse";
 import { actions } from "@/lib/store";
 import { TEMPLATE_LIST } from "@/lib/templates";
 import type { Task } from "@/lib/types";
-import { MAX_FOCUS } from "@/lib/types";
 import { CheckIcon, CloseIcon, TrashIcon } from "./icons";
 import { completeWithToast } from "./TaskCard";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
@@ -87,17 +86,6 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
               Snooze
             </button>
           )}
-          {task.status === "open" && (
-            <button
-              onClick={() => {
-                if (!actions.toggleFocus(task.id)) ctx.notify(`Focus holds ${MAX_FOCUS} things. Un-pin one first.`);
-              }}
-              className={`${task.focus ? btn.soft : btn.ghost} flex-1`}
-              aria-pressed={task.focus}
-            >
-              {task.focus ? "In your focus" : "Add to focus"}
-            </button>
-          )}
         </div>
 
         {task.status === "open" && (
@@ -107,7 +95,7 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
               <p className="text-xs text-muted">
                 {actualMinutes(task) > 0
                   ? `${formatMinutes(actualMinutes(task))} logged over ${task.sessions?.length} session${task.sessions?.length === 1 ? "" : "s"}`
-                  : "Time it, and Rescue learns how long things take you."}
+                  : "Time it, and Today learns how long things really take you."}
               </p>
             </div>
             {timerOn ? (

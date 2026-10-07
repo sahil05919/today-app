@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { friendlyDate } from "@/lib/dates";
 import { toHHMM, toMin } from "@/lib/profile";
+import { buildTimeline } from "@/lib/timeline";
 import { whenDate } from "@/lib/snooze";
 import { actions } from "@/lib/store";
 import type { AppData, ISODate } from "@/lib/types";
@@ -16,6 +17,8 @@ export interface CaptureResult {
   /** For things that aren't a task: the whole sentence ("Added Milk, Sugar to your shopping list"). */
   summary?: string;
   taskId?: string;
+  /** What had to move to fit it ("Moved Power BI to 18:30 to fit “Fill form”."). */
+  note?: string;
   source: "rules" | "ai";
   undo: () => void;
   /** Opens the editor for an event. */
@@ -43,6 +46,9 @@ export function ConfirmCard({ result, data, ctx, onClose }: { result: CaptureRes
   const area = task?.area ? ctx.profile.areas.find((a) => a.id === task.area) : undefined;
   const p = ctx.profile;
   const afterWork = toHHMM(toMin(p.workEnd) + 15);
+  // A task with no time of its own is placed in the best free gap: say where it landed.
+  const placed = task && task.status === "open" && task.due && !task.dueTime ? buildTimeline(data, task.due, new Date()).items.find((x) => x.taskId === task.id) : undefined;
+  const timeLabel = placed ? `${soft(friendlyDate(task!.due!, ctx.today))} · fits ${toHHMM(placed.start)}` : task ? whenText(task.due, task.dueTime, ctx.today) : "";
 
   const setArea = (id: string) => {
     if (!task) return;
@@ -92,6 +98,8 @@ export function ConfirmCard({ result, data, ctx, onClose }: { result: CaptureRes
         </button>
       </div>
 
+      {result.note && <p className="mt-1.5 text-sm text-muted">{result.note}</p>}
+
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {task && (
           <>
@@ -100,7 +108,7 @@ export function ConfirmCard({ result, data, ctx, onClose }: { result: CaptureRes
             </button>
             {result.kind !== "note" && (
               <button onClick={() => setPicker(picker === "time" ? null : "time")} aria-expanded={picker === "time"} className="min-h-9 rounded-full bg-surface px-3 text-sm font-medium shadow-sm">
-                🕗 {whenText(task.due, task.dueTime, ctx.today)} ▾
+                🕗 {timeLabel} ▾
               </button>
             )}
           </>

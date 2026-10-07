@@ -93,7 +93,7 @@ describe("planNotifications", () => {
     const list = planNotifications(data([task({ title: "A", due: "2026-10-06" })], { eveningWrap: "20:30" }), NOW);
     const wrap = list.find((n) => n.key === "wrap:2026-10-06")!;
     expect(hm(wrap.at)).toBe("20:30");
-    expect(wrap.body).toContain("1 left");
+    expect(wrap.body).toContain("1 carry over");
   });
 
   it("reminder at the task's scheduled time, exact, with buttons", () => {
@@ -220,12 +220,15 @@ describe("sessions and daily rhythm", () => {
     expect([hm(mon.at), mon.actions]).toEqual(["13:00", false]);
   });
 
-  it("22:00 asks if you did today's sessions, listing what's still open", () => {
+  it("22:00 sums up the day and lists what's still open, with Done to count it all", () => {
     const list = planNotifications(seeded(), MON);
     const wrap = list.find((n) => n.key === "wrap:2026-10-05")!;
     expect(hm(wrap.at)).toBe("22:00");
-    expect(wrap.title).toBe("Did you do today's sessions?");
-    expect(wrap.body).toContain("Power BI");
+    // The evening notification says how the day went (and what carries over by itself).
+    expect(wrap.title).toMatch(/^Today/);
+    expect(wrap.title).toContain("Sahil");
+    // Monday is an office day, so its evening is lighter (no Power BI): meditation, the walk, job prep and reading remain.
+    expect(wrap.body).toContain("Meditation");
     expect(wrap.body).toContain("Walking");
     expect(wrap.ref).toBe("wrap:2026-10-05");
     expect(wrap.actions).toBe(true);
@@ -235,6 +238,7 @@ describe("sessions and daily rhythm", () => {
     const list = planNotifications(seeded(), MON);
     const m = list.find((n) => n.key === "morning:2026-10-05")!;
     expect(m.title).toBe("Good morning, Sahil");
-    expect(m.largeBody).toContain("Power BI session 1");
+    expect(m.largeBody).toContain("Meditation session 1");
+    expect(m.largeBody).toContain("Walking session 1");
   });
 });

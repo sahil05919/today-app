@@ -2,7 +2,7 @@
 import { Preferences } from "@capacitor/preferences";
 import { useSyncExternalStore } from "react";
 import { emptyData, migrate } from "./backup";
-import { todayISO } from "./dates";
+import { addDays, todayISO } from "./dates";
 import { isNative } from "./platform";
 import { nextOccurrence } from "./recur";
 import { seedIfNeeded } from "./seed";
@@ -28,6 +28,10 @@ export interface StorageAdapter {
 }
 
 export const KEY = "today:v1";
+/** A task or item can be snoozed this many times; the next time you must choose. */
+export const MAX_SNOOZES = 2;
+/** "Do it now": a small first push. */
+export const DO_NOW_MIN = 15;
 
 export const localStorageAdapter: StorageAdapter = {
   load() {
@@ -195,7 +199,8 @@ export const actions = {
       id: uid(),
       title: p.title,
       due,
-      dueTime: p.due ? p.dueTime : undefined,
+      // A time the app merely suggested ("after work") isn't a commitment: the timeline places the task in the best gap.
+      dueTime: p.due && p.timeSource !== "suggested" ? p.dueTime : undefined,
       notes: p.notes,
       recur: p.recur,
       area: p.area,
@@ -208,8 +213,6 @@ export const actions = {
       createdAt: Date.now(),
     };
     if (p.template) applyTemplateTo(task, p.template);
-    // Due today and there's room: straight into focus.
-    if (due === todayISO() && openFocusCount(d) < MAX_FOCUS) task.focus = true;
     commit({ ...d, tasks: [task, ...d.tasks] });
     return task;
   },
@@ -229,9 +232,22 @@ export const actions = {
   },
 
   /** Starts the focus timer on a task, logging any timer that was already running. */
-  startTimer(id: string) {
+  startTimer(id: string, goalMin?: number) {
     if (ensure().settings.timer) actions.stopTimer();
-    actions.settings({ timer: { taskId: id, startedAt: Date.now() } });
+    actions.settings({ timer: { taskId: id, startedAt: Date.now(), goalMin } });
+  },
+
+  /** Parks overdue tasks until a later day: they stay carried over (first in line then) but leave today's plan. */
+  parkTasks(ids: string[], until: ISODate) {
+    const d = ensure();
+    const set = new Set(ids);
+    commit({ ...d, tasks: d.tasks.map((t) => (set.has(t.id) ? { ...t, hideUntil: until } : t)) });
+  },
+
+  /** Starts a timer on a session / chore / bill (anything on the timeline that isn't a task). */
+  startItemTimer(ref: string, label: string, goalMin?: number) {
+    if (ensure().settings.timer) actions.stopTimer();
+    actions.settings({ timer: { ref, label, startedAt: Date.now(), goalMin } });
   },
 
   /** Stops the timer and logs the session on the task. Returns what was logged. */
@@ -239,6 +255,11 @@ export const actions = {
     const d = ensure();
     const timer = d.settings.timer;
     if (!timer) return null;
+    if (!timer.taskId) {
+      // A session / chore timer has nothing to log on a task: just stop it.
+      commit({ ...d, settings: { ...d.settings, timer: undefined } });
+      return null;
+    }
     const minutes = Math.min(240, Math.max(1, Math.round((Date.now() - timer.startedAt) / 60000)));
     const task = d.tasks.find((t) => t.id === timer.taskId);
     const tasks = d.tasks.map((t) =>
@@ -296,6 +317,92 @@ export const actions = {
   remove(id: string) {
     const d = ensure();
     commit({ ...d, tasks: d.tasks.filter((t) => t.id !== id) });
+  },
+
+  /**
+   * Moves tasks to other days without counting it as a snooze (the app did it to keep the evening light,
+   * or you accepted a catch-up plan).
+   */
+  moveTasks(moves: Array<{ taskId: string; to: ISODate; time?: string }>) {
+    const d = ensure();
+    const by = new Map(moves.map((m) => [m.taskId, m]));
+    commit({
+      ...d,
+      tasks: d.tasks.map((t) => {
+        const m = by.get(t.id);
+        return m ? { ...t, due: m.to, dueTime: m.time, remindAt: undefined, slot: undefined, hideUntil: undefined } : t;
+      }),
+    });
+  },
+
+  /**
+   * Snoozes a task. Returns "decide" instead when it has already been snoozed twice: the third time you choose
+   * (do it now, give it a fixed slot, or drop it), so nothing drifts for ever.
+   */
+  snoozeTask(id: string, kind: "hour" | "evening" | "tomorrow", now: Date = new Date()): "snoozed" | "decide" {
+    const t = ensure().tasks.find((x) => x.id === id);
+    if (!t) return "snoozed";
+    if ((t.snoozeCount ?? 0) >= MAX_SNOOZES) return "decide";
+    const count = (t.snoozeCount ?? 0) + 1;
+    const today = todayISO(now);
+    if (kind === "tomorrow") {
+      mapTask(id, (x) => ({ ...x, due: addDays(today, 1), remindAt: undefined, snoozeCount: count }));
+      return "snoozed";
+    }
+    const mins = now.getHours() * 60 + now.getMinutes();
+    const target = kind === "hour" ? mins + 60 : Math.max(18 * 60, mins + 60);
+    const at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    at.setMinutes(Math.ceil(target / 5) * 5);
+    if (at.getTime() <= now.getTime() || todayISO(at) !== today) {
+      // Too late in the day for "later today": tomorrow it is.
+      mapTask(id, (x) => ({ ...x, due: addDays(today, 1), remindAt: undefined, snoozeCount: count }));
+      return "snoozed";
+    }
+    // A task with its own time moves that time; an untimed one just won't be placed before then.
+    mapTask(id, (x) =>
+      x.dueTime && x.due === today
+        ? { ...x, dueTime: `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`, snoozeCount: count }
+        : { ...x, due: x.due && x.due < today ? today : x.due, remindAt: at.getTime(), snoozeCount: count },
+    );
+    return "snoozed";
+  },
+
+  /** The third-snooze choice. "now" starts a 15-minute timer, "slot" books a fixed time, "drop" deletes it (undoable by the caller). */
+  decideTask(id: string, choice: "now" | "slot" | "drop", slot?: { date: ISODate; time: string }) {
+    const t = ensure().tasks.find((x) => x.id === id);
+    if (!t) return;
+    if (choice === "drop") {
+      actions.remove(id);
+      return;
+    }
+    if (choice === "slot" && slot) {
+      mapTask(id, (x) => ({ ...x, due: slot.date, dueTime: slot.time, remindAt: undefined, snoozeCount: 0 }));
+      return;
+    }
+    if (choice === "now") {
+      mapTask(id, (x) => ({ ...x, due: todayISO(), remindAt: undefined, snoozeCount: 0 }));
+      actions.startTimer(id, DO_NOW_MIN);
+    }
+  },
+
+  /** Snoozes a session / chore / bill for today. Returns "decide" on the third time. */
+  snoozeItem(key: string, until: number, date: ISODate = todayISO()): "snoozed" | "decide" {
+    const d = ensure();
+    const k = `${key}@${date}`;
+    // Only today's counters are worth keeping.
+    const snoozes = Object.fromEntries(Object.entries(d.settings.snoozes ?? {}).filter(([x]) => x.endsWith(`@${date}`)));
+    const n = snoozes[k] ?? 0;
+    if (n >= MAX_SNOOZES) return "decide";
+    commit({ ...d, settings: { ...d.settings, snoozes: { ...snoozes, [k]: n + 1 } } });
+    return "snoozed";
+  },
+
+  /** Forgets the snooze count of an item (after you chose what to do with it). */
+  clearSnoozes(key: string, date: ISODate = todayISO()) {
+    const d = ensure();
+    const snoozes = { ...(d.settings.snoozes ?? {}) };
+    delete snoozes[`${key}@${date}`];
+    commit({ ...d, settings: { ...d.settings, snoozes } });
   },
 
   /** Returns false when the focus list is full. */
@@ -362,7 +469,7 @@ export const actions = {
     }
     const area = d.profile?.areas.find((a) => a.id === areaId);
     if (!area?.target) return null;
-    const n = nextNumber(d.sessions, areaId);
+    const n = nextNumber(d.sessions, areaId, area.target.startAt);
     const log: SessionLog = {
       id: uid(),
       areaId,

@@ -11,6 +11,7 @@ import type {
   FixedEvent,
   GroceryItem,
   LearnedRule,
+  UserWord,
   MonthGoals,
   Profile,
   Recurrence,
@@ -36,7 +37,8 @@ export function backupDue(data: AppData, now = Date.now()): boolean {
 }
 
 export function exportBackup(data: AppData) {
-  downloadText(`today-backup-${toISO(new Date())}.json`, JSON.stringify(data, null, 2), "application/json");
+  // The phone-calendar mirror is re-read from the phone, so it isn't worth carrying in a backup.
+  downloadText(`today-backup-${toISO(new Date())}.json`, JSON.stringify({ ...data, calendarEvents: undefined }, null, 2), "application/json");
 }
 
 const TEMPLATES: TemplateId[] = ["project", "trip", "job", "admin", "event"];
@@ -84,6 +86,7 @@ function cleanTask(v: any): Task | null {
     template: TEMPLATES.includes(v.template) ? v.template : undefined,
     recur: cleanRecur(v.recur),
     area: str(v.area, 40),
+    hideUntil: isISO(v.hideUntil) ? v.hideUntil : undefined,
     remindAt: num(v.remindAt),
     alarmAck: num(v.alarmAck),
     slot:
@@ -116,6 +119,7 @@ function cleanTarget(t: any): AreaTarget | undefined {
     weekends: !!t.weekends,
     slots: Array.isArray(t.slots) ? t.slots.filter((s: unknown) => typeof s === "string").slice(0, 8) : [],
     at: typeof t.at === "string" && /^\d{2}:\d{2}$/.test(t.at) ? t.at : undefined,
+    startAt: Number.isInteger(t.startAt) && t.startAt >= 1 && t.startAt <= 99999 ? t.startAt : undefined,
     variants: Array.isArray(t.variants) ? t.variants.filter((v: unknown) => typeof v === "string" && v).slice(0, 6).map((v: string) => v.slice(0, 30)) : undefined,
     remind: t.remind !== false,
     order: Number.isFinite(t.order) ? t.order : undefined,
@@ -162,7 +166,17 @@ function cleanEvents(v: any): FixedEvent[] | undefined {
       end: hhmmOf(e.start) ? hhmmOf(e.end) : undefined,
       countsFor: str(e.countsFor, 40),
       createdAt: num(e.createdAt) ?? Date.now(),
+      source: e.source === "calendar" || e.source === "ics" ? e.source : undefined,
+      calId: str(e.calId, 80),
     }));
+}
+
+function cleanUserWords(v: any): UserWord[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .filter((w: any) => w && typeof w.word === "string" && w.word.trim() && typeof w.areaId === "string")
+    .slice(0, 1000)
+    .map((w: any) => ({ word: w.word.trim().toLowerCase().slice(0, 60), areaId: w.areaId.slice(0, 40), at: num(w.at) ?? Date.now() }));
 }
 
 function cleanBills(v: any): Bill[] | undefined {
@@ -282,6 +296,15 @@ function cleanProfile(p: any): Profile {
       eventLeadMin: n(p.eventLeadMin, 0, 1440),
       nudgeTime: hhmm(p.nudgeTime),
       reviewTime: hhmm(p.reviewTime),
+      breakStart: hhmm(p.breakStart),
+      breakEnd: hhmm(p.breakEnd),
+      bufferMin: n(p.bufferMin, 0, 60),
+      eveningCapMin: n(p.eveningCapMin, 30, 480),
+      officeCommuteMin: n(p.officeCommuteMin, 0, 240),
+      sleepStart: hhmm(p.sleepStart),
+      wakeTime: hhmm(p.wakeTime),
+      hideMic: bool(p.hideMic),
+      calendarSync: bool(p.calendarSync),
       officeDays: days(p.officeDays),
       slots: Array.isArray(p.slots)
         ? p.slots
@@ -340,6 +363,8 @@ export function migrate(raw: unknown): AppData {
     sessions: cleanSessions(r.sessions),
     log: cleanLog(r.log),
     events: cleanEvents(r.events),
+    calendarEvents: cleanEvents(r.calendarEvents),
+    userWords: cleanUserWords(r.userWords),
     bills: cleanBills(r.bills),
     grocery: cleanGrocery(r.grocery),
     goals: cleanGoals(r.goals),
@@ -353,8 +378,20 @@ export function migrate(raw: unknown): AppData {
       lastBackupAt: num(s.lastBackupAt),
       backupSnoozedUntil: num(s.backupSnoozedUntil),
       timer:
-        s.timer && typeof s.timer.taskId === "string" && typeof s.timer.startedAt === "number"
-          ? { taskId: s.timer.taskId, startedAt: s.timer.startedAt }
+        s.timer && typeof s.timer.startedAt === "number" && (typeof s.timer.taskId === "string" || typeof s.timer.ref === "string")
+          ? {
+              taskId: str(s.timer.taskId, 64),
+              ref: str(s.timer.ref, 80),
+              label: str(s.timer.label, 120),
+              startedAt: s.timer.startedAt,
+              goalMin: num(s.timer.goalMin),
+            }
+          : undefined,
+      catchUpDate: isISO(s.catchUpDate) ? s.catchUpDate : undefined,
+      calendarSyncedAt: num(s.calendarSyncedAt),
+      snoozes:
+        s.snoozes && typeof s.snoozes === "object"
+          ? (Object.fromEntries(Object.entries(s.snoozes).filter(([k, v]) => typeof v === "number" && v > 0 && k.length < 90).slice(0, 300)) as Record<string, number>)
           : undefined,
       planDate: isISO(s.planDate) ? s.planDate : undefined,
       wrapDate: isISO(s.wrapDate) ? s.wrapDate : undefined,

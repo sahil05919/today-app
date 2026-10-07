@@ -2,10 +2,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { aiEnabled, interpret } from "@/lib/ai";
 import { nextDue } from "@/lib/bills";
-import { friendlyDate } from "@/lib/dates";
+import { diffDays, friendlyDate, toISO } from "@/lib/dates";
 import type { ParsedCapture } from "@/lib/parse";
 import { sessionTitle } from "@/lib/sessions";
 import { actions, getData } from "@/lib/store";
+import { buildTimeline, movedNote } from "@/lib/timeline";
 import { understand } from "@/lib/understand";
 import { voiceSupported } from "@/lib/voice";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
@@ -24,6 +25,15 @@ export interface CaptureCommand {
 }
 
 const soft = (s: string) => (/^(Today|Tomorrow|Yesterday)$/.test(s) ? s.toLowerCase() : s);
+
+/** One line about what had to move because of what was just added: "Moved Power BI to 18:30 to fit “Fill form”." */
+function planNote(before: AppData, date: ISODate | undefined, title: string): string | undefined {
+  if (!date) return undefined;
+  const now = new Date();
+  const ahead = diffDays(date, toISO(now));
+  if (ahead < 0 || ahead > 14) return undefined;
+  return movedNote(buildTimeline(before, date, now), buildTimeline(getData(), date, now), title) ?? undefined;
+}
 
 export function Capture({
   ctx,
@@ -49,9 +59,10 @@ export function Capture({
   // Live preview: the same pipeline that runs on Enter (rules, your learned fixes, a sensible time).
   const parsed = useMemo(() => (text.trim() ? understand(text, data, new Date()) : null), [text, data]);
 
-  // The mic only exists where voice can work: a supporting browser, and a connection (Chrome's voice is online).
+  // The mic only exists where voice can work (and only if you haven't hidden it in Settings).
+  const hideMic = ctx.profile.hideMic;
   useEffect(() => {
-    const update = () => setVoiceOk(voiceSupported(navigator.onLine));
+    const update = () => setVoiceOk(!hideMic && voiceSupported(navigator.onLine));
     update();
     window.addEventListener("online", update);
     window.addEventListener("offline", update);
@@ -59,12 +70,12 @@ export function Capture({
       window.removeEventListener("online", update);
       window.removeEventListener("offline", update);
     };
-  }, []);
+  }, [hideMic]);
 
   useEffect(() => {
     if (!command) return;
     if (command.kind === "voice") {
-      if (voiceSupported(navigator.onLine)) {
+      if (!hideMic && voiceSupported(navigator.onLine)) {
         setAutoStart(true);
         setVoiceOpen(true);
       } else input.current?.focus();
@@ -127,6 +138,7 @@ export function Capture({
         summary: `${e.title}, ${when}. Sessions will move around it`,
         source,
         undo: () => actions.removeEvent(e.id),
+        note: planNote(d, e.date, e.title),
         edit: () => setEditing(getData().events?.find((x) => x.id === e.id) ?? e),
       };
     }
@@ -141,6 +153,7 @@ export function Capture({
       summary: p.kind === "note" ? `Saved to ${area?.name ?? "notes"}: ${task.title}` : undefined,
       taskId: task.id,
       source,
+      note: planNote(d, task.due, task.title),
       undo: () => actions.remove(task.id),
     };
   };

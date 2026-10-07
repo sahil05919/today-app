@@ -1,24 +1,24 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { backupDue, exportBackup } from "@/lib/backup";
-import { diffDays, toISO } from "@/lib/dates";
-import { OFF_LIMIT_MESSAGE, MAX_OFF_DAYS, isOffDay, offDaysLeft } from "@/lib/offday";
-import { actions } from "@/lib/store";
-import type { AppData } from "@/lib/types";
-import { MAX_FOCUS } from "@/lib/types";
 import { balanceNudge } from "@/lib/balance";
 import { computeNudges, nudgeKey } from "@/lib/nudges";
-import { isNative } from "@/lib/platform";
+import { paceStatus } from "@/lib/pace";
+import { weeklyPercent } from "@/lib/progress";
+import { actions } from "@/lib/store";
 import { weekStart } from "@/lib/stats";
-import { Capture, type CaptureCommand } from "./Capture";
-import { ProgressCard } from "./ProgressCard";
-import { TaskCard } from "./TaskCard";
-import { ProgressSheet, TodayPlan } from "./TodayPlan";
-import { btn, Empty, SectionTitle, sortTasks, type Panel, type ViewCtx } from "./ui";
+import { nextUp, type TLItem, type Timeline } from "@/lib/timeline";
+import type { AppData, FixedEvent } from "@/lib/types";
+import { CalendarEventInfo } from "./CalendarSheet";
+import { openCount } from "./itemActions";
+import { SnoozeSheet, type SnoozeTarget } from "./SnoozeSheet";
+import { NextUpCard, TimelineList } from "./Timeline";
+import { EventSheet, ItemSheet, ProgressSheet } from "./TodayPlan";
+import { btn, type Panel, type ViewCtx } from "./ui";
 
 function Nudge({ emoji, title, body, action, onAction }: { emoji: string; title: string; body: string; action: string; onAction: () => void }) {
   return (
-    <button onClick={onAction} className="mb-2 flex w-full items-center gap-3 rounded-2xl bg-accent-soft p-3.5 text-left">
+    <button onClick={onAction} className="flex w-full items-center gap-3 rounded-2xl bg-warn-soft p-3.5 text-left">
       <span className="text-2xl" aria-hidden="true">
         {emoji}
       </span>
@@ -31,52 +31,50 @@ function Nudge({ emoji, title, body, action, onAction }: { emoji: string; title:
   );
 }
 
+type Sheet = { k: "item"; it: TLItem } | { k: "event"; e: FixedEvent } | { k: "snooze"; target: SnoozeTarget } | { k: "progress" } | null;
+
 /**
- * The home screen, built to be one glance and one button:
- * progress on top, then the big input (type or speak), then today's list. Everything else lives in the menu.
+ * The home screen, built to be one glance: what's next (with Start / Done / Snooze), your top must-have as one line,
+ * then the day as one timeline, then a single "Adjust my day" button. The input lives at the bottom of the app.
  */
 export function TodayView({
   data,
   ctx,
-  command,
+  tl,
+  now,
+  homeNote,
   openPanel,
   onPrefill,
 }: {
   data: AppData;
   ctx: ViewCtx;
-  command?: CaptureCommand;
+  tl: Timeline;
+  now: Date;
+  homeNote?: string | null;
   openPanel: (p: Panel) => void;
   onPrefill: (text: string) => void;
 }) {
-  const [showDone, setShowDone] = useState(false);
-  const [progress, setProgress] = useState(false);
-  const open = data.tasks.filter((t) => t.status === "open");
-  const focus = sortTasks(open.filter((t) => t.focus));
-  const dueNow = sortTasks(open.filter((t) => !t.focus && t.due != null && diffDays(t.due, ctx.today) <= 0));
-  const doneToday = data.tasks
-    .filter((t) => t.status === "done" && t.completedAt && toISO(new Date(t.completedAt)) === ctx.today)
-    .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
-
-  const showBackup = backupDue(data);
+  const [sheet, setSheet] = useState<Sheet>(null);
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const item = useMemo(() => nextUp(tl, nowMin), [tl, nowMin]);
+  const goal = (data.goals?.month === ctx.today.slice(0, 7) ? data.goals.items : []).find((g) => !g.done);
+  const pct = useMemo(() => weeklyPercent(data, ctx.today), [data, ctx.today]);
+  const pace = useMemo(() => paceStatus(data, ctx.today), [data, ctx.today]);
   const hasSessions = (data.profile?.areas ?? []).some((a) => a.target);
-  const goals = data.goals?.month === ctx.today.slice(0, 7) ? data.goals : undefined;
-  const hour = new Date().getHours();
+
   const s = data.settings;
-  const reviewDue = new Date().getDay() === 0 && s.reviewWeek !== weekStart(ctx.today);
-  const planDue = hour < 14 && s.planDate !== ctx.today && open.length > 0;
-  const unfinished = open.filter((t) => (t.due != null && t.due <= ctx.today) || t.focus).length;
-  const wrapDue = hour >= 17 && s.wrapDate !== ctx.today && unfinished > 0;
-  const setupDue = !data.profile?.setupDone;
-  const balance = new Date().getDay() >= 3 || new Date().getDay() === 0 ? balanceNudge(data, ctx.today) : null;
+  const reviewDue = now.getDay() === 0 && s.reviewWeek !== weekStart(ctx.today);
+  const balance = now.getDay() >= 3 || now.getDay() === 0 ? balanceNudge(data, ctx.today) : null;
   const balanceDue = !!balance && s.balanceWeek !== weekStart(ctx.today);
+  const conscience = computeNudges(data, now)[0];
 
   // One banner at a time, most important first. Calm beats complete.
-  const nudges: React.ReactNode[] = [];
-  if (setupDue)
-    nudges.push(<Nudge key="setup" emoji="👋" title="Check your settings (1 minute)" body="Your areas, weekly targets and daily rhythm, so Today can plan around you." action="Open" onAction={() => openPanel("me")} />);
-  if (showBackup)
-    nudges.push(
-      <div key="backup" className="rounded-2xl bg-warn-soft p-4 text-sm">
+  let banner: React.ReactNode = null;
+  if (!data.profile?.setupDone) {
+    banner = <Nudge emoji="👋" title="Check your settings (1 minute)" body="Your areas, weekly targets and daily rhythm, so Today can plan around you." action="Open" onAction={() => openPanel("me")} />;
+  } else if (backupDue(data)) {
+    banner = (
+      <div className="rounded-2xl bg-warn-soft p-4 text-sm">
         <p className="font-medium text-ink">It's been a couple of weeks since your last backup.</p>
         <p className="mt-0.5 text-muted">Everything lives on this device, so a quick export keeps it safe.</p>
         <div className="mt-3 flex gap-2">
@@ -94,13 +92,13 @@ export function TodayView({
             Later
           </button>
         </div>
-      </div>,
+      </div>
     );
-  if (reviewDue) nudges.push(<Nudge key="review" emoji="🗓️" title="Sunday review" body="See your week and plan the next one." action="Review" onAction={() => openPanel("review")} />);
-  const conscience = computeNudges(data, new Date())[0];
-  if (conscience && data.profile?.notify.nudges !== false) {
-    nudges.push(
-      <div key={"n:" + conscience.id} className="rounded-2xl bg-accent-soft p-3.5">
+  } else if (reviewDue) {
+    banner = <Nudge emoji="🗓️" title="Sunday review" body="See your week and decide what's still pending." action="Review" onAction={() => openPanel("review")} />;
+  } else if (conscience && data.profile?.notify.nudges !== false) {
+    banner = (
+      <div className="rounded-2xl bg-accent-soft p-3.5">
         <p className="text-[15px] font-semibold text-ink">{conscience.text}</p>
         <div className="mt-2.5 flex gap-2">
           <button
@@ -108,7 +106,7 @@ export function TodayView({
             onClick={() => {
               if (conscience.kind === "goals") openPanel("goals");
               else if (conscience.kind === "empty-day") onPrefill("");
-              else setProgress(true);
+              else setSheet({ k: "progress" });
             }}
           >
             {conscience.kind === "goals" ? "Set them" : conscience.kind === "empty-day" ? "Add something" : "See my week"}
@@ -117,14 +115,11 @@ export function TodayView({
             Not now
           </button>
         </div>
-      </div>,
+      </div>
     );
-  }
-  if (wrapDue) nudges.push(<Nudge key="wrap" emoji="🌙" title="Wrap up the day" body={`${unfinished} left. Roll them to tomorrow in one tap.`} action="Wrap up" onAction={() => openPanel("evening")} />);
-  if (planDue && !hasSessions) nudges.push(<Nudge key="plan" emoji="☀️" title="Plan your day" body="Pick the 3 things that matter today." action="Pick 3" onAction={() => openPanel("morning")} />);
-  if (balanceDue && balance)
-    nudges.push(
-      <div key="balance" className="rounded-2xl bg-warn-soft p-3.5">
+  } else if (balanceDue && balance) {
+    banner = (
+      <div className="rounded-2xl bg-warn-soft p-3.5">
         <p className="text-[15px] font-semibold text-ink">⚖️ {balance.message}</p>
         <div className="mt-2.5 flex gap-2">
           <button className={`${btn.primary} min-h-11`} onClick={() => onPrefill(`@${balance.missing[0]} `)}>
@@ -134,83 +129,64 @@ export function TodayView({
             Not now
           </button>
         </div>
-      </div>,
+      </div>
     );
+  }
 
-  const left = offDaysLeft(data, ctx.today);
-  const off = isOffDay(data, ctx.today);
-  const takeOff = () => {
-    if (actions.takeOffDay(ctx.today)) ctx.notify("Off day. Today is lighter, and the rest moves later in the week.", () => actions.cancelOffDay(ctx.today));
+  const open = (it: TLItem) => {
+    if (it.taskId) return ctx.open(it.taskId);
+    if (it.eventId) {
+      const e = [...(data.events ?? []), ...(data.calendarEvents ?? [])].find((x) => x.id === it.eventId);
+      if (e) return setSheet({ k: "event", e });
+    }
+    setSheet({ k: "item", it });
   };
 
+  const snooze = (it: TLItem) => setSheet({ k: "snooze", target: it.taskId ? { kind: "task", taskId: it.taskId } : { kind: "item", item: it, date: tl.date } });
+
   return (
-    <div className="space-y-3.5">
-      {nudges[0]}
+    <div className="space-y-4">
+      <NextUpCard tl={tl} item={item} data={data} ctx={ctx} nowMin={nowMin} goal={goal} onOpen={open} onSnooze={snooze} onGoals={() => openPanel("goals")} />
 
-      <ProgressCard data={data} ctx={ctx} onOpen={() => setProgress(true)} onGoals={() => openPanel("goals")} />
-      {progress && <ProgressSheet data={data} ctx={ctx} onClose={() => setProgress(false)} />}
+      {homeNote && (
+        <p className="anim-fade rounded-xl bg-accent-soft px-3 py-2 text-sm" role="status">
+          {homeNote}
+        </p>
+      )}
+      {banner}
 
-      <Capture ctx={ctx} data={data} command={command} />
+      <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} openPanel={(p) => openPanel(p)} />
 
-      <TodayPlan data={data} ctx={ctx} openPanel={openPanel} />
-
-      {(focus.length > 0 || dueNow.length > 0) && (
-        <div className="space-y-2">
-          {[...focus, ...dueNow].map((t) => (
-            <TaskCard key={t.id} task={t} ctx={ctx} big={t.focus} />
-          ))}
-        </div>
+      {hasSessions && (
+        <button onClick={() => setSheet({ k: "progress" })} className="block w-full rounded-2xl border border-line bg-surface px-4 py-3 text-left" aria-label="This week's progress, tap for details">
+          <span className="flex items-baseline justify-between gap-2">
+            <span className="text-[15px] font-semibold">
+              This week {pct.pct}%
+              <span className={`ml-2 text-sm font-medium ${pace.status === "behind" ? "text-warn" : "text-accent"}`}>{pace.label}</span>
+            </span>
+            <span className="text-muted" aria-hidden="true">
+              ›
+            </span>
+          </span>
+          <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-line">
+            <span className="block h-full rounded-full bg-accent transition-all" style={{ width: `${Math.min(100, pct.pct)}%` }} />
+          </span>
+        </button>
       )}
 
-      {!hasSessions && open.length === 0 && doneToday.length === 0 && (
-        <Empty>
-          {isNative()
-            ? "A clear page. Type or speak a task above. Coming from the web version? Menu → Import JSON brings your tasks across."
-            : "A clear page. Type or speak something above. I'll work out the day, the time and where it belongs."}
-        </Empty>
-      )}
-
-      {/* Off day: at most two a week. */}
-      <div className="flex flex-col items-center gap-1.5 pt-1 text-center">
-        {off ? (
-          <>
-            <p className="text-sm text-muted">🌿 Off day. Today is lighter: one small session, the rest moves on.</p>
-            <button className="min-h-11 px-3 text-sm font-medium text-accent" onClick={() => actions.cancelOffDay(ctx.today)}>
-              Actually, I'll do today
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              onClick={takeOff}
-              disabled={left === 0}
-              aria-describedby="off-left"
-              className="min-h-11 rounded-xl border border-line bg-surface px-5 text-sm font-medium disabled:opacity-45"
-            >
-              🌿 Take an off day
-            </button>
-            <p id="off-left" className="text-xs text-muted">
-              Off days left: {left} of {MAX_OFF_DAYS}
-            </p>
-            {left === 0 && <p className="max-w-xs text-sm text-ink">{OFF_LIMIT_MESSAGE}</p>}
-          </>
-        )}
+      <div className="flex flex-col items-center gap-1 pt-1">
+        <button onClick={() => openPanel("adjust")} className={`${btn.soft} min-h-12 w-full text-base`}>
+          ✨ Adjust my day
+        </button>
+        <button onClick={() => openPanel("ideas")} className="min-h-11 px-3 text-sm text-muted underline-offset-2 hover:underline">
+          Free time ideas
+        </button>
       </div>
 
-      {doneToday.length > 0 && (
-        <div className="pt-1">
-          <button onClick={() => setShowDone((v) => !v)} className="min-h-11 text-sm text-muted underline-offset-2 hover:underline">
-            Done today · {doneToday.length} {showDone ? "(hide)" : "(show)"}
-          </button>
-          {showDone && (
-            <div className="mt-1 space-y-2">
-              {doneToday.map((t) => (
-                <TaskCard key={t.id} task={t} ctx={ctx} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      {sheet?.k === "progress" && <ProgressSheet data={data} ctx={ctx} onClose={() => setSheet(null)} onReview={() => (setSheet(null), openPanel("review"))} />}
+      {sheet?.k === "item" && <ItemSheet item={sheet.it} date={tl.date} left={openCount(tl.items, sheet.it.key)} ctx={ctx} onClose={() => setSheet(null)} onSnooze={(it) => snooze(it)} openPanel={openPanel} />}
+      {sheet?.k === "event" && (sheet.e.source === "calendar" ? <CalendarEventInfo event={sheet.e} onClose={() => setSheet(null)} /> : <EventSheet event={sheet.e} data={data} ctx={ctx} onClose={() => setSheet(null)} />)}
+      {sheet?.k === "snooze" && <SnoozeSheet target={sheet.target} ctx={ctx} onClose={() => setSheet(null)} />}
     </div>
   );
 }

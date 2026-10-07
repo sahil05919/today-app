@@ -2,13 +2,18 @@ import { toMin, withDefaults } from "./profile";
 import type { Area, AppData, FixedEvent, ISODate } from "./types";
 
 /**
- * Fixed events ("event Wednesday 6pm dinner") are blocks that never move. Sessions flow around them.
- * An event with no time blocks the whole day.
+ * Fixed events ("event Wednesday 6pm dinner", or anything read from the phone's calendar) are blocks that never move.
+ * Sessions and tasks flow around them. An event with no time blocks the whole day for sessions.
  */
 export const DEFAULT_EVENT_MINUTES = 120;
 
+/** Your own events plus the read-only mirror of the phone's calendar. */
+export const allEvents = (data: AppData): FixedEvent[] => [...(data.events ?? []), ...(data.calendarEvents ?? [])];
+
 export const eventsOn = (data: AppData, date: ISODate): FixedEvent[] =>
-  (data.events ?? []).filter((e) => e.date === date).sort((a, b) => (a.start ?? "00:00").localeCompare(b.start ?? "00:00"));
+  allEvents(data)
+    .filter((e) => e.date === date)
+    .sort((a, b) => (a.start ?? "00:00").localeCompare(b.start ?? "00:00"));
 
 /** [start, end) in minutes after midnight. */
 export function eventSpan(e: FixedEvent): [number, number] {
@@ -18,10 +23,10 @@ export function eventSpan(e: FixedEvent): [number, number] {
   return [s, Math.max(end, s + 15)];
 }
 
-/** What the planner treats as busy on each day. */
+/** What the planner treats as busy on each day (events only; see lib/busy.ts for the full set of day rules). */
 export function eventBusy(data: AppData): (date: ISODate) => Array<[number, number]> {
   const byDate = new Map<ISODate, Array<[number, number]>>();
-  for (const e of data.events ?? []) {
+  for (const e of allEvents(data)) {
     const list = byDate.get(e.date) ?? [];
     list.push(eventSpan(e));
     byDate.set(e.date, list);
@@ -31,7 +36,7 @@ export function eventBusy(data: AppData): (date: ISODate) => Array<[number, numb
 
 /** Dates (this week or any) on which an event counts as a session for an area. */
 export const countedByEvent = (data: AppData, areaId: string, date: ISODate) =>
-  (data.events ?? []).some((e) => e.date === date && e.countsFor === areaId);
+  allEvents(data).some((e) => e.date === date && e.countsFor === areaId);
 
 const COUNTS_AS: Array<[areaId: string, pattern: RegExp]> = [["walking", /\b(walk|walking|outing|hike|stroll|trek|park)\b/i]];
 

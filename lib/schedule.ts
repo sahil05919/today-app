@@ -1,5 +1,6 @@
 import { addDays, fromISO, toISO } from "./dates";
-import { countedByEvent, eventBusy } from "./fixed";
+import { dayRules, fixedSpans, overlapMinutes, planningBusy } from "./busy";
+import { countedByEvent } from "./fixed";
 import { isOffDay, OFF_DAY_MAX_MIN } from "./offday";
 import { toMin, withDefaults } from "./profile";
 import { entryFor, nextNumber, sessionKey, sessionTitle, variantFor } from "./sessions";
@@ -34,7 +35,8 @@ export interface PlannedSession {
 
 export type BusyFn = (date: ISODate) => Array<[number, number]>;
 
-const BUFFER = 5;
+/** The evening cap is "about" 2.5 h: weekly sessions may run a tenth over so a normal day of them still fits. */
+export const SESSION_CAP_SLACK = 1.1;
 const WEEKDAY_CAP = 210; // minutes of sessions per day
 const WEEKEND_CAP = 100; // weekends stay light
 const isWeekend = (date: ISODate) => [0, 6].includes(fromISO(date).getDay());
@@ -61,7 +63,7 @@ function windows(slot: Slot, date: ISODate, earliest: number, busy: BusyFn): Arr
 }
 
 /** Lays items out in order inside the free windows. null if they don't all fit. */
-function layout(items: Item[], wins: Array<[number, number]>): Placed[] | null {
+function layout(items: Item[], wins: Array<[number, number]>, buffer: number): Placed[] | null {
   const sorted = [...items].sort((a, b) => a.order - b.order || (a.at ?? 0) - (b.at ?? 0));
   const cursors = wins.map(([s]) => s);
   const out: Placed[] = [];
@@ -73,7 +75,7 @@ function layout(items: Item[], wins: Array<[number, number]>): Placed[] | null {
         const start = useAt ? Math.max(cursors[w], it.at!) : cursors[w];
         if (start + it.minutes <= wins[w][1]) {
           out.push({ ...it, start, end: start + it.minutes });
-          cursors[w] = start + it.minutes + BUFFER;
+          cursors[w] = start + it.minutes + buffer;
           placed = true;
         }
       }
@@ -85,8 +87,9 @@ function layout(items: Item[], wins: Array<[number, number]>): Placed[] | null {
 }
 
 export function planSessions(data: AppData, now: Date = new Date(), busyOverride?: BusyFn): PlannedSession[] {
-  const busy: BusyFn = busyOverride ?? eventBusy(data);
+  const busy: BusyFn = busyOverride ?? planningBusy(data);
   const p = withDefaults(data.profile);
+  const buffer = p.bufferMin;
   const today = toISO(now);
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const week = Array.from({ length: 7 }, (_, i) => addDays(weekStart(today), i));
@@ -122,6 +125,12 @@ export function planSessions(data: AppData, now: Date = new Date(), busyOverride
   const dayMinutes = (d: ISODate) =>
     [...cells.entries()].filter(([k]) => k.startsWith(d)).reduce((n, [, items]) => n + items.reduce((m, i) => m + i.minutes, 0), 0);
 
+  /** Minutes already planned in the evening of a day: sessions in evening slots plus clock-time commitments. */
+  const eveningUsed = (d: ISODate, r: ReturnType<typeof dayRules>) =>
+    [...cells.entries()]
+      .filter(([k]) => k.startsWith(d) && toMin(slots.get(k.split("|")[1])?.start ?? "00:00") >= r.eveningStart)
+      .reduce((n, [, items]) => n + items.reduce((m, i) => m + i.minutes, 0), 0) + overlapMinutes(fixedSpans(data, d), r.eveningStart, 1440);
+
   const itemsOn = (d: ISODate) => [...cells.entries()].filter(([k]) => k.startsWith(d)).reduce((n, [, items]) => n + items.length, 0);
 
   const tryPlace = (a: Area, d: ISODate): boolean => {
@@ -129,10 +138,14 @@ export function planSessions(data: AppData, now: Date = new Date(), busyOverride
     if (isOffDay(data, d) && (itemsOn(d) >= 1 || a.target!.minutes > OFF_DAY_MAX_MIN || logs.some((l) => l.date === d))) return false;
     const cap = isWeekend(d) ? WEEKEND_CAP : WEEKDAY_CAP;
     if (dayMinutes(d) + a.target!.minutes > cap) return false;
+    const r = dayRules(data, d);
     for (const s of slotsFor(a, d)) {
+      // The evening holds about 2.5 hours of plans (lighter on office days), counting fixed events in it too.
+      // Sessions may use a little over ("about"); tasks added later only get what the cap itself leaves.
+      if (toMin(s.start) >= r.eveningStart && eveningUsed(d, r) + a.target!.minutes > r.eveningCap * SESSION_CAP_SLACK) continue;
       const item: Item = { area: a, minutes: a.target!.minutes, order: a.target!.order ?? 5, at: a.target!.at ? toMin(a.target!.at) : undefined };
       const existing = cells.get(cellKey(d, s)) ?? [];
-      if (layout([...existing, item], windows(s, d, earliest(d), busy))) {
+      if (layout([...existing, item], windows(s, d, earliest(d), busy), buffer)) {
         cells.set(cellKey(d, s), [...existing, item]);
         return true;
       }
@@ -176,7 +189,7 @@ export function planSessions(data: AppData, now: Date = new Date(), busyOverride
   for (const [k, items] of cells) {
     const [date, slotId] = k.split("|");
     const slot = slots.get(slotId)!;
-    const laid = layout(items, windows(slot, date, earliest(date), busy));
+    const laid = layout(items, windows(slot, date, earliest(date), busy), buffer);
     if (laid) placed.push(...laid.map((l) => ({ ...l, date, slot })));
   }
   placed.sort((x, y) => x.date.localeCompare(y.date) || x.start - y.start);
@@ -205,7 +218,7 @@ export function planSessions(data: AppData, now: Date = new Date(), busyOverride
     });
   }
   for (const s of placed) {
-    const n = counters.get(s.area.id) ?? nextNumber(logs, s.area.id);
+    const n = counters.get(s.area.id) ?? nextNumber(logs, s.area.id, s.area.target?.startAt);
     counters.set(s.area.id, n + 1);
     const variant = variantFor(s.area, n);
     out.push({
@@ -234,7 +247,7 @@ export const pendingOn = (plan: PlannedSession[], date: ISODate) => plan.filter(
  * Sessions you've already logged that day come back as `done`.
  */
 export function plannedForDay(data: AppData, date: ISODate, busyOverride?: BusyFn): PlannedSession[] {
-  const busy: BusyFn = busyOverride ?? eventBusy(data);
+  const busy: BusyFn = busyOverride ?? planningBusy(data);
   const logs = data.sessions ?? [];
   const mine = logs.filter((l) => l.date === date);
   // Plan as if nothing was done that day yet, from midnight, then mark off what was.

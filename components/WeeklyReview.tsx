@@ -11,17 +11,7 @@ import type { AppData, Task } from "@/lib/types";
 import { btn, Chip, Sheet, type ViewCtx } from "./ui";
 
 /** Sunday review: what got done, what slipped, and a quick plan for next week. */
-export function WeeklyReview({
-  data,
-  ctx,
-  onClose,
-  onPatterns,
-}: {
-  data: AppData;
-  ctx: ViewCtx;
-  onClose: () => void;
-  onPatterns: () => void;
-}) {
+export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewCtx; onClose: () => void }) {
   const tasks = data.tasks;
   const sum = useMemo(() => weekSummary(tasks, ctx.today), [tasks, ctx.today]);
   const nextMonday = addDays(weekStart(ctx.today), 7);
@@ -185,17 +175,26 @@ export function WeeklyReview({
           <button className={`${btn.primary} min-h-12 flex-1`} onClick={close}>
             All set
           </button>
-          <button className={`${btn.ghost} min-h-12`} onClick={onPatterns}>
-            My patterns
-          </button>
         </div>
+
+        <details className="rounded-2xl border border-line">
+          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between px-4 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+            📈 My patterns
+            <span aria-hidden="true" className="text-muted">
+              ›
+            </span>
+          </summary>
+          <div className="border-t border-line p-3">
+            <PatternsBody tasks={data.tasks} ctx={ctx} />
+          </div>
+        </details>
       </div>
     </Sheet>
   );
 }
 
 /** "My patterns": completion rate, best day and estimate accuracy. All worked out on this device. */
-export function Patterns({ tasks, ctx, onClose }: { tasks: Task[]; ctx: ViewCtx; onClose: () => void }) {
+function PatternsBody({ tasks, ctx }: { tasks: Task[]; ctx: ViewCtx }) {
   const rate = completionRate(tasks, ctx.today, 30);
   const best = bestDay(tasks, ctx.today);
   const acc = estimateAccuracy(tasks);
@@ -210,7 +209,7 @@ export function Patterns({ tasks, ctx, onClose }: { tasks: Task[]; ctx: ViewCtx;
   );
 
   return (
-    <Sheet title="My patterns" onClose={onClose}>
+    <div>
       <div className="space-y-3">
         {rate.rate != null ? (
           <Card title="Completion, last 30 days" big={`${Math.round(rate.rate * 100)}%`}>
@@ -239,15 +238,15 @@ export function Patterns({ tasks, ctx, onClose }: { tasks: Task[]; ctx: ViewCtx;
                 ? `You usually finish faster than you guess (${acc.ratio.toFixed(1)}×).`
                 : "Your estimates are spot on."}{" "}
             {acc.within}% were within 25% ({acc.n} timed tasks).
-            {model.multiplier ? " Rescue my day already uses this." : ""}
+            {model.multiplier ? " Your day plans already use this." : ""}
           </Card>
         ) : (
           <Card title="Estimate accuracy" big="–">
-            Add an estimate (like ~30m) and use “Start timer” on a few tasks. Rescue will then learn how long things really take.
+            Add an estimate (like ~30m) and use “Start” on a few tasks. Today will then learn how long things really take.
           </Card>
         )}
         <p className="px-1 pt-1 text-xs text-muted">Calculated on your phone from your own tasks. Nothing is sent anywhere.</p>
       </div>
-    </Sheet>
+    </div>
   );
 }

@@ -81,13 +81,13 @@ export function EventsStrip({ data, ctx, onAll }: { data: AppData; ctx: ViewCtx;
   );
 }
 
-/** Every curated event with its next usual dates. */
-export function EventsSheet({ data, ctx, onClose }: { data: AppData; ctx: ViewCtx; onClose: () => void }) {
+/** Every curated event with its next usual dates (the "Events" half of Free time ideas). */
+export function EventsBody({ data, ctx }: { data: AppData; ctx: ViewCtx }) {
   const all = useMemo(() => allNextOccurrences(ctx.today), [ctx.today]);
   const hidden = data.settings.hiddenEvents ?? [];
   return (
-    <Sheet title="Don't miss this · London" onClose={onClose}>
-      <p className="-mt-1 mb-3 text-sm text-muted">
+    <div>
+      <p className="mb-3 text-sm text-muted">
         Recurring events with their usual timing, built into the app so it works offline. {NOTE}
       </p>
       <div className="space-y-2.5">
@@ -95,6 +95,6 @@ export function EventsSheet({ data, ctx, onClose }: { data: AppData; ctx: ViewCt
           <EventCard key={`${u.event.id}:${u.year}`} u={u} ctx={ctx} hidden={hidden} />
         ))}
       </div>
-    </Sheet>
+    </div>
   );
 }

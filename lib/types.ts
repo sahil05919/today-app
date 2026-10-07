@@ -32,6 +32,8 @@ export interface AreaTarget {
   slots: string[];
   /** Preferred start inside the slot, e.g. the walk at "19:30". */
   at?: string;
+  /** The number the NEXT session gets, so counting continues from an older history ("Power BI starts at 14"). */
+  startAt?: number;
   /** Sessions alternate through these names ("Job Prep", "Job Apply"). */
   variants?: string[];
   /** Notify when a planned session starts. */
@@ -115,6 +117,17 @@ export interface FixedEvent {
   /** Counts as a session for this area (a weekend outing counts as the walk). */
   countsFor?: string;
   createdAt: number;
+  /** Where it came from. "calendar" = read from the phone's calendar (read-only mirror), "ics" = an opened invite. */
+  source?: "calendar" | "ics";
+  /** Calendar events only: the phone's own id, so a re-sync replaces rather than duplicates. */
+  calId?: string;
+}
+
+/** A word you taught the dictionary: "pehchaan karna" → Admin. Used offline, before the built-in words. */
+export interface UserWord {
+  word: string;
+  areaId: string;
+  at: number;
 }
 
 export type BillSchedule =
@@ -221,6 +234,22 @@ export interface Profile {
   nudgeTime: string;
   /** Sunday weekly review reminder. */
   reviewTime: string;
+  /** A protected tea / food break on weekdays; nothing is planned inside it. */
+  breakStart: string;
+  breakEnd: string;
+  /** Breathing room between planned items, in minutes. */
+  bufferMin: number;
+  /** Most minutes of plans in an evening (after the break). Office days get a lighter share of it. */
+  eveningCapMin: number;
+  /** Commute each way on an office day, in minutes (the normal commute fields are for ordinary work days). */
+  officeCommuteMin: number;
+  /** Night mode: from sleepStart until wakeTime Today only says "time to sleep" and shows tomorrow's first item. */
+  sleepStart: string;
+  wakeTime: string;
+  /** Hide the in-app microphone (the keyboard's own mic still works). */
+  hideMic: boolean;
+  /** Read events from the phone's calendar (Android, read-only). */
+  calendarSync: boolean;
   notify: {
     morning: boolean;
     taskCheckIns: boolean;
@@ -256,6 +285,8 @@ export interface Task {
   slot?: { date: ISODate; start: string; min: number };
   /** How many times the date was pushed later (snooze / reschedule / roll-over). Reset after the nudge. */
   snoozeCount?: number;
+  /** "Adjust my day" parked it: don't plan it before this day (an overdue task keeps its due date, so it's still first in line then). */
+  hideUntil?: ISODate;
   /** "Snooze 2h" from a notification: nudge me again at this time (epoch ms). */
   remindAt?: number;
   /** You've seen the alarm that rang at or before this time (epoch ms): stop the "Still waiting" follow-ups. */
@@ -278,7 +309,15 @@ export interface Settings {
   lastBackupAt?: number;
   backupSnoozedUntil?: number;
   /** The running focus timer, if any. Stored so it survives a reload. */
-  timer?: { taskId: string; startedAt: number };
+  timer?: {
+    taskId?: string;
+    /** A session / chore / bill timer: its timeline key. */
+    ref?: string;
+    label?: string;
+    startedAt: number;
+    /** "Do it now (15 min start)": say so once this many minutes have passed. */
+    goalMin?: number;
+  };
   /** Day the morning plan / evening wrap-up were last done or dismissed. */
   planDate?: ISODate;
   wrapDate?: ISODate;
@@ -290,6 +329,12 @@ export interface Settings {
   balanceWeek?: ISODate;
   /** Set once the one-off defaults for sessions / rhythm have been applied (see lib/seed.ts). */
   seeded?: number;
+  /** Day the "this week is piling up" catch-up card was accepted or dismissed. */
+  catchUpDate?: ISODate;
+  /** When the phone calendar was last read (epoch ms). */
+  calendarSyncedAt?: number;
+  /** Times each non-task item (session, chore, bill) was snoozed, by timeline key; third time you must choose. */
+  snoozes?: Record<string, number>;
 }
 
 export interface AppData {
@@ -312,6 +357,10 @@ export interface AppData {
   learned?: LearnedRule[];
   /** Days marked as off days (at most 2 per Mon–Sun week). */
   offDays?: ISODate[];
+  /** Read-only mirror of the phone's calendar events (replaced on every sync, never edited here). */
+  calendarEvents?: FixedEvent[];
+  /** Words you taught the offline dictionary. */
+  userWords?: UserWord[];
 }
 
 export const MAX_FOCUS = 3;

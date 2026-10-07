@@ -2,12 +2,12 @@
 import { useRef, useState } from "react";
 import { diffDays, formatMinutes, friendlyDate } from "@/lib/dates";
 import { remainingMinutes, stepProgress } from "@/lib/estimate";
+import { cheerLine } from "@/lib/cheer";
 import { buzz } from "@/lib/haptics";
 import { recurLabel } from "@/lib/recur";
 import { actions } from "@/lib/store";
 import type { Task } from "@/lib/types";
-import { MAX_FOCUS } from "@/lib/types";
-import { CheckIcon, TargetIcon } from "./icons";
+import { CheckIcon } from "./icons";
 import { Chip, type ViewCtx } from "./ui";
 
 const THRESHOLD = 80; // px of swipe before it counts
@@ -23,7 +23,7 @@ export function completeWithToast(task: Task, ctx: ViewCtx) {
     return;
   }
   ctx.notify(
-    next?.due ? `Done. Next one: ${friendlyDate(next.due, ctx.today)}` : "Done. Nice one",
+    next?.due ? `${cheerLine(ctx.profile.name, 1)} Next one: ${friendlyDate(next.due, ctx.today)}.` : cheerLine(ctx.profile.name, 1),
     () => actions.toggleDone(task.id),
   );
 }
@@ -102,10 +102,6 @@ export function TaskCard({
       buzz(20);
       ctx.when(task.id, "snooze");
     }
-  };
-
-  const toggleFocus = () => {
-    if (!actions.toggleFocus(task.id)) ctx.notify(`Focus holds ${MAX_FOCUS} things. Un-pin one first, that's the point.`);
   };
 
   const pad = big ? "py-2.5" : "py-1.5";
@@ -218,18 +214,6 @@ export function TaskCard({
             className="my-1 flex h-11 shrink-0 items-center rounded-xl bg-accent-soft px-3.5 text-xs font-semibold text-accent"
           >
             Set date
-          </button>
-        )}
-        {!done && !quickWhen && (
-          <button
-            onClick={toggleFocus}
-            aria-label={task.focus ? "Remove from focus" : "Add to focus"}
-            aria-pressed={task.focus}
-            className="flex h-11 w-11 shrink-0 items-center justify-center"
-          >
-            <span className={`rounded-full p-1.5 ${task.focus ? "bg-accent-soft text-accent" : "text-muted/60"}`}>
-              <TargetIcon width={20} height={20} />
-            </span>
           </button>
         )}
       </div>

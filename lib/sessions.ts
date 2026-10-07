@@ -14,9 +14,13 @@ export const entryFor = (log: DayEntry[] | undefined, key: string) => log?.find(
 /** Areas that have a weekly session target. */
 export const sessionAreas = (data: AppData): Area[] => withDefaults(data.profile).areas.filter((a) => a.target);
 
-/** The next session number for an area: "Power BI session 14" is 14. */
-export function nextNumber(logs: SessionLog[] | undefined, areaId: string): number {
-  return (logs ?? []).filter((l) => l.areaId === areaId).reduce((m, l) => Math.max(m, l.n), 0) + 1;
+/**
+ * The next session number for an area: "Power BI session 14" is 14. `startAt` (Settings → the area's "Next session is
+ * number …") lets the count continue from an older history; once you're past it, counting goes on from your own logs.
+ */
+export function nextNumber(logs: SessionLog[] | undefined, areaId: string, startAt?: number): number {
+  const logged = (logs ?? []).filter((l) => l.areaId === areaId).reduce((m, l) => Math.max(m, l.n), 0) + 1;
+  return Math.max(logged, startAt && startAt > 0 ? Math.floor(startAt) : 1);
 }
 
 export const variantFor = (area: Area, n: number): string | undefined =>

@@ -7,7 +7,9 @@ import { billReminders, reminderText } from "../bills";
 import { eventsOn } from "../fixed";
 import { computeNudges } from "../nudges";
 import { isOffDay } from "../offday";
-import { plannedForDay, planSessions } from "../schedule";
+import { eveningLine } from "../cheer";
+import { plannedForDay } from "../schedule";
+import { buildTimeline } from "../timeline";
 import { weekStart } from "../stats";
 import { choreKey, entryFor, wrapKey } from "../sessions";
 import type { AppData, ISODate, Profile, Task } from "../types";
@@ -141,7 +143,6 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
 
   const name = p.name || "friend";
   const fill = (msg: string) => msg.replaceAll("{name}", name);
-  const sessions = planSessions(data, now);
 
   /** A check-in that's been done or skipped is dropped; a snoozed one moves to when you asked. */
   const resolve = (key: string, normal: Date): Date | null => {
@@ -152,22 +153,37 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
     return null;
   };
 
+  // The day's timeline: what the screen shows, so a reminder never disagrees with it.
+  const timelines = new Map<ISODate, ReturnType<typeof buildTimeline>>();
+  const timelineOf = (day: ISODate) => {
+    let tl = timelines.get(day);
+    if (!tl) {
+      tl = buildTimeline(data, day, day === today ? now : fromISO(day));
+      timelines.set(day, tl);
+    }
+    return tl;
+  };
+
   // --- Session reminders: "Power BI session 14" at the planned start --------
-  for (const s of sessions) {
-    const area = p.areas.find((a) => a.id === s.areaId);
-    if (s.done || !area?.target?.remind) continue;
-    const when = resolve(s.key, at(s.date, toHHMM(s.start)));
-    if (!when) continue;
-    push({
-      key: `session:${s.areaId}:${s.date}`,
-      at: when,
-      kind: "session",
-      title: s.title,
-      body: `${s.minutes} min · time to start, ${name}`,
-      ref: s.key,
-      actions: true,
-      exact: true,
-    });
+  for (let i = 0; i < DAYS_AHEAD; i++) {
+    const day = addDays(today, i);
+    for (const it of timelineOf(day).items) {
+      if (it.kind !== "session" || it.done || it.skipped || !it.sessionKey) continue;
+      const area = p.areas.find((a) => a.id === it.areaId);
+      if (!area?.target?.remind) continue;
+      const when = resolve(it.sessionKey, at(day, toHHMM(it.start)));
+      if (!when) continue;
+      push({
+        key: `session:${it.areaId}:${day}`,
+        at: when,
+        kind: "session",
+        title: it.title,
+        body: `${it.end - it.start} min · time to start, ${name}`,
+        ref: it.sessionKey,
+        actions: true,
+        exact: true,
+      });
+    }
   }
 
   // --- Fixed events: a heads-up before they start --------------------------------
@@ -343,13 +359,9 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
           key: `wrap:${day}`,
           at: when,
           kind: "wrap",
-          // "Did you do today's sessions and walk?" Done counts every session still planned for the day.
-          title: undone.length ? "Did you do today's sessions?" : "Wrap up the day",
-          body: undone.length
-            ? `${names}. Done counts them all.`
-            : left
-              ? `${left} left. Roll them to tomorrow in one tap.`
-              : "Take a minute to see how today went.",
+          // "Today: 5 of 6 done. Nice work, Sahil." Anything left carries over by itself; Done counts every session still planned.
+          title: i === 0 ? eveningLine(name, timelineOf(day).summary.done, timelineOf(day).summary.total) : "How did today go?",
+          body: undone.length ? `Still open: ${names}. Done counts them all.` : left ? `${left} carry over to tomorrow, first in line.` : "Rest well. Tomorrow starts fresh.",
           ref: undone.length ? wrapKey(day) : undefined,
           actions: undone.length > 0,
           exact: false,
