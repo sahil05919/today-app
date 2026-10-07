@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { initNotifications, listenForActions, markActivated, rescheduleAll, type TapTarget } from "@/lib/notifications/native";
+import { syncPhoneCalendar } from "@/lib/calendarSync";
 import { isNative } from "@/lib/platform";
 import { reloadFromStorage } from "@/lib/store";
 import type { AppData } from "@/lib/types";
@@ -35,7 +36,7 @@ export function NativeShell({ data, onTap }: { data: AppData; onTap: (t: TapTarg
       App.addListener("appStateChange", ({ isActive }) => {
         if (isActive) {
           markActivated();
-          reloadFromStorage();
+          reloadFromStorage().then(() => syncPhoneCalendar());
         }
       }).then((h) => cleanup.push(() => h.remove()));
     });
@@ -49,6 +50,13 @@ export function NativeShell({ data, onTap }: { data: AppData; onTap: (t: TapTarg
       cleanup.forEach((fn) => fn());
     };
   }, []);
+
+  // Read the phone's calendar when the app opens (asking permission once), and again each time you come back to it.
+  useEffect(() => {
+    if (!isNative()) return;
+    syncPhoneCalendar({ ask: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.profile?.calendarSync]);
 
   // Reschedule after every change (a short pause lets typing/bursts settle). It skips the work if nothing differs.
   useEffect(() => {

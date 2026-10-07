@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { eveningLine, greetingFor } from "@/lib/cheer";
 import { longDate, todayISO } from "@/lib/dates";
+import { parseICS, type IcsEvent } from "@/lib/calendar";
 import { listenForLaunchIntents } from "@/lib/nativeBridge";
 import type { TapTarget } from "@/lib/notifications/native";
 import { withDefaults } from "@/lib/profile";
@@ -16,6 +17,7 @@ import { Capture, type CaptureCommand } from "./Capture";
 import { CheckIn } from "./CheckIn";
 import { EveningWrap } from "./EveningWrap";
 import { IdeasSheet } from "./IdeasSheet";
+import { ImportSheet } from "./ImportSheet";
 import { BillsSheet, GoalsSheet, ShoppingSheet } from "./ListSheets";
 import { MenuIcon } from "./icons";
 import { MenuSheet } from "./MenuSheet";
@@ -75,6 +77,7 @@ export default function App() {
   const [command, setCommand] = useState<CaptureCommand | undefined>();
   const [homeNote, setHomeNote] = useState<{ text: string; day: ISODate } | null>(null);
   const [peek, setPeek] = useState(false);
+  const [invite, setInvite] = useState<IcsEvent[] | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const notify = useCallback((msg: string, undo?: () => void) => {
@@ -128,6 +131,9 @@ export default function App() {
           const parts = [i.title, i.text].filter((v): v is string => !!v?.trim());
           const dedup = parts.filter((p, k) => !parts.some((o, j) => j !== k && o.includes(p) && (o.length > p.length || j < k)));
           setCommand({ kind: "prefill", text: dedup.join(" ").trim(), nonce });
+        } else if (i.kind === "ics") {
+          // "Open with Today" on a calendar invite: show what's in it before adding.
+          setInvite(parseICS(i.text ?? ""));
         } else if (i.kind === "new" || i.kind === "voice") setCommand({ kind: i.kind, nonce });
       }),
     [],
@@ -229,6 +235,7 @@ export default function App() {
       {when && when.mode === "schedule" && data.tasks.find((t) => t.id === when.id) && (
         <WhenSheet task={data.tasks.find((t) => t.id === when.id)!} mode="schedule" ctx={ctx} onClose={() => setWhen(null)} />
       )}
+      {invite && <ImportSheet events={invite} ctx={ctx} onClose={() => setInvite(null)} />}
       {checkIn && <CheckIn tasks={checkIn} today={today} onFinish={() => setCheckIn(null)} />}
     </div>
   );

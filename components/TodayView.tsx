@@ -4,12 +4,14 @@ import { backupDue, exportBackup } from "@/lib/backup";
 import { balanceNudge } from "@/lib/balance";
 import { computeNudges, nudgeKey } from "@/lib/nudges";
 import { paceStatus } from "@/lib/pace";
+import { pileUp } from "@/lib/pileup";
 import { weeklyPercent } from "@/lib/progress";
 import { actions } from "@/lib/store";
 import { weekStart } from "@/lib/stats";
 import { nextUp, type TLItem, type Timeline } from "@/lib/timeline";
 import type { AppData, FixedEvent } from "@/lib/types";
 import { CalendarEventInfo } from "./CalendarSheet";
+import { CatchUpCard } from "./CatchUpCard";
 import { openCount } from "./itemActions";
 import { SnoozeSheet, type SnoozeTarget } from "./SnoozeSheet";
 import { NextUpCard, TimelineList } from "./Timeline";
@@ -67,11 +69,14 @@ export function TodayView({
   const balance = now.getDay() >= 3 || now.getDay() === 0 ? balanceNudge(data, ctx.today) : null;
   const balanceDue = !!balance && s.balanceWeek !== weekStart(ctx.today);
   const conscience = computeNudges(data, now)[0];
+  const pile = useMemo(() => pileUp(data, ctx.today), [data, ctx.today]);
 
   // One banner at a time, most important first. Calm beats complete.
   let banner: React.ReactNode = null;
   if (!data.profile?.setupDone) {
     banner = <Nudge emoji="👋" title="Check your settings (1 minute)" body="Your areas, weekly targets and daily rhythm, so Today can plan around you." action="Open" onAction={() => openPanel("me")} />;
+  } else if (pile.piling && s.catchUpDate !== ctx.today) {
+    banner = <CatchUpCard data={data} pile={pile} ctx={ctx} />;
   } else if (backupDue(data)) {
     banner = (
       <div className="rounded-2xl bg-warn-soft p-4 text-sm">

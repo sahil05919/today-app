@@ -8,6 +8,7 @@ import { eventsOn } from "../fixed";
 import { computeNudges } from "../nudges";
 import { isOffDay } from "../offday";
 import { eveningLine } from "../cheer";
+import { pileUp } from "../pileup";
 import { plannedForDay } from "../schedule";
 import { buildTimeline } from "../timeline";
 import { weekStart } from "../stats";
@@ -306,6 +307,12 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
           ];
           title = off ? `Easy day, ${name}` : `Good morning, ${name}`;
           body = off ? `Off day: ${[bits[0] ? bits[0].replace("sessions", "short session") : "", ...bits.slice(1)].filter(Boolean).join(" · ") || "just rest"}` : bits.filter(Boolean).join(" · ");
+        }
+        // A week that's piling up is said plainly, with the way out one tap away.
+        const pile = i === 0 ? pileUp(data, day) : null;
+        if (pile?.piling) {
+          body = `${pile.message} Open Today for a one-tap catch-up plan.`;
+          title = off ? title : `Good morning, ${name}`;
         }
         push({
           key: `morning:${day}`,

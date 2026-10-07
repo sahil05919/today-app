@@ -1,7 +1,11 @@
-/** Short vibration where supported (Chrome Android). Silent no-op elsewhere. */
+import { nativeVibrate } from "./nativeBridge";
+import { isNative } from "./platform";
+
+/** Short vibration: native on the phone, the browser's own where supported. Silent no-op elsewhere. */
 export function buzz(ms = 12) {
   try {
-    navigator.vibrate?.(ms);
+    if (isNative()) nativeVibrate(ms);
+    else navigator.vibrate?.(ms);
   } catch {
     /* ignore */
   }

@@ -6,6 +6,7 @@ import { getTheme, setTheme, type ThemePref } from "@/lib/theme";
 import { builtInShortcuts } from "@/lib/profile";
 import { actions } from "@/lib/store";
 import type { AppData, Area, AreaTarget, Bill, LearnedRule, Profile, RhythmItem, Slot } from "@/lib/types";
+import { CalendarSettings } from "./CalendarSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
 
@@ -433,6 +434,10 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
             <DayChips label="Office days" value={p.officeDays} onChange={(v) => set("officeDays", v)} />
           </Field>
           <p className="text-xs text-muted">The break is kept free on weekdays. Nothing is ever planned on top of anything else, and what doesn't fit the evening moves to the next day with room.</p>
+        </Section>
+
+        <Section title="Calendar" hint="Your phone's calendar, and .ics invites">
+          <CalendarSettings p={p} set={set} syncedAt={data.settings.calendarSyncedAt} ctx={ctx} />
         </Section>
 
         <Section title="Night mode" hint="Home goes quiet at bedtime">

@@ -5,12 +5,16 @@ import { actions } from "@/lib/store";
 import { bestDay, buildDurationModel, completionRate, estimateAccuracy, weekStart, weekSummary } from "@/lib/stats";
 import { billReminders } from "@/lib/bills";
 import { fromISO } from "@/lib/dates";
+import { firstDayWithRoom, pendingForReview } from "@/lib/pileup";
 import { planSessions } from "@/lib/schedule";
 import { weekProgress } from "@/lib/sessions";
 import type { AppData, Task } from "@/lib/types";
 import { btn, Chip, Sheet, type ViewCtx } from "./ui";
 
-/** Sunday review: what got done, what slipped, and a quick plan for next week. */
+/**
+ * Sunday review: what got done, then anything still pending, which you decide on one by one (next week, a day you pick,
+ * or let it go). "All set" unlocks once nothing is left undecided. My patterns lives at the bottom.
+ */
 export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewCtx; onClose: () => void }) {
   const tasks = data.tasks;
   const sum = useMemo(() => weekSummary(tasks, ctx.today), [tasks, ctx.today]);
@@ -18,12 +22,9 @@ export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewC
   const nextDays = Array.from({ length: 7 }, (_, i) => addDays(nextMonday, i));
   const open = tasks.filter((t) => t.status === "open");
   const planned = open.filter((t) => t.due != null && t.due >= nextMonday && t.due <= nextDays[6]);
-  const slipped = sum.slipped.slice(0, 6);
-  // Candidates for next week: slipped tasks, then important or undated ones.
-  const candidates = [
-    ...sum.slipped,
-    ...open.filter((t) => !t.due && !sum.slipped.includes(t)).sort((a, b) => Number(b.important) - Number(a.important)),
-  ].slice(0, 8);
+  const pending = pendingForReview(data, ctx.today);
+  // Candidates for next week: important or undated ones.
+  const candidates = open.filter((t) => !t.due).sort((a, b) => Number(b.important) - Number(a.important)).slice(0, 8);
 
   // Sessions: how the week went against each target, and what next week looks like.
   const progress = useMemo(() => weekProgress(data, ctx.today), [data, ctx.today]);
@@ -31,13 +32,26 @@ export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewC
   const nextEvents = (data.events ?? []).filter((e) => e.date >= nextMonday && e.date <= nextDays[6]).sort((a, b) => a.date.localeCompare(b.date));
   const nextBills = useMemo(() => billReminders(data, nextMonday, nextDays[6], ctx.today), [data, nextMonday, nextDays]);
 
-  const close = () => {
+  const finish = () => {
     actions.settings({ reviewWeek: weekStart(ctx.today) });
     onClose();
   };
+  // Closing with things undecided leaves the review open for later (it isn't marked done).
+  const close = pending.length ? onClose : finish;
+
+  const nextWeek1 = (t: Task) => {
+    const day = firstDayWithRoom(data, t, nextMonday);
+    actions.moveTasks([{ taskId: t.id, to: day }]);
+    ctx.notify(`${t.title}: ${friendlyDate(day, ctx.today).toLowerCase()}`);
+  };
+  const drop = (t: Task) => {
+    const copy = t;
+    actions.remove(t.id);
+    ctx.notify("Let go. One less thing.", () => actions.restore(copy));
+  };
 
   const assign = (t: Task, date: string) => {
-    if (date) actions.update(t.id, { due: date, focus: false });
+    if (date) actions.moveTasks([{ taskId: t.id, to: date }]);
   };
 
   return (
@@ -123,18 +137,44 @@ export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewC
         </section>
 
         <section>
-          <h3 className="mb-2 text-sm font-semibold">Slipped</h3>
-          {slipped.length ? (
-            <ul className="space-y-1.5">
-              {slipped.map((t) => (
-                <li key={t.id} className="flex items-center gap-2 text-[15px]">
-                  <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                  <Chip tone="warn">{friendlyDate(t.due!, ctx.today)}</Chip>
-                </li>
-              ))}
-            </ul>
+          <h3 className="mb-1 text-sm font-semibold">Still pending{pending.length ? ` · ${pending.length}` : ""}</h3>
+          {pending.length ? (
+            <>
+              <p className="mb-2 text-sm text-muted">Decide on each one, so nothing drifts into next week by itself.</p>
+              <ul className="space-y-2.5">
+                {pending.map((t) => (
+                  <li key={t.id} className="rounded-2xl border border-line bg-bg p-3">
+                    <p className="flex items-center gap-2 text-[15px] font-medium">
+                      <span className="min-w-0 flex-1 truncate">{t.title}</span>
+                      <Chip tone="warn">{friendlyDate(t.due!, ctx.today)}</Chip>
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button className={`${btn.soft} min-h-11 flex-1 px-2`} onClick={() => nextWeek1(t)}>
+                        Next week
+                      </button>
+                      <select
+                        aria-label={`Pick a day for ${t.title}`}
+                        value=""
+                        onChange={(e) => e.target.value && actions.moveTasks([{ taskId: t.id, to: e.target.value }])}
+                        className="min-h-11 flex-1 rounded-xl border border-line bg-surface px-2 text-sm"
+                      >
+                        <option value="">Pick a day</option>
+                        {nextDays.map((d) => (
+                          <option key={d} value={d}>
+                            {weekdayShort(d)} {dayOfMonth(d)}
+                          </option>
+                        ))}
+                      </select>
+                      <button className={`${btn.ghost} min-h-11 px-3`} onClick={() => drop(t)}>
+                        Drop
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
           ) : (
-            <p className="text-sm text-muted">Nothing is overdue. Lovely.</p>
+            <p className="text-sm text-muted">Nothing is pending. Lovely.</p>
           )}
         </section>
 
@@ -172,8 +212,8 @@ export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewC
         </section>
 
         <div className="flex gap-2">
-          <button className={`${btn.primary} min-h-12 flex-1`} onClick={close}>
-            All set
+          <button className={`${btn.primary} min-h-12 flex-1`} onClick={finish} disabled={pending.length > 0}>
+            {pending.length ? `Decide on ${pending.length} more` : "All set"}
           </button>
         </div>
 

@@ -541,6 +541,23 @@ export const actions = {
     commit({ ...d, events: (d.events ?? []).filter((e) => e.id !== id) });
   },
 
+  /** Replaces the read-only mirror of the phone's calendar. */
+  setCalendarEvents(events: FixedEvent[]) {
+    const d = ensure();
+    commit({ ...d, calendarEvents: events, settings: { ...d.settings, calendarSyncedAt: Date.now() } });
+  },
+
+  /** Adds events from an opened invite (.ics). */
+  addImportedEvents(events: Array<Pick<FixedEvent, "title" | "date" | "start" | "end">>): FixedEvent[] {
+    const d = ensure();
+    const have = new Set((d.events ?? []).map((e) => `${e.title}|${e.date}|${e.start ?? ""}`));
+    const added: FixedEvent[] = events
+      .filter((e) => !have.has(`${e.title}|${e.date}|${e.start ?? ""}`))
+      .map((e) => ({ id: uid(), title: e.title, date: e.date, start: e.start, end: e.start ? e.end : undefined, createdAt: Date.now(), source: "ics" as const }));
+    if (added.length) commit({ ...d, events: [...(d.events ?? []), ...added] });
+    return added;
+  },
+
   restoreEvent(event: FixedEvent) {
     const d = ensure();
     if (!(d.events ?? []).some((e) => e.id === event.id)) commit({ ...d, events: [...(d.events ?? []), event] });

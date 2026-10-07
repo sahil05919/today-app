@@ -29,6 +29,36 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
 
+            <!-- Calendar invites: "Open with Today" (.ics files from Gmail, WhatsApp, Files…) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="text/calendar" />
+                <data android:mimeType="application/ics" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.ics" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/calendar" />
+            </intent-filter>
+
+            <!-- Select text in any app, then "Add to Today" -->
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
             <!-- Long-press app icon shortcuts: New task / Voice task -->
             <meta-data
                 android:name="android.app.shortcuts"
@@ -50,6 +80,11 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Read-only: events from your phone's calendar appear as fixed blocks -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <!-- Recording what you say, for transcription -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Notifications permissions (POST_NOTIFICATIONS, SCHEDULE_EXACT_ALARM, boot restore) and
          RECORD_AUDIO come from the Capacitor plugins. -->
 </manifest>
