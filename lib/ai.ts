@@ -285,6 +285,8 @@ export interface GeminiRequest {
   user: string;
   parts?: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }>;
   schema?: unknown;
+  /** 0 (the default) for parsing; a little warmth for writing a letter. */
+  temperature?: number;
 }
 
 /** One generateContent call against a specific model. */
@@ -298,7 +300,7 @@ async function generateOnce(key: string, model: string, req: GeminiRequest, fetc
         ...(req.system ? { systemInstruction: { parts: [{ text: req.system }] } } : {}),
         contents: [{ role: "user", parts: req.parts ?? [{ text: req.user }] }],
         generationConfig: {
-          temperature: 0,
+          temperature: req.temperature ?? 0,
           responseMimeType: "application/json",
           responseSchema: req.schema ?? RESPONSE_SCHEMA,
           // Reading a note doesn't need deep reasoning; this keeps it quick (only some models accept it).

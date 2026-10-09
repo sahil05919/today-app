@@ -48,6 +48,42 @@ The input is at the bottom: type or speak anything. One button, **Adjust my day*
 - **Session numbers**: Settings → Areas → "Next session is number" (Power BI at 14). Weekly dots stay separate.
 - **On pace**: "This week 72% · On track / Slightly behind", judged against what's expected by today's weekday.
 
+## Next level (plan: NEXT_LEVEL_PLAN.md)
+
+**Home & taps.** A **Coming up** strip under the timeline shows tomorrow, the day after and day 3 (the first few items, fixed things first with
+times), built from the same `buildTimeline` as the planner; tap a day to open the Calendar on it. A **Calendar** button sits next to Menu.
+Every notification now lands on its own card (`lib/tap.ts`): a session / chore / bill opens its Start / Done / Snooze sheet, an event opens the
+event, a nudge opens the week, and "Already done 👍" if it's gone. A tap from a closed app waits for the data to load.
+
+**Timers stop on time** (`lib/timer.ts`). Start on a session runs for that area's minutes (Meditation 15, Power BI 60); on a task for its estimate;
+on a chore or bill for its block. The bar counts down ("12:41 left") with a thin progress bar. At zero it vibrates, chimes and counts the session
+("Meditation session 8 done, Sahil 🌿"), or asks "Done?" for a task. An exact alarm is scheduled for the end, so it rings with the screen locked, with
+**Done** and **+5 min** on the notification; stopping early cancels it. No goal: it counts up, asks "Still going?" at 60 minutes and stops at 3 h.
+
+**How are you feeling?** (`lib/feeling.ts`). The morning ping (08:15 weekdays, 09:30 weekends, Settings → Daily rhythm, with an on/off switch) opens a sheet:
+pick Low / Okay / Great, then tick what today holds. Booked things are locked; **you choose**. A realistic set is pre-ticked with one line of why.
+**Make it work** keeps the ticked things today and moves the rest to the next days with room (`firstDayWithRoom`, the weekly session planner, the
+two-off-days rule) and says what moved. A banner on Today asks before 11:00 until it's answered.
+
+**Quotes** (`lib/quotes/`, `lib/quoteBag.ts`). 1000 English (attributed only where the attribution is certain) and 1000 original Hinglish lines in
+8 moods. A notification every 1 / 2 / 3 days (default every 2, 13:30, never in quiet hours; alternates English and Hinglish, big-text style).
+A quote never repeats until all have been used: the shuffled order comes from a stored seed, each date is pinned once shown. Tap → a calm
+full-screen card with ♥ Save and Another one; saved quotes are under Menu → Quotes.
+
+**Learns your rhythm** (`lib/capacity.ts`, `lib/load.ts`). From the last 8 weeks (sessions, chores, completed tasks, check-ins): what you
+usually finish per weekday and per energy, and where each area's sessions really happen. Nothing is used until there are 10 days ("Learning your
+rhythm · 6 of 10 days"). It sets the check-in pre-ticks, offers an area's real slot first (only among slots you allowed; never over an exact
+time or when "Keep my time order" is on; said once in a note), and tells you plainly when a day is far more than you usually finish ("Pick what matters").
+
+**Sunday coach letter** (`lib/coach.ts`). A short, honest, warm letter: what went well, what slipped and the likely reason, one small change. With
+a Gemini key it's written from a compact summary (titles and counts, never notes); otherwise, offline or on any error, a rule-based letter from the
+same summary. One per week, cached (last 12 kept), shown at the top of the weekly review.
+
+**Home-screen widget** (Android). Add the "Today · Next up" widget: small = Next up with **Start** and **Done**; stretch it for the next two things
+and this week's %. The app saves a small JSON snapshot (`lib/widget.ts`) whenever data changes, on resume and at the day roll-over; the widget picks
+"Next up" by the clock, refreshes at each item's start/end and at midnight. Done hides the item at once and is applied by the app through the
+normal actions on the next open (so sessions are counted properly). Start opens the app into that item with its timer running.
+
 ## Sessions, events, bills and nudges
 
 **Sessions.** Areas have weekly targets (Settings → Areas & weekly targets): Power BI 4×60 min, Meditation 3×15, Job Prep &
@@ -124,9 +160,11 @@ remaining days. After 2, the button disables.
 - `lib/timeline.ts`, `busy.ts`, `settle.ts`, `adjust.ts`, `pileup.ts`, `pace.ts`, `calendar.ts`, `teach.ts`: the day timeline and its rules (pure, tested)
 - `lib/schedule.ts`, `sessions.ts`, `fixed.ts`, `bills.ts`, `nudges.ts`, `ai.ts`: the session / event / bill / nudge logic (pure, tested)
 - `lib/planday.ts`, `rescue.ts`, `checkin.ts`, `balance.ts`, `stats.ts`: task planning logic (pure, tested)
+- `lib/tap.ts`, `timer.ts`, `feeling.ts`, `capacity.ts`, `load.ts`, `coach.ts`, `quoteBag.ts`, `widget.ts`: the next-level features (pure, tested)
 - `lib/notifications/plan.ts`: decides every notification (pure, tested); `native.ts` schedules them on Android
 - `lib/events/`: curated London events (offline); a live-source interface is ready for later
-- `android/…/TodayNativePlugin.java`: share / select-text / .ics intents, phone calendar reader, audio recorder, vibration, battery status
+- `android/…/TodayNativePlugin.java`: share / select-text / .ics intents, phone calendar reader, audio recorder, vibration, battery status, widget bridge
+- `android/…/TodayWidgetProvider.java`: the home-screen widget (draws the snapshot; no planning logic)
 - `scripts/generate-icons.mjs`: regenerates the PWA icons in `public/`
 
 ## Roadmap (structure is ready, not built)

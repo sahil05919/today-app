@@ -1,11 +1,17 @@
 import { registerPlugin } from "@capacitor/core";
 import type { CalendarAccess, RawCalendarEvent } from "./calendar";
 import { isNative } from "./platform";
+import type { WidgetAction } from "./widget";
 
 export interface LaunchIntent {
-  kind: "share" | "new" | "voice" | "ics";
+  kind: "share" | "new" | "voice" | "ics" | "start";
   text?: string;
   title?: string;
+  /** "start" (the widget's Start button): which item to open with its timer running. */
+  itemKind?: string;
+  ref?: string;
+  taskId?: string;
+  key?: string;
 }
 
 interface TodayNativePlugin {
@@ -17,6 +23,8 @@ interface TodayNativePlugin {
   requestCalendarPermission(): Promise<{ state: "granted" | "denied" | "prompt" }>;
   queryCalendar(opts: { from: number; to: number }): Promise<{ events: RawCalendarEvent[] }>;
   vibrate(opts: { ms: number }): Promise<void>;
+  widgetUpdate(opts: { snapshot: string }): Promise<void>;
+  widgetTakePending(): Promise<{ actions: WidgetAction[] }>;
   micPermission(): Promise<{ state: "granted" | "denied" | "prompt" }>;
   startRecording(opts: { maxMs?: number }): Promise<void>;
   stopRecording(): Promise<{ base64: string; mime: string; ms: number }>;
@@ -100,6 +108,29 @@ export async function readPhoneCalendar(from: number, to: number): Promise<RawCa
     return (await TodayNative.queryCalendar({ from, to })).events;
   } catch {
     return null;
+  }
+}
+
+// ---- Home-screen widget ---------------------------------------------------------------------------------
+
+/** Saves the widget's snapshot (JSON) and asks Android to redraw it. Fails soft: no widget, no problem. */
+export async function pushWidgetSnapshot(snapshot: string): Promise<boolean> {
+  if (!isNative()) return false;
+  try {
+    await TodayNative.widgetUpdate({ snapshot });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Dones tapped on the widget since the app last looked (and clears them). */
+export async function takeWidgetActions(): Promise<WidgetAction[]> {
+  if (!isNative()) return [];
+  try {
+    return (await TodayNative.widgetTakePending()).actions ?? [];
+  } catch {
+    return [];
   }
 }
 

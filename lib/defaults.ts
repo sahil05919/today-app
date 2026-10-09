@@ -1,7 +1,7 @@
 import type { Area, Bill, BoredIdea, RhythmItem, Slot } from "./types";
 
 /** Bump when new default areas / rhythm should be offered to existing installs (see lib/seed.ts). */
-export const SEED_VERSION = 3;
+export const SEED_VERSION = 4;
 
 const WEEKDAYS = [1, 2, 3, 4, 5];
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];

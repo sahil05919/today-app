@@ -8,12 +8,16 @@ import { nextOccurrence } from "./recur";
 import { seedIfNeeded } from "./seed";
 import { nextNumber, variantFor, wrapKey } from "./sessions";
 import { pendingOn, planSessions } from "./schedule";
+import { taskGoal } from "./timer";
+import { assignDate, quoteStateOf, takeAnother } from "./quoteBag";
+import type { Quote } from "./quotes/types";
 import type { ParsedCapture } from "./parse";
 import { TEMPLATES } from "./templates";
 import { billKey } from "./bills";
 import { forget, learnFix } from "./learn";
 import { canTakeOffDay } from "./offday";
-import type { AppData, Bill, BoredIdea, CheckInStatus, DayEntry, FixedEvent, Goal, ISODate, Profile, SessionLog, Settings, Step, Task, TemplateId } from "./types";
+import { withLetter } from "./letters";
+import type { AppData, Bill, BoredIdea, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, SessionLog, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
 /**
@@ -234,7 +238,9 @@ export const actions = {
   /** Starts the focus timer on a task, logging any timer that was already running. */
   startTimer(id: string, goalMin?: number) {
     if (ensure().settings.timer) actions.stopTimer();
-    actions.settings({ timer: { taskId: id, startedAt: Date.now(), goalMin } });
+    // No goal given: a task with an estimate runs for that long.
+    const goal = goalMin ?? taskGoal(ensure().tasks.find((t) => t.id === id) ?? {});
+    actions.settings({ timer: { taskId: id, startedAt: Date.now(), goalMin: goal } });
   },
 
   /** Parks overdue tasks until a later day: they stay carried over (first in line then) but leave today's plan. */
@@ -665,6 +671,41 @@ export const actions = {
   settings(patch: Partial<Settings>) {
     const d = ensure();
     commit({ ...d, settings: { ...d.settings, ...patch } });
+  },
+
+  /** Saves today's answer to "How are you feeling?" (one per day, last ~120 kept). */
+  answerFeeling(a: Omit<CheckInAnswer, "at">) {
+    const d = ensure();
+    commit({ ...d, checkins: [...(d.checkins ?? []).filter((c) => c.date !== a.date), { ...a, at: Date.now() }].slice(-120) });
+  },
+
+  // --- Quotes (see lib/quoteBag.ts) ---------------------------------------------------
+  /** A date's quote is being shown: pin it to its place in the bag so it never changes or repeats. */
+  assignQuote(date: ISODate) {
+    const d = ensure();
+    const next = assignDate(quoteStateOf(d), date);
+    if (!d.quotes || next !== d.quotes) commit({ ...d, quotes: next });
+  },
+
+  /** "Another one": the next unused quote. */
+  anotherQuote(): Quote {
+    const d = ensure();
+    const { state, quote } = takeAnother(quoteStateOf(d));
+    commit({ ...d, quotes: state });
+    return quote;
+  },
+
+  /** Saves this week's coach letter (one per week, the last 12 kept). */
+  saveLetter(letter: CoachLetter) {
+    const d = ensure();
+    commit({ ...d, letters: withLetter(d.letters, letter) });
+  },
+
+  /** Heart on / off. */
+  toggleSaveQuote(id: string) {
+    const d = ensure();
+    const q = quoteStateOf(d);
+    commit({ ...d, quotes: { ...q, saved: q.saved.includes(id) ? q.saved.filter((x) => x !== id) : [...q.saved, id] } });
   },
 
   replaceAll(data: AppData) {

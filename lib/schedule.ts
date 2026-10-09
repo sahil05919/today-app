@@ -1,5 +1,6 @@
 import { addDays, fromISO, toISO } from "./dates";
 import { dayRules, fixedSpans, overlapMinutes, planningBusy } from "./busy";
+import { learnedSlots, orderSlots } from "./capacity";
 import { countedByEvent } from "./fixed";
 import { isOffDay, OFF_DAY_MAX_MIN } from "./offday";
 import { toMin, withDefaults } from "./profile";
@@ -101,8 +102,10 @@ export function planSessions(data: AppData, now: Date = new Date(), busyOverride
   const doneOn = (a: Area, d: ISODate) => logs.some((l) => l.areaId === a.id && l.date === d) || countedByEvent(data, a.id, d);
   const skipped = (a: Area, d: ISODate) => entryFor(data.log, sessionKey(a.id, d))?.status === "skip";
 
+  // Where an area's sessions really happen is offered first (within the slots he allowed; never over an exact time or a locked order).
+  const learned = learnedSlots(data, today);
   const slotsFor = (a: Area, d: ISODate): Slot[] => {
-    const ids = a.target!.slots.length ? a.target!.slots : p.slots.map((s) => s.id);
+    const ids = a.target!.slots.length ? orderSlots(a.target!.slots, learned.get(a.id)) : p.slots.map((s) => s.id);
     return ids
       .map((id) => slots.get(id))
       .filter((s): s is Slot => !!s && s.days.includes(fromISO(d).getDay()));

@@ -80,9 +80,9 @@ describe("an off day lightens the day and spreads the rest", () => {
     const list = planNotifications(d, MON);
     expect(list.some((n) => n.key.startsWith("rhythm:") && n.key.endsWith("2026-10-07"))).toBe(false);
     expect(list.some((n) => n.key.startsWith("rhythm:") && n.key.endsWith("2026-10-08"))).toBe(true); // other days unchanged
-    expect(list.find((n) => n.key === "morning:2026-10-07")!.title).toBe("Easy day, Sahil");
+    expect(list.find((n) => n.key === "morning:2026-10-07")!.title).toBe("Easy day, Sahil. How are you feeling?");
     expect(computeNudges(d, new Date(2026, 9, 7, 20, 0))).toEqual([]);
-    expect(hm(list.find((n) => n.key === "morning:2026-10-07")!.at)).toBe("08:00");
+    expect(hm(list.find((n) => n.key === "morning:2026-10-07")!.at)).toBe("08:15");
   });
 });
 

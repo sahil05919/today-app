@@ -144,7 +144,46 @@ public class TodayNativePlugin extends Plugin {
             out.put("kind", "voice");
             return out;
         }
+        // The widget's Start button: open straight into that item with its timer running.
+        if (TodayWidgetProvider.ACTION_START.equals(action)) {
+            out.put("kind", "start");
+            String itemKind = intent.getStringExtra("itemKind");
+            String ref = intent.getStringExtra("ref");
+            String taskId = intent.getStringExtra("taskId");
+            String key = intent.getStringExtra("key");
+            if (itemKind != null) out.put("itemKind", itemKind);
+            if (ref != null && !ref.isEmpty()) out.put("ref", ref);
+            if (taskId != null && !taskId.isEmpty()) out.put("taskId", taskId);
+            if (key != null) out.put("key", key);
+            return out;
+        }
         return null;
+    }
+
+    // ---- Home-screen widget ----------------------------------------------------------------------------
+
+    /** Saves the widget's snapshot (JSON, built by lib/widget.ts) and redraws every widget. */
+    @PluginMethod
+    public void widgetUpdate(PluginCall call) {
+        String snapshot = call.getString("snapshot");
+        if (snapshot == null || snapshot.length() > 200_000) {
+            call.reject("snapshot is required");
+            return;
+        }
+        TodayWidgetProvider.saveSnapshot(getContext(), snapshot);
+        call.resolve();
+    }
+
+    /** { actions: [{ type: "done", kind, key, ref?, taskId?, date, at }] }: Dones tapped on the widget. Clears them. */
+    @PluginMethod
+    public void widgetTakePending(PluginCall call) {
+        JSObject result = new JSObject();
+        try {
+            result.put("actions", new JSArray(TodayWidgetProvider.takePending(getContext())));
+        } catch (Exception e) {
+            result.put("actions", new JSArray());
+        }
+        call.resolve(result);
     }
 
     /** Returns { intent?: {kind, text?, title?} } once, then clears it. */

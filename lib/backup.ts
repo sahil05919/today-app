@@ -6,7 +6,9 @@ import type {
   AreaTarget,
   Bill,
   BoredIdea,
+  CheckInAnswer,
   CheckInStatus,
+  CoachLetter,
   DayEntry,
   FixedEvent,
   GroceryItem,
@@ -14,6 +16,7 @@ import type {
   UserWord,
   MonthGoals,
   Profile,
+  QuoteState,
   Recurrence,
   SessionLog,
   Step,
@@ -123,6 +126,7 @@ function cleanTarget(t: any): AreaTarget | undefined {
     variants: Array.isArray(t.variants) ? t.variants.filter((v: unknown) => typeof v === "string" && v).slice(0, 6).map((v: string) => v.slice(0, 30)) : undefined,
     remind: t.remind !== false,
     order: Number.isFinite(t.order) ? t.order : undefined,
+    lockSlots: t.lockSlots === true ? true : undefined,
   };
 }
 
@@ -252,6 +256,43 @@ function cleanIdeas(v: any): BoredIdea[] | undefined {
     .map((i: any) => ({ id: str(i.id, 64) || crypto.randomUUID(), text: i.text.slice(0, 120), areaId: str(i.areaId, 40) }));
 }
 
+function cleanCheckins(v: any): CheckInAnswer[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .filter((c: any) => c && isISO(c.date) && ["low", "ok", "high"].includes(c.energy))
+    .slice(-120)
+    .map((c: any) => ({
+      date: c.date,
+      energy: c.energy,
+      ticked: Number.isInteger(c.ticked) && c.ticked >= 0 ? Math.min(c.ticked, 99) : 0,
+      offered: Number.isInteger(c.offered) && c.offered >= 0 ? Math.min(c.offered, 99) : 0,
+      at: num(c.at) ?? Date.now(),
+    }));
+}
+
+function cleanQuotes(v: any): QuoteState | undefined {
+  if (!v || typeof v !== "object" || !Number.isInteger(v.seed)) return undefined;
+  const assigned: Record<string, number> = {};
+  if (v.assigned && typeof v.assigned === "object") {
+    for (const [d, n] of Object.entries(v.assigned).slice(-400)) if (isISO(d) && Number.isInteger(n) && (n as number) >= 0) assigned[d] = n as number;
+  }
+  return {
+    seed: v.seed,
+    cursor: Number.isInteger(v.cursor) && v.cursor >= 0 ? v.cursor : 0,
+    assigned,
+    saved: Array.isArray(v.saved) ? [...new Set<string>(v.saved.filter((x: unknown) => typeof x === "string" && x.length < 20))].slice(0, 2000) : [],
+    anchor: isISO(v.anchor) ? v.anchor : undefined,
+  };
+}
+
+function cleanLetters(v: any): CoachLetter[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .filter((l: any) => l && isISO(l.week) && typeof l.text === "string" && l.text.trim())
+    .slice(-12)
+    .map((l: any) => ({ week: l.week, text: l.text.slice(0, 1500), source: l.source === "ai" ? ("ai" as const) : ("rules" as const), at: num(l.at) ?? Date.now() }));
+}
+
 /** Keeps only known, well-formed profile fields; anything missing falls back to the defaults. */
 function cleanProfile(p: any): Profile {
   const hhmm = (v: unknown) => (typeof v === "string" && /^\d{2}:\d{2}$/.test(v) ? v : undefined);
@@ -277,6 +318,9 @@ function cleanProfile(p: any): Profile {
       quietStart: hhmm(p.quietStart),
       quietEnd: hhmm(p.quietEnd),
       morningCheckIn: hhmm(p.morningCheckIn),
+      morningWeekend: hhmm(p.morningWeekend),
+      quoteEvery: [0, 1, 2, 3].includes(p.quoteEvery) ? p.quoteEvery : undefined,
+      quoteTime: hhmm(p.quoteTime),
       taskCheckIn: hhmm(p.taskCheckIn),
       eveningWrap: hhmm(p.eveningWrap),
       areas: Array.isArray(p.areas)
@@ -370,6 +414,9 @@ export function migrate(raw: unknown): AppData {
     goals: cleanGoals(r.goals),
     bored: cleanIdeas(r.bored),
     learned: cleanLearned(r.learned),
+    checkins: cleanCheckins(r.checkins),
+    quotes: cleanQuotes(r.quotes),
+    letters: cleanLetters(r.letters),
     offDays: Array.isArray(r.offDays) ? [...new Set<string>(r.offDays.filter((d: unknown) => isISO(d)))].slice(-120) : undefined,
     tasks: r.tasks.map(cleanTask).filter((t: Task | null): t is Task => !!t),
     settings: {
@@ -388,6 +435,12 @@ export function migrate(raw: unknown): AppData {
             }
           : undefined,
       catchUpDate: isISO(s.catchUpDate) ? s.catchUpDate : undefined,
+      feelingSkipDate: isISO(s.feelingSkipDate) ? s.feelingSkipDate : undefined,
+      overloadSkipDate: isISO(s.overloadSkipDate) ? s.overloadSkipDate : undefined,
+      slotShifts:
+        s.slotShifts && typeof s.slotShifts === "object"
+          ? (Object.fromEntries(Object.entries(s.slotShifts).filter(([k, v]) => typeof v === "string" && k.length < 40 && (v as string).length < 40).slice(0, 30)) as Record<string, string>)
+          : undefined,
       calendarSyncedAt: num(s.calendarSyncedAt),
       snoozes:
         s.snoozes && typeof s.snoozes === "object"

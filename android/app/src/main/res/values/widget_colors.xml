@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget's colours: the app's own palette (app/globals.css), light here and dark in values-night. -->
+<resources>
+    <color name="widget_bg">#FAF7F2</color>
+    <color name="widget_surface">#FFFFFF</color>
+    <color name="widget_ink">#2B2A28</color>
+    <color name="widget_muted">#7D786F</color>
+    <color name="widget_line">#ECE6DC</color>
+    <color name="widget_accent">#5B8A72</color>
+    <color name="widget_accent_ink">#FFFFFF</color>
+    <color name="widget_accent_soft">#E5EFE9</color>
+</resources>

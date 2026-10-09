@@ -1,7 +1,9 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { backupDue, exportBackup } from "@/lib/backup";
 import { balanceNudge } from "@/lib/balance";
+import { answerFor } from "@/lib/feeling";
+import { overload } from "@/lib/load";
 import { computeNudges, nudgeKey } from "@/lib/nudges";
 import { paceStatus } from "@/lib/pace";
 import { pileUp } from "@/lib/pileup";
@@ -9,10 +11,11 @@ import { weeklyPercent } from "@/lib/progress";
 import { actions } from "@/lib/store";
 import { weekStart } from "@/lib/stats";
 import { nextUp, type TLItem, type Timeline } from "@/lib/timeline";
-import type { AppData, FixedEvent } from "@/lib/types";
+import type { AppData, FixedEvent, ISODate } from "@/lib/types";
 import { CalendarEventInfo } from "./CalendarSheet";
 import { CatchUpCard } from "./CatchUpCard";
 import { openCount } from "./itemActions";
+import { NextDays } from "./NextDays";
 import { SnoozeSheet, type SnoozeTarget } from "./SnoozeSheet";
 import { NextUpCard, TimelineList } from "./Timeline";
 import { EventSheet, ItemSheet, ProgressSheet } from "./TodayPlan";
@@ -33,7 +36,10 @@ function Nudge({ emoji, title, body, action, onAction }: { emoji: string; title:
   );
 }
 
-type Sheet = { k: "item"; it: TLItem } | { k: "event"; e: FixedEvent } | { k: "snooze"; target: SnoozeTarget } | { k: "progress" } | null;
+/** "Open this card now": a tapped notification or a widget deep link asks the home screen to show a sheet. */
+export type OpenRequest = { id: number } & ({ k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "progress" });
+
+type Sheet = { k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "snooze"; target: SnoozeTarget } | { k: "progress" } | null;
 
 /**
  * The home screen, built to be one glance: what's next (with Start / Done / Snooze), your top must-have as one line,
@@ -47,6 +53,8 @@ export function TodayView({
   homeNote,
   openPanel,
   onPrefill,
+  onCalendar,
+  request,
 }: {
   data: AppData;
   ctx: ViewCtx;
@@ -55,8 +63,19 @@ export function TodayView({
   homeNote?: string | null;
   openPanel: (p: Panel) => void;
   onPrefill: (text: string) => void;
+  /** Opens the calendar, on a given day if one is tapped. */
+  onCalendar: (day?: ISODate) => void;
+  request?: OpenRequest | null;
 }) {
   const [sheet, setSheet] = useState<Sheet>(null);
+
+  // A tapped notification lands on its own card.
+  useEffect(() => {
+    if (!request) return;
+    const { id: _id, ...r } = request;
+    void _id;
+    setSheet(r);
+  }, [request]);
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const item = useMemo(() => nextUp(tl, nowMin), [tl, nowMin]);
   const goal = (data.goals?.month === ctx.today.slice(0, 7) ? data.goals.items : []).find((g) => !g.done);
@@ -70,13 +89,45 @@ export function TodayView({
   const balanceDue = !!balance && s.balanceWeek !== weekStart(ctx.today);
   const conscience = computeNudges(data, now)[0];
   const pile = useMemo(() => pileUp(data, ctx.today), [data, ctx.today]);
+  const heavy = useMemo(() => (s.overloadSkipDate === ctx.today ? null : overload(data, now, ctx.today)), [data, ctx.today, now.getHours(), s.overloadSkipDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // One banner at a time, most important first. Calm beats complete.
   let banner: React.ReactNode = null;
   if (!data.profile?.setupDone) {
     banner = <Nudge emoji="👋" title="Check your settings (1 minute)" body="Your areas, weekly targets and daily rhythm, so Today can plan around you." action="Open" onAction={() => openPanel("me")} />;
+  } else if (now.getHours() < 11 && data.profile?.notify.morning !== false && !answerFor(data, ctx.today) && s.feelingSkipDate !== ctx.today) {
+    // Before 11:00, until it has been answered: one gentle question, and the day is shaped around the answer.
+    banner = (
+      <div className="rounded-2xl bg-accent-soft p-3.5">
+        <p className="text-[15px] font-semibold text-ink">🌤️ How are you feeling, {ctx.profile.name}?</p>
+        <p className="mt-0.5 text-sm text-muted">Tell me, and choose what today holds.</p>
+        <div className="mt-2.5 flex gap-2">
+          <button className={`${btn.primary} min-h-11`} onClick={() => openPanel("feeling")}>
+            Choose my day
+          </button>
+          <button className={`${btn.ghost} min-h-11`} onClick={() => actions.settings({ feelingSkipDate: ctx.today })}>
+            Not now
+          </button>
+        </div>
+      </div>
+    );
   } else if (pile.piling && s.catchUpDate !== ctx.today) {
     banner = <CatchUpCard data={data} pile={pile} ctx={ctx} />;
+  } else if (heavy) {
+    banner = (
+      <div className="rounded-2xl bg-warn-soft p-3.5">
+        <p className="text-[15px] font-semibold text-ink">{heavy.message}</p>
+        <p className="mt-0.5 text-sm text-muted">Pick what matters and the rest moves to days with room.</p>
+        <div className="mt-2.5 flex gap-2">
+          <button className={`${btn.primary} min-h-11`} onClick={() => openPanel("feeling")}>
+            Pick what matters
+          </button>
+          <button className={`${btn.ghost} min-h-11`} onClick={() => actions.settings({ overloadSkipDate: ctx.today })}>
+            Not now
+          </button>
+        </div>
+      </div>
+    );
   } else if (backupDue(data)) {
     banner = (
       <div className="rounded-2xl bg-warn-soft p-4 text-sm">
@@ -144,10 +195,10 @@ export function TodayView({
       const e = [...(data.events ?? []), ...(data.calendarEvents ?? [])].find((x) => x.id === it.eventId);
       if (e) return setSheet({ k: "event", e });
     }
-    setSheet({ k: "item", it });
+    setSheet({ k: "item", it, date: tl.date });
   };
 
-  const snooze = (it: TLItem) => setSheet({ k: "snooze", target: it.taskId ? { kind: "task", taskId: it.taskId } : { kind: "item", item: it, date: tl.date } });
+  const snooze = (it: TLItem) => setSheet({ k: "snooze", target: it.taskId ? { kind: "task", taskId: it.taskId } : { kind: "item", item: it, date: sheet?.k === "item" && sheet.it.key === it.key ? sheet.date : tl.date } });
 
   return (
     <div className="space-y-4">
@@ -161,6 +212,8 @@ export function TodayView({
       {banner}
 
       <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} />
+
+      <NextDays data={data} today={ctx.today} onOpenDay={onCalendar} />
 
       {hasSessions && (
         <button onClick={() => setSheet({ k: "progress" })} className="block w-full rounded-2xl border border-line bg-surface px-4 py-3 text-left" aria-label="This week's progress, tap for details">
@@ -189,7 +242,7 @@ export function TodayView({
       </div>
 
       {sheet?.k === "progress" && <ProgressSheet data={data} ctx={ctx} onClose={() => setSheet(null)} onReview={() => (setSheet(null), openPanel("review"))} />}
-      {sheet?.k === "item" && <ItemSheet item={sheet.it} date={tl.date} left={openCount(tl.items, sheet.it.key)} ctx={ctx} onClose={() => setSheet(null)} onSnooze={(it) => snooze(it)} openPanel={openPanel} />}
+      {sheet?.k === "item" && <ItemSheet item={sheet.it} date={sheet.date} left={sheet.date === tl.date ? openCount(tl.items, sheet.it.key) : 1} ctx={ctx} onClose={() => setSheet(null)} onSnooze={(it) => snooze(it)} openPanel={openPanel} />}
       {sheet?.k === "event" && (sheet.e.source === "calendar" ? <CalendarEventInfo event={sheet.e} onClose={() => setSheet(null)} /> : <EventSheet event={sheet.e} data={data} ctx={ctx} onClose={() => setSheet(null)} />)}
       {sheet?.k === "snooze" && <SnoozeSheet target={sheet.target} ctx={ctx} onClose={() => setSheet(null)} />}
     </div>

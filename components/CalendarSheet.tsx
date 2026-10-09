@@ -53,10 +53,10 @@ function AgendaRow({ it, onOpen }: { it: TLItem; onOpen: (it: TLItem) => void })
  * Calendar: week and month views of everything on your plate: tasks, sessions, events (yours and the phone's), bills.
  * Tap a day for its agenda. "Someday" holds the tasks that have no date.
  */
-export function CalendarSheet({ data, ctx, onClose }: { data: AppData; ctx: ViewCtx; onClose: () => void }) {
+export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppData; ctx: ViewCtx; onClose: () => void; initialDay?: ISODate }) {
   const [view, setView] = useState<View>("week");
-  const [anchor, setAnchor] = useState<ISODate>(ctx.today);
-  const [selected, setSelected] = useState<ISODate>(ctx.today);
+  const [anchor, setAnchor] = useState<ISODate>(initialDay ?? ctx.today);
+  const [selected, setSelected] = useState<ISODate>(initialDay ?? ctx.today);
   const [event, setEvent] = useState<FixedEvent | null>(null);
 
   const now = useMemo(() => new Date(), []);

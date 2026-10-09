@@ -63,5 +63,11 @@ export function seedIfNeeded(d: AppData, today = new Date()): AppData {
     out = { ...out, profile: { ...p, areas: [...all].sort((a, b) => rank(a.id) - rank(b.id)) } };
   }
 
+  if (from < 4) {
+    // The morning ping becomes "How are you feeling?" at 08:15 (only if the time was never changed from the old 08:00 default).
+    const p = withDefaults(out.profile);
+    if (p.morningCheckIn === "08:00") out = { ...out, profile: { ...p, morningCheckIn: "08:15" } };
+  }
+
   return { ...out, settings: { ...out.settings, seeded: SEED_VERSION } };
 }

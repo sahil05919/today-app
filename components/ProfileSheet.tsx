@@ -155,6 +155,9 @@ function TargetEditor({ target, slots, onChange }: { target: AreaTarget; slots: 
         <Check checked={target.remind} onChange={(v) => set({ remind: v })}>
           Remind me at the start
         </Check>
+        <Check checked={!!target.lockSlots} onChange={(v) => set({ lockSlots: v || undefined })}>
+          Keep my time order (don't learn)
+        </Check>
       </div>
       <div className="flex items-end gap-3">
         <Check checked={!!target.at} onChange={(v) => set({ at: v ? (target.at ?? "19:30") : undefined })}>
@@ -328,7 +331,22 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Time label="Morning briefing" value={p.morningCheckIn} onChange={(v) => set("morningCheckIn", v)} />
+            <div className="col-span-2">
+              <Check checked={p.notify.morning} onChange={(v) => set("notify", { ...p.notify, morning: v })}>
+                Morning “How are you feeling?” check-in
+              </Check>
+            </div>
+            <Time label="Check-in time · weekdays" value={p.morningCheckIn} onChange={(v) => set("morningCheckIn", v)} />
+            <Time label="Check-in time · weekends" value={p.morningWeekend} onChange={(v) => set("morningWeekend", v)} />
+            <Field label="A quote for you">
+              <select value={p.quoteEvery} onChange={(e) => set("quoteEvery", Number(e.target.value) as Profile["quoteEvery"])} className={field}>
+                <option value={1}>Every day</option>
+                <option value={2}>Every 2 days</option>
+                <option value={3}>Every 3 days</option>
+                <option value={0}>Off</option>
+              </select>
+            </Field>
+            <Time label="Quote time" value={p.quoteTime} onChange={(v) => set("quoteTime", v)} />
             <Time label="End-of-day check" value={p.eveningWrap} onChange={(v) => set("eveningWrap", v)} />
             <Time label="Daily nudge" value={p.nudgeTime} onChange={(v) => set("nudgeTime", v)} />
             <Time label="Sunday review" value={p.reviewTime} onChange={(v) => set("reviewTime", v)} />

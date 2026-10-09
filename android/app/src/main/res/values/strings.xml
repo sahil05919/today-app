@@ -8,4 +8,6 @@
     <string name="shortcut_new_long">Capture a new task</string>
     <string name="shortcut_voice_short">Voice task</string>
     <string name="shortcut_voice_long">Speak a new task</string>
+    <string name="widget_name">Today · Next up</string>
+    <string name="widget_description">What is next, with Start and Done. Make it bigger for the next two things and this week.</string>
 </resources>

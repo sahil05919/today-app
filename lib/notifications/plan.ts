@@ -10,8 +10,11 @@ import { isOffDay } from "../offday";
 import { eveningLine } from "../cheer";
 import { pileUp } from "../pileup";
 import { plannedForDay } from "../schedule";
+import { answerFor } from "../feeling";
+import { isQuoteDay, quoteForDate, quoteLine, quoteStateOf } from "../quoteBag";
 import { buildTimeline } from "../timeline";
 import { weekStart } from "../stats";
+import { timerEndsAt } from "../timer";
 import { choreKey, entryFor, wrapKey } from "../sessions";
 import type { AppData, ISODate, Profile, Task } from "../types";
 
@@ -19,7 +22,7 @@ import type { AppData, ISODate, Profile, Task } from "../types";
  * Works out every notification the app should have scheduled, as plain data.
  * Pure and offline, so it's easy to test; `native.ts` turns the result into real Android notifications.
  */
-export type NotifKind = "morning" | "checkin" | "wrap" | "reminder" | "slot" | "session" | "chore" | "nudge" | "event" | "bill" | "review";
+export type NotifKind = "morning" | "checkin" | "wrap" | "reminder" | "slot" | "session" | "chore" | "nudge" | "event" | "bill" | "review" | "timer" | "quote";
 
 export interface PlannedNotification {
   /** Stable key, e.g. "morning:2026-10-07". Same key = same notification across reschedules. */
@@ -42,6 +45,8 @@ export interface PlannedNotification {
   exact: boolean;
   /** Rings like an alarm clock: loud alarm channel, Done / Snooze buttons, and a few follow-ups until you react. */
   alarm?: boolean;
+  /** The running timer reached its goal: buttons are Done / +5 min. */
+  timer?: boolean;
 }
 
 const DAYS_AHEAD = 7;
@@ -143,6 +148,7 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
   };
 
   const name = p.name || "friend";
+  const quotes = quoteStateOf(data);
   const fill = (msg: string) => msg.replaceAll("{name}", name);
 
   /** A check-in that's been done or skipped is dropped; a snoozed one moves to when you asked. */
@@ -240,6 +246,12 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
       }
     }
 
+    // --- A quote that makes him feel good: every N days, alternating English and Hinglish, never in quiet hours ---
+    if (p.quoteEvery && isQuoteDay(quotes, day, p.quoteEvery)) {
+      const q = quoteForDate(quotes, day, p.quoteEvery, today);
+      push({ key: `quote:${day}`, at: at(day, p.quoteTime), kind: "quote", title: `A thought for you, ${name} 💛`, body: q.text, largeBody: quoteLine(q), actions: false, exact: false, work: true });
+    }
+
     // --- Sunday review: what got done, what slipped, plan next week ---------------------
     if (p.notify.review && dow === 0 && data.settings.reviewWeek !== weekStart(day)) {
       push({
@@ -247,7 +259,7 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
         at: at(day, p.reviewTime),
         kind: "review",
         title: "Sunday review",
-        body: "See what got done, what slipped, and plan next week.",
+        body: `Your week in a letter is ready, ${name}.`,
         actions: false,
         exact: false,
       });
@@ -274,7 +286,8 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
     }
 
     // --- Morning check-in: "3 things today" + what's due soon ---------------
-    if (p.notify.morning) {
+    // Once it has been answered today, it doesn't ask again.
+    if (p.notify.morning && !(i === 0 && answerFor(data, day))) {
       const dueThatDay = open.filter((t) => t.due === day || (i === 0 && t.due != null && t.due < day));
       const picks =
         i === 0
@@ -287,7 +300,7 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
       const todays = dayPlan.filter((x) => !x.done);
       const dayEvents = eventsOn(data, day);
       const dayBills = p.notify.bills ? billReminders(data, day, day) : [];
-      if (top.length || soon.length || todays.length || dayEvents.length || dayBills.length) {
+      {
         const lines = top.map((t) => `• ${t.title}`);
         const soonLine = soon.length ? `Due soon: ${soon.map((t) => `${t.title} (${friendlyWhen(t.due!, day)})`).join(", ")}` : "";
         const sessionLines = [
@@ -314,12 +327,15 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
           body = `${pile.message} Open Today for a one-tap catch-up plan.`;
           title = off ? title : `Good morning, ${name}`;
         }
+        // The ping asks how he feels; the briefing rides along as its body. Tapping it opens the check-in.
+        const ask = off ? `Easy day, ${name}. How are you feeling?` : `Good morning, ${name}. How are you feeling today?`;
+        const brief = !pile?.piling && top.length && !(todays.length || dayEvents.length || dayBills.length) ? `${title}: ${body}` : body;
         push({
           key: `morning:${day}`,
-          at: at(day, p.morningCheckIn),
+          at: at(day, [0, 6].includes(dow) ? p.morningWeekend : p.morningCheckIn),
           kind: "morning",
-          title,
-          body,
+          title: ask,
+          body: brief || "Tell me, and we'll shape today around it.",
           largeBody: [...sessionLines, ...lines, soonLine].filter(Boolean).join("\n"),
           actions: false,
           exact: false,
@@ -435,6 +451,25 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
         work: isWorkTask(t),
       });
     }
+  }
+
+  // --- The running timer: an exact alarm for the moment it runs out, so it rings with the screen locked ---------
+  const tm = data.settings.timer;
+  const tmEnd = tm ? timerEndsAt(tm) : null;
+  if (tm && tmEnd) {
+    const what = (tm.taskId ? data.tasks.find((t) => t.id === tm.taskId)?.title : tm.label) ?? "Your timer";
+    push({
+      key: `timer:${tm.startedAt}:${tm.goalMin}`,
+      at: new Date(tmEnd),
+      kind: "timer",
+      title: `${what}: time's up`,
+      body: `Well done, ${name}. Tap Done, or take 5 more minutes.`,
+      actions: true,
+      exact: true,
+      exactTime: true,
+      alarm: true,
+      timer: true,
+    });
   }
 
   return out.sort((a, b) => a.at.getTime() - b.at.getTime()).slice(0, MAX_NOTIFICATIONS);

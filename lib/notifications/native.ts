@@ -2,7 +2,8 @@ import { LocalNotifications, type ActionPerformed } from "@capacitor/local-notif
 import { createAlarmChannel } from "../nativeBridge";
 import { isNative } from "../platform";
 import { actions, getData, whenLoaded } from "../store";
-import { planNotifications, signature, type PlannedNotification } from "./plan";
+import { applyTimerAction } from "../timerRun";
+import { planNotifications, signature, type NotifKind, type PlannedNotification } from "./plan";
 import type { AppData } from "../types";
 
 /**
@@ -17,6 +18,7 @@ const CH_ALARM = "today-alarm";
 const TASK_ACTIONS = "TASK";
 const ALARM_ACTIONS = "ALARM";
 const CHECKIN_ACTIONS = "CHECKIN";
+const TIMER_ACTIONS = "TIMER";
 export const SNOOZE_MINUTES = 30;
 
 /**
@@ -118,6 +120,14 @@ export async function initNotifications() {
             { id: "snooze60", title: "Snooze 1 h" },
           ],
         },
+        // The timer ran out: log it, or take five more minutes.
+        {
+          id: TIMER_ACTIONS,
+          actions: [
+            { id: "done", title: "✓ Done" },
+            { id: "extend", title: "+5 min" },
+          ],
+        },
         {
           id: TASK_ACTIONS,
           actions: [
@@ -150,7 +160,7 @@ const toSchema = (n: PlannedNotification, exactAllowed: boolean) => ({
   largeBody: n.largeBody,
   schedule: { at: n.at, allowWhileIdle: true },
   channelId: n.alarm ? CH_ALARM : n.exact ? CH_REMINDERS : CH_GENTLE,
-  actionTypeId: n.actions ? (n.alarm ? ALARM_ACTIONS : n.ref ? CHECKIN_ACTIONS : TASK_ACTIONS) : undefined,
+  actionTypeId: n.actions ? (n.timer ? TIMER_ACTIONS : n.alarm ? ALARM_ACTIONS : n.ref ? CHECKIN_ACTIONS : TASK_ACTIONS) : undefined,
   smallIcon: "ic_stat_today",
   autoCancel: true,
   extra: { taskId: n.taskId, kind: n.kind, key: n.key, ref: n.ref, at: n.at.getTime() },
@@ -234,8 +244,13 @@ export function applyAlarmAction(actionId: string, taskId: string, firedAt = Dat
 }
 
 export interface TapTarget {
-  kind: "morning" | "checkin" | "wrap" | "reminder" | "slot" | "session" | "chore" | "nudge" | "event" | "bill" | "review";
+  kind: NotifKind;
   taskId?: string;
+  /** The notification's own key and its Done / Snooze reference: together they say exactly which card to open. */
+  key?: string;
+  ref?: string;
+  /** Opened from the widget's Start button: start that item's timer, not just show it. */
+  start?: boolean;
 }
 
 let activatedAt = Date.now();
@@ -251,8 +266,19 @@ export const markActivated = () => {
 export async function listenForActions(onTap: (t: TapTarget) => void): Promise<() => void> {
   if (!isNative()) return () => {};
   const handle = await LocalNotifications.addListener("localNotificationActionPerformed", async (e: ActionPerformed) => {
-    const extra = (e.notification.extra ?? {}) as { taskId?: string; kind?: TapTarget["kind"]; ref?: string; at?: number };
+    const extra = (e.notification.extra ?? {}) as { taskId?: string; kind?: TapTarget["kind"]; key?: string; ref?: string; at?: number };
     const { actionId } = e;
+
+    // "Time's up" on a timer: Done logs it, +5 min keeps going.
+    if (extra.kind === "timer" && ["done", "extend"].includes(actionId)) {
+      await whenLoaded();
+      applyTimerAction(actionId);
+      if (Date.now() - activatedAt < 5000) {
+        const { App } = await import("@capacitor/app");
+        App.minimizeApp().catch(() => {});
+      }
+      return;
+    }
 
     // Session / chore / end-of-day buttons.
     if (extra.ref && ["done", "snooze", "skip"].includes(actionId)) {
@@ -272,7 +298,7 @@ export async function listenForActions(onTap: (t: TapTarget) => void): Promise<(
           await whenLoaded();
           applyAlarmAction("ack", extra.taskId, extra.at);
         }
-        onTap({ kind: extra.kind, taskId: extra.taskId });
+        onTap({ kind: extra.kind, taskId: extra.taskId, key: extra.key, ref: extra.ref });
       }
       return;
     }

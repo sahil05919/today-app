@@ -3,6 +3,7 @@ import { cheerLine } from "@/lib/cheer";
 import { toISO } from "@/lib/dates";
 import { choreKey } from "@/lib/sessions";
 import { actions, getData } from "@/lib/store";
+import { timerGoal } from "@/lib/timer";
 import type { TLItem } from "@/lib/timeline";
 import type { ISODate } from "@/lib/types";
 import type { ViewCtx } from "./ui";
@@ -77,9 +78,11 @@ export function unskipItem(it: TLItem, date: ISODate) {
 /** Start: a task gets the focus timer; a session or chore gets a timer too, so Done can follow. */
 export function startItem(it: TLItem, ctx: ViewCtx, goalMin?: number) {
   buzz(12);
-  if (it.kind === "task" && it.taskId) actions.startTimer(it.taskId, goalMin);
-  else actions.startItemTimer(entryKeyOf(it, toISO(new Date())) ?? it.key, it.title, goalMin);
-  ctx.notify(goalMin ? `${goalMin} minutes. Just begin.` : "Timer running. Go for it.");
+  // The timer runs for the planned time (Meditation 15, Power BI 60…), and stops itself there.
+  const goal = goalMin ?? timerGoal(getData(), it);
+  if (it.kind === "task" && it.taskId) actions.startTimer(it.taskId, goal);
+  else actions.startItemTimer(entryKeyOf(it, toISO(new Date())) ?? it.key, it.title, goal);
+  ctx.notify(goal ? `${goal} minutes. Just begin.` : "Timer running. Go for it.");
 }
 
 function stopTimerFor(it: TLItem) {

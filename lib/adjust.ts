@@ -1,7 +1,7 @@
 import { addDays, diffDays, toISO } from "./dates";
 import { priorityScore } from "./rescue";
 import { buildTimeline, type TLItem } from "./timeline";
-import type { AppData, ISODate, Task } from "./types";
+import type { AppData, Energy, ISODate, Task } from "./types";
 
 /**
  * "Adjust my day": tell it how much time and energy you have, and it rebuilds today around that.
@@ -12,7 +12,7 @@ import type { AppData, ISODate, Task } from "./types";
  * short, restorative things (a walk, meditation, a quick call) over long deep work; high energy fills the time well.
  * What doesn't make it moves off today: tasks to tomorrow, sessions and chores skipped for today (the week re-plans).
  */
-export type Energy = "low" | "ok" | "high";
+export type { Energy };
 
 export interface Deferred {
   item: TLItem;

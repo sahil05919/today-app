@@ -67,10 +67,11 @@ describe("planNotifications", () => {
       NOW,
     );
     const morning = list.find((n) => n.key === "morning:2026-10-06")!;
-    expect(morning.title).toBe("2 things today");
+    expect(morning.title).toBe("Good morning, Sahil. How are you feeling today?");
+    expect(morning.body).toContain("2 things today");
     expect(morning.largeBody).toContain("• Pay rent");
     expect(morning.largeBody).toContain("Due soon: Submit report (Thursday)");
-    expect(hm(morning.at)).toBe("08:00");
+    expect(hm(morning.at)).toBe("08:15");
   });
 
   it("a task check-in asks 'Due Friday, where are you?' the day before, with buttons", () => {
@@ -152,7 +153,7 @@ describe("planNotifications", () => {
     );
     expect(list.some((n) => n.kind === "reminder")).toBe(false);
     const off = planNotifications(
-      data([task({ due: "2026-10-06", dueTime: "20:00" })], { rhythm: [], notify: { morning: false, taskCheckIns: false, wrap: false, reminders: false, slots: false, events: false, bills: false, nudges: false, review: false } }),
+      data([task({ due: "2026-10-06", dueTime: "20:00" })], { rhythm: [], quoteEvery: 0, notify: { morning: false, taskCheckIns: false, wrap: false, reminders: false, slots: false, events: false, bills: false, nudges: false, review: false } }),
       NOW,
     );
     expect(off).toHaveLength(0);
@@ -237,7 +238,7 @@ describe("sessions and daily rhythm", () => {
   it("the morning ping becomes a briefing of the day's sessions", () => {
     const list = planNotifications(seeded(), MON);
     const m = list.find((n) => n.key === "morning:2026-10-05")!;
-    expect(m.title).toBe("Good morning, Sahil");
+    expect(m.title).toBe("Good morning, Sahil. How are you feeling today?");
     expect(m.largeBody).toContain("Meditation session 1");
     expect(m.largeBody).toContain("Walking session 1");
   });

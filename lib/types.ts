@@ -1,6 +1,41 @@
 /** Local calendar date, "YYYY-MM-DD". Never a UTC timestamp, so it can't drift across timezones. */
 export type ISODate = string;
 
+/** How much energy a day has. Used by "How are you feeling?" and "Adjust my day". */
+export type Energy = "low" | "ok" | "high";
+
+/** The answer to the morning "How are you feeling?" check-in. */
+export interface CheckInAnswer {
+  date: ISODate;
+  energy: Energy;
+  /** Flexible things kept for the day, out of `offered`. */
+  ticked: number;
+  offered: number;
+  at: number;
+}
+
+/**
+ * Where the quote bag stands. The shuffled order is rebuilt from `seed` (so it never needs storing), `cursor` is how many
+ * have been used, and `assigned` pins a date to its place so re-planning never changes it.
+ */
+export interface QuoteState {
+  seed: number;
+  cursor: number;
+  assigned: Record<ISODate, number>;
+  /** Quote ids saved with a heart. */
+  saved: string[];
+  /** The day counting started; "every N days" is counted from it. */
+  anchor?: ISODate;
+}
+
+/** The Sunday coach letter for one week (Monday ISO date). */
+export interface CoachLetter {
+  week: ISODate;
+  text: string;
+  source: "ai" | "rules";
+  at: number;
+}
+
 export type TemplateId = "project" | "trip" | "job" | "admin" | "event";
 export type CheckInStatus = "on-track" | "behind" | "stuck";
 
@@ -40,6 +75,8 @@ export interface AreaTarget {
   remind: boolean;
   /** Placement order inside a slot: lower goes first (Power BI before the walk). */
   order?: number;
+  /** Keep the slot order exactly as set: don't let the planner learn a better slot from when sessions really happen. */
+  lockSlots?: boolean;
 }
 
 export interface Area {
@@ -250,6 +287,11 @@ export interface Profile {
   hideMic: boolean;
   /** Read events from the phone's calendar (Android, read-only). */
   calendarSync: boolean;
+  /** Weekend time of the morning "How are you feeling?" (weekdays use `morningCheckIn`). */
+  morningWeekend: string;
+  /** A quote notification every N days; 0 = off. */
+  quoteEvery: 0 | 1 | 2 | 3;
+  quoteTime: string;
   notify: {
     morning: boolean;
     taskCheckIns: boolean;
@@ -335,6 +377,12 @@ export interface Settings {
   calendarSyncedAt?: number;
   /** Times each non-task item (session, chore, bill) was snoozed, by timeline key; third time you must choose. */
   snoozes?: Record<string, number>;
+  /** Day the morning "How are you feeling?" card on Today was dismissed. */
+  feelingSkipDate?: ISODate;
+  /** Day the "today is more than you usually finish" card was dismissed. */
+  overloadSkipDate?: ISODate;
+  /** Learned slot shifts already mentioned: areaId → slotId. */
+  slotShifts?: Record<string, string>;
 }
 
 export interface AppData {
@@ -361,6 +409,12 @@ export interface AppData {
   calendarEvents?: FixedEvent[];
   /** Words you taught the offline dictionary. */
   userWords?: UserWord[];
+  /** Morning "How are you feeling?" answers (last ~120 days). */
+  checkins?: CheckInAnswer[];
+  /** Quote bag, saved quotes. */
+  quotes?: QuoteState;
+  /** Sunday coach letters, newest last (last 12 kept). */
+  letters?: CoachLetter[];
 }
 
 export const MAX_FOCUS = 3;
