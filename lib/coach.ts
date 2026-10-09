@@ -1,4 +1,5 @@
 import { callGemini, aiEnabled, type AiFail, type Fetcher } from "./ai";
+import { earlyFinishes } from "./freedom";
 import { capacityOf } from "./capacity";
 import { addDays, fromISO, isISO, toISO } from "./dates";
 import { offDaysThisWeek } from "./offday";
@@ -29,6 +30,8 @@ export interface WeekSummary {
   overdue: number;
   /** Titles of open tasks that kept getting pushed (max 3). */
   pushed: string[];
+  /** Areas that reached their weekly target early (by Thursday) in the last four weeks, and how often. */
+  finishedEarly: Array<{ name: string; times: number; byDay?: string }>;
   /** Morning check-in answers this week. */
   moods: { low: number; ok: number; high: number };
   /** Learned patterns, when there's enough history. */
@@ -84,6 +87,7 @@ export function buildWeekSummary(data: AppData, today: ISODate): WeekSummary {
     tasksDone: data.tasks.filter((t) => t.status === "done" && t.completedAt && toISO(new Date(t.completedAt)) >= start && toISO(new Date(t.completedAt)) <= end).length,
     overdue: overdueTasks(data, today).length,
     pushed: data.tasks.filter((t) => t.status === "open" && (t.snoozeCount ?? 0) >= 2).slice(0, 3).map((t) => t.title.slice(0, 60)),
+    finishedEarly: earlyFinishes(data, today).map((e) => ({ name: e.name, times: e.times, byDay: e.byDay })),
     moods,
     patterns: { bestDay, toughDay, slotShifts: Object.entries(data.settings.slotShifts ?? {}).map(([a, s]) => `${p.areas.find((x) => x.id === a)?.name ?? a}: ${p.slots.find((x) => x.id === s)?.name ?? s}`), learning: !cap.enough },
   };
@@ -131,6 +135,8 @@ export function ruleLetter(s: WeekSummary): string {
   else if (s.streakDays >= 3) well = `You kept a ${s.streakDays}-day streak going. Showing up that often is the hard part.`;
   else if (s.tasksDone > 0) well = `You finished ${s.tasksDone} ${s.tasksDone === 1 ? "task" : "tasks"} and came back to the plan each day. That counts.`;
   else well = "You came back to the plan this week, even on days that were heavy. That counts for more than it feels like.";
+  const early = s.finishedEarly.filter((e) => e.times >= 2 || hit.some((a) => a.name === e.name))[0];
+  if (early) well += ` ${early.name} was finished${early.byDay ? ` by ${early.byDay}` : " early"}${early.times >= 2 ? `, ${early.times === 2 ? "twice" : `${early.times} times`} in the last month` : ""}, which gave you time back.`;
   if (s.patterns.bestDay) well += ` ${s.patterns.bestDay} is where you usually get the most done.`;
 
   // 2. What slipped, and why.

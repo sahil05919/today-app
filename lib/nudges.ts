@@ -75,7 +75,8 @@ export function computeNudges(data: AppData, now: Date = new Date()): Nudge[] {
       const days = since(r.area.id, r.last, r.area.target!.weekends);
       return { r, days, limit: neglectAfter(r.area.target!.perWeek) };
     })
-    .filter((x) => x.days >= x.limit && !behind.some((b) => b.r.area.id === x.r.area.id))
+    // An area whose weekly target is already reached is free for the rest of the week: no "neglected" nudge.
+    .filter((x) => !x.r.finished && x.days >= x.limit && !behind.some((b) => b.r.area.id === x.r.area.id))
     .sort((a, b) => b.days / b.limit - a.days / a.limit);
   for (const { r, days } of neglected) {
     out.push({
@@ -88,7 +89,8 @@ export function computeNudges(data: AppData, now: Date = new Date()): Nudge[] {
 
   // --- Empty tomorrow (weekends are meant to be light, so they're left alone) ----------------------
   const tomorrow = addDays(today, 1);
-  if (!isWeekend(tomorrow)) {
+  // (Nor when every target is hit: an empty tomorrow is then the point.)
+  if (!isWeekend(tomorrow) && !(rows.length && rows.every((r) => r.finished))) {
     const busyTomorrow =
       plannedForDay(data, tomorrow).length > 0 ||
       eventsOn(data, tomorrow).length > 0 ||

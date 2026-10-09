@@ -16,6 +16,9 @@ export function weeklyPercent(data: AppData, today: ISODate): { pct: number; don
   return { pct: target ? Math.round((done / target) * 100) : 0, done, target };
 }
 
+/** "3/4" while working on it, "✓ 4/4" when the target is hit, "5/4 ⭐" with extras. */
+export const countLabel = (row: ProgressRow) => (row.over > 0 ? `${row.done}/${row.target} ⭐` : row.finished ? `✓ ${row.done}/${row.target}` : `${row.done}/${row.target}`);
+
 /** ●●●○ for "3 of 4". Capped at 10 dots so a big target still fits. */
 export function dots(row: ProgressRow): { filled: number; total: number } {
   const total = Math.min(10, Math.max(1, row.target));

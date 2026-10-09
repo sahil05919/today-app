@@ -143,8 +143,8 @@ function Row({ it, ctx, tl, nowMin, onOpen }: { it: TLItem; ctx: ViewCtx; tl: TL
         </span>
       ) : (
         <button
-          onClick={() => (it.done ? undoItem(it, ctx, tl.date) : completeItem(it, ctx, tl.date, openCount(tl.items, it.key)))}
-          aria-label={it.done ? `Mark ${it.title} as not done` : `Mark ${it.title} as done`}
+          onClick={() => (it.done ? (it.kind === "session" ? onOpen(it) : undoItem(it, ctx, tl.date)) : completeItem(it, ctx, tl.date, openCount(tl.items, it.key)))}
+          aria-label={it.done ? (it.kind === "session" ? `${it.title}: see what you logged` : `Mark ${it.title} as not done`) : `Mark ${it.title} as done`}
           className="flex h-12 w-9 shrink-0 items-center justify-center"
         >
           <span className={`flex h-6 w-6 items-center justify-center rounded-full border-2 transition ${it.done ? "border-accent bg-accent text-accent-ink" : "border-muted/40 text-transparent"}`}>

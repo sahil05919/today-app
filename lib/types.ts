@@ -124,13 +124,16 @@ export interface SessionLog {
   variant?: string;
   at: number;
   source: "manual" | "checkin";
+  /** "backdated" = a missed day filled in afterwards. Left out of slot learning. */
+  via?: "backdated";
 }
 
 /** What happened to a check-in on a given day (done / skipped / snoozed). */
 export interface DayEntry {
   /** "session:<areaId>:<date>", "chore:<id>:<date>" or "wrap:<date>" */
   key: string;
-  status: "done" | "skip" | "snooze";
+  /** "early" = this planned occurrence was done ahead of time on another day, so it is gone: no slot, no reminder. */
+  status: "done" | "skip" | "snooze" | "early";
   at: number;
   /** For snooze: when to ask again (epoch ms). */
   until?: number;
@@ -235,6 +238,18 @@ export interface LearnedRule {
   time?: string;
   hits: number;
   at: number;
+  /** A "done" phrase remembered for an item: "session:guitar", "bill:groceries", "rhythm:emails" or "task:finance review". */
+  item?: string;
+}
+
+/** An area hit its weekly target: the celebration, and the time that was freed (offered once). */
+export interface FreedOffer {
+  areaId: string;
+  /** Monday of the week it was reached. */
+  week: ISODate;
+  at: number;
+  /** The earliest planned session that is no longer needed. */
+  slot?: { date: ISODate; start: number; end: number };
 }
 
 export interface Profile {
@@ -343,6 +358,10 @@ export interface Task {
   createdAt: number;
   completedAt?: number;
   lastCheckIn?: { date: ISODate; status: CheckInStatus };
+  /** Completing this task counts as a session of that area ("Power BI extra session" in a freed slot). */
+  countsFor?: string;
+  /** The session log made when it was completed (removed again if you reopen it). */
+  sessionLogId?: string;
 }
 
 export interface Settings {
@@ -383,6 +402,10 @@ export interface Settings {
   overloadSkipDate?: ISODate;
   /** Learned slot shifts already mentioned: areaId → slotId. */
   slotShifts?: Record<string, string>;
+  /** Weekly targets already celebrated ("<Monday>:<areaId>"), so it happens once. */
+  celebrated?: string[];
+  /** The latest "target reached" card on Today, until it is answered. */
+  freed?: FreedOffer;
 }
 
 export interface AppData {

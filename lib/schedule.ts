@@ -32,6 +32,10 @@ export interface PlannedSession {
   variant?: string;
   title: string;
   done: boolean;
+  /** A finished session: which log it is (so Undo takes back exactly this one). */
+  logId?: string;
+  /** A finished session beyond the planned one for that day (a second walk, an extra). */
+  extra?: boolean;
 }
 
 export type BusyFn = (date: ISODate) => Array<[number, number]>;
@@ -100,7 +104,11 @@ export function planSessions(data: AppData, now: Date = new Date(), busyOverride
 
   // A finished session, or a fixed event that stands in for it (a weekend outing counts as the walk).
   const doneOn = (a: Area, d: ISODate) => logs.some((l) => l.areaId === a.id && l.date === d) || countedByEvent(data, a.id, d);
-  const skipped = (a: Area, d: ISODate) => entryFor(data.log, sessionKey(a.id, d))?.status === "skip";
+  // A skipped day is avoided; a day whose session was already done early ("early") is used up the same way.
+  const skipped = (a: Area, d: ISODate) => {
+    const s = entryFor(data.log, sessionKey(a.id, d))?.status;
+    return s === "skip" || s === "early";
+  };
 
   // Where an area's sessions really happen is offered first (within the slots he allowed; never over an exact time or a locked order).
   const learned = learnedSlots(data, today);
@@ -200,14 +208,17 @@ export function planSessions(data: AppData, now: Date = new Date(), busyOverride
   const counters = new Map<string, number>();
   const out: PlannedSession[] = [];
 
-  // Today's finished sessions stay on the list, so the day reads as one plan.
-  for (const l of logs.filter((x) => x.date === today)) {
+  // Today's finished sessions stay on the list, so the day reads as one plan (every one of them, in order).
+  const seen = new Set<string>();
+  for (const l of logs.filter((x) => x.date === today).sort((x, y) => x.at - y.at)) {
     const a = areas.find((x) => x.id === l.areaId);
     if (!a) continue;
     const at = new Date(l.at);
     const start = at.getHours() * 60 + at.getMinutes();
+    const extra = seen.has(a.id);
+    seen.add(a.id);
     out.push({
-      key: sessionKey(a.id, today),
+      key: extra ? `${sessionKey(a.id, today)}#${l.id.slice(0, 8)}` : sessionKey(a.id, today),
       areaId: a.id,
       date: today,
       slotId: "",
@@ -218,6 +229,8 @@ export function planSessions(data: AppData, now: Date = new Date(), busyOverride
       variant: l.variant,
       title: sessionTitle(a, l.n, l.variant),
       done: true,
+      logId: l.id,
+      extra: extra || undefined,
     });
   }
   for (const s of placed) {
@@ -252,23 +265,30 @@ export const pendingOn = (plan: PlannedSession[], date: ISODate) => plan.filter(
 export function plannedForDay(data: AppData, date: ISODate, busyOverride?: BusyFn): PlannedSession[] {
   const busy: BusyFn = busyOverride ?? planningBusy(data);
   const logs = data.sessions ?? [];
-  const mine = logs.filter((l) => l.date === date);
+  const mine = logs.filter((l) => l.date === date).sort((x, y) => x.at - y.at);
+  const areaOf = (id: string) => withDefaults(data.profile).areas.find((a) => a.id === id);
   // Plan as if nothing was done that day yet, from midnight, then mark off what was.
   const fresh = planSessions({ ...data, sessions: logs.filter((l) => l.date !== date) }, fromISO(date), busy).filter((s) => s.date === date && !s.done);
+  // The first session of an area that day fills the planned one; any others are extras of their own.
+  const used = new Set<string>();
   const out: PlannedSession[] = fresh.map((s) => {
     const l = mine.find((x) => x.areaId === s.areaId);
-    return l ? { ...s, done: true, n: l.n, variant: l.variant, title: s.title.replace(/\d+$/, String(l.n)) } : s;
+    if (!l) return s;
+    used.add(l.id);
+    const a = areaOf(s.areaId);
+    return { ...s, done: true, n: l.n, variant: l.variant, logId: l.id, title: a ? sessionTitle(a, l.n, l.variant) : s.title };
   });
-  // Anything logged that wasn't in the plan (done early, or an extra) still shows.
+  // Anything logged that wasn't the planned one (done early, an extra, a second walk) still shows.
   for (const l of mine) {
-    if (out.some((s) => s.areaId === l.areaId)) continue;
-    const area = withDefaults(data.profile).areas.find((a) => a.id === l.areaId);
-    if (!area) continue;
+    if (used.has(l.id)) continue;
+    const a = areaOf(l.areaId);
+    if (!a) continue;
     const at = new Date(l.at);
     const start = at.getHours() * 60 + at.getMinutes();
+    const extra = out.some((s) => s.areaId === l.areaId);
     out.push({
-      key: sessionKey(area.id, date),
-      areaId: area.id,
+      key: extra ? `${sessionKey(a.id, date)}#${l.id.slice(0, 8)}` : sessionKey(a.id, date),
+      areaId: a.id,
       date,
       slotId: "",
       start,
@@ -276,8 +296,10 @@ export function plannedForDay(data: AppData, date: ISODate, busyOverride?: BusyF
       minutes: l.minutes,
       n: l.n,
       variant: l.variant,
-      title: sessionTitle(area, l.n, l.variant),
+      title: sessionTitle(a, l.n, l.variant),
       done: true,
+      logId: l.id,
+      extra: extra || undefined,
     });
   }
   return out.sort((a, b) => a.start - b.start);

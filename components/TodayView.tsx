@@ -14,6 +14,7 @@ import { nextUp, type TLItem, type Timeline } from "@/lib/timeline";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
 import { CalendarEventInfo } from "./CalendarSheet";
 import { CatchUpCard } from "./CatchUpCard";
+import { FreedCard } from "./FreedCard";
 import { openCount } from "./itemActions";
 import { NextDays } from "./NextDays";
 import { SnoozeSheet, type SnoozeTarget } from "./SnoozeSheet";
@@ -209,6 +210,7 @@ export function TodayView({
           {homeNote}
         </p>
       )}
+      <FreedCard data={data} ctx={ctx} now={now} />
       {banner}
 
       <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} />

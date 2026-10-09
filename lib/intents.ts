@@ -48,7 +48,7 @@ export function detectSession(text: string, now: Date, profile: Profile): Parsed
 
 // ---- Bills: "paid rent", "credit card bill bhar diya" ----------------------------------------------
 
-const BILL_ALIASES: Record<string, string> = {
+export const BILL_ALIASES: Record<string, string> = {
   rent: String.raw`rent|kiraya|किराया|room\s+rent|flat\s+rent`,
   "credit-card": String.raw`credit\s?card|card\s+bill|cc\s+bill|क्रेडिट\s+कार्ड`,
   mobile: String.raw`mobile|phone\s+bill|recharge|मोबाइल`,

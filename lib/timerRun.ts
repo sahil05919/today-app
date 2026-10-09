@@ -4,9 +4,9 @@ import { extendedGoal } from "./timer";
 /** Finishes whatever a non-task timer was on: "session:<area>:<date>", "chore:<id>:<date>" or "bill:<id>:<due>". */
 export function finishRef(ref: string) {
   const [kind, id, date] = ref.split(":");
-  if (kind === "session") {
-    if (!getData().sessions?.some((l) => l.areaId === id && l.date === date)) actions.toggleSession(id, date, "manual");
-  } else if (kind === "chore") actions.setEntry(ref, "done");
+  // Already counted? Then this is a no-op, never an undo (markDone says so).
+  if (kind === "session") actions.markDone({ kind: "session", areaId: id, date }, { when: "on-its-day" });
+  else if (kind === "chore") actions.setEntry(ref, "done");
   else if (kind === "bill") actions.completeBill(id, date);
 }
 

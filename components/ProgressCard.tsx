@@ -1,6 +1,6 @@
 "use client";
 import { useMemo } from "react";
-import { dots, encouragement, streak, weeklyPercent } from "@/lib/progress";
+import { countLabel, dots, encouragement, streak, weeklyPercent } from "@/lib/progress";
 import { weekProgress } from "@/lib/sessions";
 import type { AppData } from "@/lib/types";
 import type { ViewCtx } from "./ui";
@@ -75,9 +75,7 @@ export function ProgressCard({ data, ctx, onOpen, onGoals }: { data: AppData; ct
                     </span>
                   ))}
                 </span>
-                <span className="w-8 shrink-0 text-right text-xs tabular-nums text-muted">
-                  {r.done}/{r.target}
-                </span>
+                <span className={`w-14 shrink-0 text-right text-xs tabular-nums ${r.finished ? "font-medium text-accent" : "text-muted"}`}>{countLabel(r)}</span>
                 <span className="sr-only">
                   {r.area.name}: {r.done} of {r.target}
                 </span>

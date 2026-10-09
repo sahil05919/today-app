@@ -108,6 +108,8 @@ function cleanTask(v: any): Task | null {
     createdAt: num(v.createdAt) ?? Date.now(),
     completedAt: num(v.completedAt),
     lastCheckIn: lc && isISO(lc.date) && STATUSES.includes(lc.status) ? { date: lc.date, status: lc.status } : undefined,
+    countsFor: str(v.countsFor, 40),
+    sessionLogId: str(v.sessionLogId, 64),
   };
 }
 
@@ -144,13 +146,14 @@ function cleanSessions(v: any): SessionLog[] | undefined {
       variant: str(l.variant, 30),
       at: num(l.at) ?? Date.now(),
       source: l.source === "checkin" ? "checkin" : "manual",
+      ...(l.via === "backdated" ? { via: "backdated" as const } : {}),
     }));
 }
 
 function cleanLog(v: any): DayEntry[] | undefined {
   if (!Array.isArray(v)) return undefined;
   return v
-    .filter((e: any) => e && typeof e.key === "string" && ["done", "skip", "snooze"].includes(e.status))
+    .filter((e: any) => e && typeof e.key === "string" && ["done", "skip", "snooze", "early"].includes(e.status))
     .slice(-1000)
     .map((e: any) => ({ key: e.key.slice(0, 80), status: e.status, at: num(e.at) ?? Date.now(), until: num(e.until) }));
 }
@@ -245,6 +248,7 @@ function cleanLearned(v: any): LearnedRule[] | undefined {
       time: hhmmOf(r.time),
       hits: Number.isInteger(r.hits) && r.hits > 0 ? r.hits : 1,
       at: num(r.at) ?? Date.now(),
+      item: str(r.item, 100),
     }));
 }
 
@@ -442,6 +446,19 @@ export function migrate(raw: unknown): AppData {
           ? (Object.fromEntries(Object.entries(s.slotShifts).filter(([k, v]) => typeof v === "string" && k.length < 40 && (v as string).length < 40).slice(0, 30)) as Record<string, string>)
           : undefined,
       calendarSyncedAt: num(s.calendarSyncedAt),
+      celebrated: Array.isArray(s.celebrated) ? s.celebrated.filter((k: unknown) => typeof k === "string" && k.length < 80).slice(-40) : undefined,
+      freed:
+        s.freed && typeof s.freed.areaId === "string" && isISO(s.freed.week)
+          ? {
+              areaId: s.freed.areaId.slice(0, 40),
+              week: s.freed.week,
+              at: num(s.freed.at) ?? Date.now(),
+              slot:
+                s.freed.slot && isISO(s.freed.slot.date) && Number.isFinite(s.freed.slot.start) && Number.isFinite(s.freed.slot.end)
+                  ? { date: s.freed.slot.date, start: Math.round(s.freed.slot.start), end: Math.round(s.freed.slot.end) }
+                  : undefined,
+            }
+          : undefined,
       snoozes:
         s.snoozes && typeof s.snoozes === "object"
           ? (Object.fromEntries(Object.entries(s.snoozes).filter(([k, v]) => typeof v === "number" && v > 0 && k.length < 90).slice(0, 300)) as Record<string, number>)

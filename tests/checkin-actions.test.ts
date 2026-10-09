@@ -62,10 +62,10 @@ describe("notification buttons: Done / Snooze / Skip", () => {
   it("the Today list can undo a counted session", () => {
     const area = "english";
     // An earlier test ("Done" on the end-of-day check) may already have counted it today, depending on the clock.
-    if (logsFor(area).some((l) => l.date === today)) actions.toggleSession(area, today);
-    const added = actions.toggleSession(area, today);
+    for (const l of logsFor(area).filter((x) => x.date === today)) actions.removeSession(l.id);
+    const added = actions.addSession(area, today);
     expect(added).not.toBeNull();
-    expect(actions.toggleSession(area, today)).toBeNull();
+    actions.removeSession(added!.id);
     expect(logsFor(area).some((l) => l.date === today)).toBe(false);
   });
 });

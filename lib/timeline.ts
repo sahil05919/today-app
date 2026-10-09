@@ -51,6 +51,8 @@ export interface TLItem {
   areaId?: string;
   /** Session / chore / bill identity for Done, Skip, Snooze. */
   sessionKey?: string;
+  /** A finished session: which log it is, so Undo / Remove takes back exactly this one. */
+  logId?: string;
   eventId?: string;
   choreId?: string;
   bill?: { id: string; due: ISODate; key: string; offset: number; label: string };
@@ -184,7 +186,7 @@ export function buildTimeline(data: AppData, date: ISODate, now: Date = new Date
       snoozedSessions.push(s);
       continue;
     }
-    items.push({ key: `session:${s.areaId}`, kind: "session", title: s.title, emoji: area?.emoji, start: s.start, end: s.end, fixed: false, done: s.done, skipped, areaId: s.areaId, sessionKey: s.key });
+    items.push({ key: s.extra ? s.key : `session:${s.areaId}`, kind: "session", title: s.title, emoji: area?.emoji, start: s.start, end: s.end, fixed: false, done: s.done, skipped, areaId: s.areaId, sessionKey: s.key.replace(/#.*$/, ""), logId: s.logId });
     if (!s.done && !skipped) take([s.start, s.end]);
     if (!skipped) countEvening(s.start, s.end);
   }

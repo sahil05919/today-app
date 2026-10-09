@@ -1,10 +1,10 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { aiEnabled, interpret } from "@/lib/ai";
-import { nextDue } from "@/lib/bills";
+import { aiEnabled, chooseAmong, interpret } from "@/lib/ai";
 import { diffDays, friendlyDate, toISO } from "@/lib/dates";
+import { correctTick, tickFromText, type TickResult } from "@/lib/doneRun";
+import { matchDone } from "@/lib/doneText";
 import type { ParsedCapture } from "@/lib/parse";
-import { sessionTitle } from "@/lib/sessions";
 import { teachSuggestion } from "@/lib/teach";
 import { actions, getData } from "@/lib/store";
 import { buildTimeline, movedNote } from "@/lib/timeline";
@@ -88,32 +88,17 @@ export function Capture({
   }, [command?.nonce]);
 
   /** Does what the capture means, and says what it did. */
-  const perform = (p: ParsedCapture): CaptureResult | null => {
+  const perform = (p: ParsedCapture, text: string, aiPick?: number | null): CaptureResult | null => {
     const id = ++seq.current;
     const source = p.source ?? "rules";
     const d = getData();
     const areas = ctx.profile.areas;
 
-    if (p.kind === "session" && p.session) {
-      const area = areas.find((a) => a.id === p.session!.areaId);
-      if (!area) return null;
-      const { areaId, date } = p.session;
-      if (d.sessions?.some((l) => l.areaId === areaId && l.date === date)) {
-        return { id, kind: "session", title: area.name, summary: `${area.name} is already counted ${soft(friendlyDate(date, ctx.today))}`, source, undo: () => {} };
-      }
-      const log = actions.toggleSession(areaId, date, "manual");
-      if (!log) return null;
-      const title = sessionTitle(area, log.n, log.variant);
-      return { id, kind: "session", title, summary: `Counted ${title}`, source, undo: () => actions.toggleSession(areaId, date, "manual") };
-    }
-
-    if (p.kind === "paid" && p.paidBillId) {
-      const bill = d.bills?.find((b) => b.id === p.paidBillId);
-      if (!bill) return null;
-      const due = nextDue(bill, ctx.today) ?? ctx.today;
-      const prev = bill.lastDone;
-      actions.completeBill(bill.id, due);
-      return { id, kind: "paid", title: bill.name, summary: `Marked ${bill.name} as paid`, source, undo: () => actions.uncompleteBill(bill.id, due, prev) };
+    // A tick of anything you have: a session, a check-in, a bill, a chore, a task (see lib/doneRun.ts).
+    if (p.kind === "session" || p.kind === "paid" || p.kind === "done") {
+      const t = tickFromText(text, p, ctx.profile.name, new Date(), aiPick);
+      if (t) return tickResult(id, t, source, text, p.kind === "done" ? p.title : undefined);
+      if (p.kind === "done") return null;
     }
 
     if (p.kind === "grocery") {
@@ -160,6 +145,35 @@ export function Capture({
     };
   };
 
+  /** The Got-it card for a tick, with "Not this one" to correct it (the fix is remembered). */
+  const tickResult = (id: number, t: TickResult, source: "rules" | "ai", value: string, title?: string): CaptureResult => {
+    const who = ctx.profile.name;
+    const next = (c: TickResult["options"][number]) => {
+      const fixed = t.applied ? correctTick(t, c, who, new Date()) : correctTick({ ...t, receipt: undefined }, c, who, new Date());
+      setResult(tickResult(++seq.current, fixed, source, value, title));
+    };
+    return {
+      id,
+      kind: "done",
+      title: t.applied?.label ?? title ?? "Done",
+      summary: t.summary,
+      source,
+      undo: () => {
+        if (t.receipt) actions.undoDone(t.receipt);
+      },
+      done: {
+        asking: !t.applied,
+        options: t.options.filter((o) => !t.applied || o.item !== t.applied.item || o.date !== t.applied.date),
+        pick: next,
+        asTask: () => {
+          if (t.receipt) actions.undoDone(t.receipt);
+          const task = actions.addTask(understand(value.replace(/(done|kiya)/gi, "").trim() || value, getData(), new Date()), defaultDate);
+          setResult({ id: ++seq.current, kind: "task", title: task.title, taskId: task.id, source, undo: () => actions.remove(task.id) });
+        },
+      },
+    };
+  };
+
   const save = async (value: string) => {
     const now = new Date();
     const rules = understand(value, getData(), now);
@@ -173,8 +187,22 @@ export function Capture({
       p = (await interpret(value, rules, getData(), now)).parsed;
       setBusy(false);
     }
-    const r = perform(p);
+    // Gemini may only help choose between your own items when the rules can't decide.
+    let pick: number | null = null;
+    if (aiEnabled() && (p.kind === "done" || p.kind === "session" || p.kind === "paid")) {
+      const m = matchDone(value, getData(), now);
+      if (m && !m.sure) pick = await chooseAmong(value, m.candidates.map((c) => `${c.label} (${c.dayLabel})`));
+    }
+    const r = perform(p, value, pick);
     if (r) setResult(r);
+    else if (p.kind === "done") {
+      // It turned out not to be a tick after all: keep it as an ordinary task.
+      const plain = understand(value, getData(), now);
+      if (plain.kind !== "done") {
+        const rr = perform(plain, value);
+        if (rr) setResult(rr);
+      }
+    }
   };
 
   const closeCard = useCallback(() => setResult(null), []);

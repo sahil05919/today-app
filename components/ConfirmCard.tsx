@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { friendlyDate } from "@/lib/dates";
+import type { DoneCandidate } from "@/lib/doneText";
 import { toHHMM, toMin } from "@/lib/profile";
 import type { Teach } from "@/lib/teach";
 import { buildTimeline } from "@/lib/timeline";
@@ -12,7 +13,7 @@ import { Chip, type ViewCtx } from "./ui";
 /** What a capture turned into. The card describes it and lets you fix it in one tap. */
 export interface CaptureResult {
   id: number;
-  kind: "task" | "event" | "grocery" | "session" | "paid" | "note";
+  kind: "task" | "event" | "grocery" | "session" | "paid" | "note" | "done";
   /** The headline: "Reply to starred email", "Power BI session 15"… */
   title: string;
   /** For things that aren't a task: the whole sentence ("Added Milk, Sugar to your shopping list"). */
@@ -26,6 +27,14 @@ export interface CaptureResult {
   undo: () => void;
   /** Opens the editor for an event. */
   edit?: () => void;
+  /** A typed tick: the other things it could have been, so a wrong guess is one tap to fix (and remembered). */
+  done?: {
+    /** It couldn't decide and is asking. */
+    asking: boolean;
+    options: DoneCandidate[];
+    pick: (c: DoneCandidate) => void;
+    asTask: () => void;
+  };
 }
 
 const soft = (s: string) => (/^(Today|Tomorrow|Yesterday)$/.test(s) ? s.toLowerCase() : s);
@@ -34,7 +43,7 @@ const whenText = (due: ISODate | undefined, time: string | undefined, today: ISO
 
 /** "Got it: Reply to starred email · Work · today 20:00". Tap the area or the time to fix them; it remembers. */
 export function ConfirmCard({ result, data, ctx, onClose }: { result: CaptureResult; data: AppData; ctx: ViewCtx; onClose: () => void }) {
-  const [picker, setPicker] = useState<"area" | "time" | null>(null);
+  const [picker, setPicker] = useState<"area" | "time" | "done" | null>(null);
   const [fixed, setFixed] = useState(false);
   /** "Add to my dictionary?" has been answered. */
   const [taught, setTaught] = useState<"yes" | "no" | null>(null);
@@ -44,7 +53,7 @@ export function ConfirmCard({ result, data, ctx, onClose }: { result: CaptureRes
   // Tidies itself away after a while, unless you're in the middle of fixing something.
   useEffect(() => {
     clearTimeout(timer.current);
-    const open = picker || (result.teach && !taught);
+    const open = picker || result.done?.asking || (result.teach && !taught);
     timer.current = setTimeout(onClose, open ? 25_000 : 12_000);
     return () => clearTimeout(timer.current);
   }, [result.id, picker, fixed, taught, result.teach, onClose]);
@@ -129,6 +138,11 @@ export function ConfirmCard({ result, data, ctx, onClose }: { result: CaptureRes
             )}
           </>
         )}
+        {result.done && result.done.options.length > 0 && (
+          <button onClick={() => setPicker(picker === "done" ? null : "done")} aria-expanded={picker === "done"} className="min-h-9 rounded-full bg-surface px-3 text-sm font-medium shadow-sm">
+            {result.done.asking ? "Pick one" : "Not this one"} ▾
+          </button>
+        )}
         {result.edit && (
           <button onClick={result.edit} className="min-h-9 rounded-full bg-surface px-3 text-sm font-medium shadow-sm">
             Edit
@@ -178,6 +192,19 @@ export function ConfirmCard({ result, data, ctx, onClose }: { result: CaptureRes
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {(picker === "done" || result.done?.asking) && result.done && (
+        <div className="mt-2 flex flex-wrap gap-1.5" role="listbox" aria-label="Which one did you mean?">
+          {result.done.options.map((c) => (
+            <button key={`${c.item}${c.date}`} role="option" aria-selected={false} onClick={() => result.done!.pick(c)} className="min-h-9 rounded-full border border-line bg-surface px-3 text-sm">
+              {c.label} · {c.dayLabel}
+            </button>
+          ))}
+          <button onClick={result.done.asTask} className="min-h-9 rounded-full px-3 text-sm text-muted">
+            Add as a task instead
+          </button>
         </div>
       )}
 

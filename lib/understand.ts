@@ -1,5 +1,6 @@
 import { inferCountsFor } from "./fixed";
 import { detectIntent } from "./intents";
+import { matchDone } from "./doneText";
 import { applyLearned } from "./learn";
 import { kw, userWordArea } from "./dictionary";
 import { parseCapture, type ParsedCapture } from "./parse";
@@ -27,8 +28,21 @@ const NOT_EVENT = /^\s*(?:prepare|prep|book|schedule|plan|cancel|reschedule|send
 export function understand(text: string, data: AppData, now: Date = new Date()): ParsedCapture {
   const profile = withDefaults(data.profile);
   const intent = detectIntent(text, now, profile, data.bills ?? []);
+  // A tick of anything you have ("grocery done", "guitar kiya") beats a shopping-list guess; a bare "done" asks which.
+  if (intent && intent.kind !== "grocery") return intent;
+  const done = detectDone(text, data, now, false);
+  if (done) return done;
   if (intent) return intent;
+  const ask = detectDone(text, data, now, true);
+  if (ask) return ask;
   return finalize(promoteEvent(parseCapture(text, now, profile)), data, now);
+}
+
+/** "grocery done", "room saaf kar diya", "guitar kiya": a tick of something you have. Resolved when it is performed. */
+export function detectDone(text: string, data: AppData, now: Date, fallback: boolean): ParsedCapture | null {
+  const m = matchDone(text, data, now, { fallback });
+  if (!m) return null;
+  return { kind: "done", done: { text }, title: m.candidates[0]?.label ?? "Done", important: false, tags: [], source: "rules" };
 }
 
 /** A task with a typed time that sounds like an appointment or a night out becomes a fixed event. */

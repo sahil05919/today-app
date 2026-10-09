@@ -5,7 +5,7 @@ import { toHHMM } from "@/lib/profile";
 import { weekStart } from "@/lib/stats";
 import { buildTimeline, type TLItem, type Timeline } from "@/lib/timeline";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
-import { EventSheet } from "./TodayPlan";
+import { EventSheet, ItemSheet } from "./TodayPlan";
 import { LaterView } from "./LaterView";
 import { Chip, Sheet, type ViewCtx } from "./ui";
 
@@ -30,7 +30,7 @@ function Dots({ items }: { items: TLItem[] }) {
   );
 }
 
-function AgendaRow({ it, onOpen }: { it: TLItem; onOpen: (it: TLItem) => void }) {
+function AgendaRow({ it, onOpen, missed }: { it: TLItem; onOpen: (it: TLItem) => void; missed?: boolean }) {
   const isEvent = it.kind === "event" || it.kind === "calendar";
   return (
     <li>
@@ -41,6 +41,7 @@ function AgendaRow({ it, onOpen }: { it: TLItem; onOpen: (it: TLItem) => void })
           {it.emoji ? `${it.emoji} ` : ""}
           {it.title}
         </span>
+        {missed && <Chip tone="warn">missed</Chip>}
         {it.carried && <Chip tone="warn">carried</Chip>}
         {it.fromCalendar && <Chip>calendar</Chip>}
         {!isEvent && !it.done && it.end > it.start && <span className="text-xs text-muted">{it.end - it.start} min</span>}
@@ -58,6 +59,8 @@ export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppDat
   const [anchor, setAnchor] = useState<ISODate>(initialDay ?? ctx.today);
   const [selected, setSelected] = useState<ISODate>(initialDay ?? ctx.today);
   const [event, setEvent] = useState<FixedEvent | null>(null);
+  /** A session, chore or bill opened from any day: the same sheet as on Today. */
+  const [item, setItem] = useState<{ it: TLItem; date: ISODate } | null>(null);
 
   const now = useMemo(() => new Date(), []);
   const monthStart = `${anchor.slice(0, 7)}-01`;
@@ -70,8 +73,9 @@ export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppDat
   const days = view === "month" ? gridDays : weekDays;
   const timelines = useMemo(() => new Map(days.map((d) => [d, buildTimeline(data, d, now)])), [data, view, anchor]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const open = (it: TLItem) => {
+  const open = (it: TLItem, date: ISODate) => {
     if (it.taskId) return ctx.open(it.taskId);
+    if (it.kind === "session" || it.kind === "chore" || it.kind === "bill") return setItem({ it, date });
     if (it.eventId) {
       const e = [...(data.events ?? []), ...(data.calendarEvents ?? [])].find((x) => x.id === it.eventId);
       if (e) setEvent(e);
@@ -87,6 +91,7 @@ export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppDat
   };
   const title = view === "month" ? `${MONTHS[fromISO(monthStart).getMonth()]} ${fromISO(monthStart).getFullYear()}` : `${weekdayShort(weekDays[0])} ${dayOfMonth(weekDays[0])} – ${weekdayShort(weekDays[6])} ${dayOfMonth(weekDays[6])} ${MONTHS[fromISO(weekDays[6]).getMonth()].slice(0, 3)}`;
 
+  const isMissed = (it: TLItem, d: ISODate) => d < ctx.today && !it.done && !it.skipped && (it.kind === "session" || it.kind === "chore" || it.kind === "bill");
   const selectedTl = timelines.get(selected) ?? buildTimeline(data, selected, now);
 
   return (
@@ -160,7 +165,7 @@ export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppDat
               {shown(selectedTl).length ? (
                 <ul>
                   {shown(selectedTl).map((it) => (
-                    <AgendaRow key={it.key} it={it} onOpen={open} />
+                    <AgendaRow key={it.key} it={it} onOpen={(x) => open(x, selected)} missed={isMissed(it, selected)} />
                   ))}
                 </ul>
               ) : (
@@ -183,7 +188,7 @@ export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppDat
                     {items.length ? (
                       <ul>
                         {items.map((it) => (
-                          <AgendaRow key={it.key} it={it} onOpen={open} />
+                          <AgendaRow key={it.key} it={it} onOpen={(x) => open(x, d)} missed={isMissed(it, d)} />
                         ))}
                       </ul>
                     ) : (
@@ -197,6 +202,7 @@ export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppDat
         </>
       )}
 
+      {item && <ItemSheet item={item.it} date={item.date} left={1} ctx={ctx} onClose={() => setItem(null)} />}
       {event && (event.source === "calendar" ? <CalendarEventInfo event={event} onClose={() => setEvent(null)} /> : <EventSheet event={event} data={data} ctx={ctx} onClose={() => setEvent(null)} />)}
     </Sheet>
   );

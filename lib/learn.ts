@@ -7,7 +7,7 @@ import type { LearnedRule } from "./types";
  * Next time a title contains all those words it gets the same treatment, offline or online, and it beats
  * both the built-in rules and Gemini's guess. Something you type yourself (@area, "6pm") always wins.
  */
-const STOP = new Set(
+export const STOP = new Set(
   (
     "a an the to for of and or in on at by with from my me i we you it is are was be do does did please pls " +
     "need needs want remind reminder today tomorrow tonight later now this that these those some any " +
@@ -53,6 +53,10 @@ export function learnFix(
  * "reply starred email" also catches "check starred emails", but a rule for "email landlord" doesn't catch "email Sam".
  */
 export function matchLearned(rules: LearnedRule[] | undefined, title: string): LearnedRule | null {
+  return bestRule(rules?.filter((r) => !r.item), title);
+}
+
+function bestRule(rules: LearnedRule[] | undefined, title: string): LearnedRule | null {
   if (!rules?.length) return null;
   const have = significantWords(title).map(stem);
   let best: { rule: LearnedRule; hit: number; ratio: number } | null = null;
@@ -65,6 +69,24 @@ export function matchLearned(rules: LearnedRule[] | undefined, title: string): L
   }
   return best?.rule ?? null;
 }
+
+/**
+ * "Done" phrases are remembered as phrase → item ("guitar kiya" → "session:guitar"; "ghar saaf" → "bill:room"), next to
+ * the area and time fixes, and applied offline. They never touch how an ordinary task is filed (see matchLearned).
+ */
+export function learnItem(rules: LearnedRule[] | undefined, phrase: string, item: string, now = Date.now()): LearnedRule[] {
+  const words = significantWords(phrase);
+  if (!words.length) return rules ?? [];
+  const list = [...(rules ?? [])];
+  const i = list.findIndex((r) => r.item && sameWords(r.words, words));
+  if (i >= 0) list[i] = { ...list[i], item, hits: list[i].hits + 1, at: now };
+  else list.push({ id: `d-${now.toString(36)}-${list.length}`, words, item, hits: 1, at: now });
+  return list.sort((x, y) => y.at - x.at).slice(0, MAX_RULES);
+}
+
+/** The item a remembered "done" phrase points to, or null. */
+export const matchLearnedItem = (rules: LearnedRule[] | undefined, phrase: string): string | null =>
+  bestRule(rules?.filter((r) => r.item), phrase)?.item ?? null;
 
 export function applyLearned(p: ParsedCapture, rules: LearnedRule[] | undefined): ParsedCapture {
   if (p.kind && p.kind !== "task" && p.kind !== "event") return p;

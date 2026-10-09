@@ -33,7 +33,7 @@ export function applyCheckInAction(actionId: string, ref: string, now = Date.now
     if (kind === "session") {
       // Already counted? Then Done is a no-op, never an undo.
       const done = getData().sessions?.some((l) => l.areaId === rest[0] && l.date === date);
-      if (!done) actions.toggleSession(rest[0], date, "checkin");
+      if (!done) actions.addSession(rest[0], date, "checkin");
     } else if (kind === "wrap") actions.markDayDone(date);
     else if (kind === "bill") actions.completeBill(rest[0], date);
     else actions.setEntry(ref, "done");

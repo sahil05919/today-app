@@ -5,6 +5,7 @@ import { choreKey } from "@/lib/sessions";
 import { actions, getData } from "@/lib/store";
 import { timerGoal } from "@/lib/timer";
 import type { TLItem } from "@/lib/timeline";
+import { whenFor, type DoneTarget, type DoneWhen } from "@/lib/done";
 import type { ISODate } from "@/lib/types";
 import type { ViewCtx } from "./ui";
 
@@ -23,43 +24,51 @@ export function entryKeyOf(it: TLItem, date: ISODate): string | null {
 export const openCount = (items: TLItem[], except?: string) =>
   items.filter((x) => !x.done && !x.skipped && !x.muted && !x.allDay && x.kind !== "event" && x.kind !== "calendar" && x.key !== except).length;
 
-/** Ticks an item off. `left` = how many other things are still open (for the closing line). */
-export function completeItem(it: TLItem, ctx: ViewCtx, date: ISODate, left: number) {
+/** What a timeline item is, as a target for the shared tick (lib/done.ts). */
+export function doneTargetOf(it: TLItem, date: ISODate): DoneTarget | null {
+  if (it.kind === "session" && it.areaId) return { kind: "session", areaId: it.areaId, date };
+  if (it.kind === "chore" && it.choreId) return { kind: "rhythm", id: it.choreId, date };
+  if (it.kind === "bill" && it.bill) return { kind: "bill", id: it.bill.id, due: it.bill.due };
+  if (it.kind === "task" && it.taskId) return { kind: "task", id: it.taskId };
+  return null;
+}
+
+/** The toast after a tick: what happened, plus the celebration if a weekly target was just reached. */
+export function tickToast(r: ReturnType<typeof actions.markDone>, ctx: ViewCtx, cheer?: string): string {
+  const names = r.reached.map((id) => ctx.profile.areas.find((a) => a.id === id)?.name).filter(Boolean);
+  const hit = names.length ? ` ${names.join(" and ")} done for the week 🎉, ${ctx.profile.name || "friend"}.` : "";
+  return `${r.message}${r.noop || r.early || !cheer ? "" : `. ${cheer}`}${hit}`;
+}
+
+/**
+ * Ticks an item off, on whatever day it is shown. `left` = how many other things are still open (for the closing line).
+ * `when` defaults to the item's own day (today), "I did this early" for a future day, "I did it" for a missed one.
+ */
+export function completeItem(it: TLItem, ctx: ViewCtx, date: ISODate, left: number, opts: { when?: DoneWhen; extra?: boolean } = {}) {
   const line = () => cheerLine(ctx.profile.name, left);
   buzz(20);
-  if (it.kind === "task" && it.taskId) {
+  if (it.kind === "task" && it.taskId && date === ctx.today) {
     const t = getData().tasks.find((x) => x.id === it.taskId);
     if (!t) return;
     // A running timer on it stops with it.
     if (getData().settings.timer?.taskId === t.id) actions.stopTimer();
     actions.toggleDone(t.id);
     ctx.notify(line(), () => actions.toggleDone(t.id));
-  } else if (it.kind === "session" && it.areaId) {
-    if (!getData().sessions?.some((l) => l.areaId === it.areaId && l.date === date)) actions.toggleSession(it.areaId, date, "manual");
-    const area = it.areaId;
-    ctx.notify(`${it.title} counted. ${line()}`, () => actions.toggleSession(area, date, "manual"));
-    stopTimerFor(it);
-  } else if (it.kind === "chore" && it.choreId) {
-    const key = choreKey(it.choreId, date);
-    actions.setEntry(key, "done");
-    ctx.notify(line(), () => actions.setEntry(key, null));
-    stopTimerFor(it);
-  } else if (it.kind === "bill" && it.bill) {
-    const bill = getData().bills?.find((b) => b.id === it.bill!.id);
-    const prev = bill?.lastDone;
-    actions.completeBill(it.bill.id, it.bill.due);
-    const { id, due } = it.bill;
-    ctx.notify(line(), () => actions.uncompleteBill(id, due, prev));
-    stopTimerFor(it);
+    return;
   }
+  const target = doneTargetOf(it, date);
+  if (!target) return;
+  if (target.kind === "task" && getData().settings.timer?.taskId === target.id) actions.stopTimer();
+  const r = actions.markDone(target, { when: opts.when ?? whenFor(date, ctx.today), extra: opts.extra });
+  ctx.notify(tickToast(r, ctx, date === ctx.today ? line() : undefined), r.noop ? undefined : () => actions.undoDone(r.receipt));
+  stopTimerFor(it);
 }
 
-/** Takes a ticked item back. */
+/** Takes a ticked item back. A session: only the one session you meant (never "whatever is on that day"). */
 export function undoItem(it: TLItem, ctx: ViewCtx, date: ISODate) {
   if (it.kind === "task" && it.taskId) actions.toggleDone(it.taskId);
-  else if (it.kind === "session" && it.areaId) {
-    if (getData().sessions?.some((l) => l.areaId === it.areaId && l.date === date)) actions.toggleSession(it.areaId, date);
-  } else if (it.kind === "chore" && it.choreId) actions.setEntry(choreKey(it.choreId, date), null);
+  else if (it.kind === "session" && it.logId) actions.removeSession(it.logId);
+  else if (it.kind === "chore" && it.choreId) actions.setEntry(choreKey(it.choreId, date), null);
   ctx.notify("Back on the list");
 }
 

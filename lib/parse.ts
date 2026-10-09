@@ -12,7 +12,9 @@ export interface ParsedCapture {
    * What this capture becomes: a task (default; reminders and chores are tasks with a time), a fixed event,
    * shopping-list items, a finished session ("did Power BI"), a paid bill, or a note / idea.
    */
-  kind?: "task" | "event" | "grocery" | "session" | "paid" | "note";
+  kind?: "task" | "event" | "grocery" | "session" | "paid" | "note" | "done";
+  /** For a typed tick ("grocery done", "guitar kiya"): the words, matched against your items when it is performed. */
+  done?: { text: string };
   /** For a finished session: which area, and the day it was done. */
   session?: { areaId: string; date: ISODate };
   /** For "paid rent": which bill. */

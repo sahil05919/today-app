@@ -127,8 +127,10 @@ export function capacityOf(data: AppData, today: ISODate): Capacity {
   const byArea: Record<string, AreaStat> = {};
   for (const a of p.areas.filter((x) => x.target)) {
     const logs = (data.sessions ?? []).filter((l) => l.areaId === a.id && l.date >= from && l.date <= to);
+    // A backdated log says nothing about when sessions really happen (its time of day is made up).
+    const timed = logs.filter((l) => !l.via);
     // The log is written when the session is ticked off, at its end, so the start is a session earlier.
-    const starts = logs.map((l) => {
+    const starts = timed.map((l) => {
       const at = new Date(l.at);
       return Math.max(0, at.getHours() * 60 + at.getMinutes() - l.minutes);
     });

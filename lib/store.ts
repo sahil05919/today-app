@@ -2,11 +2,12 @@
 import { Preferences } from "@capacitor/preferences";
 import { useSyncExternalStore } from "react";
 import { emptyData, migrate } from "./backup";
-import { addDays, todayISO } from "./dates";
+import { addDays, toISO, todayISO } from "./dates";
 import { isNative } from "./platform";
-import { nextOccurrence } from "./recur";
 import { seedIfNeeded } from "./seed";
-import { nextNumber, variantFor, wrapKey } from "./sessions";
+import { addLog, removeLog, wrapKey } from "./sessions";
+import { applyDone, completeTaskIn, reopenTaskIn, revertDone, type DoneOptions, type DoneOutcome, type DoneReceipt, type DoneTarget } from "./done";
+import { newlyFinished, taskForFreedSlot, withTargetEffects, type FreedChoice } from "./freedom";
 import { pendingOn, planSessions } from "./schedule";
 import { taskGoal } from "./timer";
 import { assignDate, quoteStateOf, takeAnother } from "./quoteBag";
@@ -14,7 +15,7 @@ import type { Quote } from "./quotes/types";
 import type { ParsedCapture } from "./parse";
 import { TEMPLATES } from "./templates";
 import { billKey } from "./bills";
-import { forget, learnFix } from "./learn";
+import { forget, learnFix, learnItem } from "./learn";
 import { canTakeOffDay } from "./offday";
 import { withLetter } from "./letters";
 import type { AppData, Bill, BoredIdea, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, SessionLog, Settings, Step, Task, TemplateId } from "./types";
@@ -284,40 +285,19 @@ export const actions = {
    * Completes (or reopens) a task. Completing a recurring task spawns its next occurrence and returns it;
    * reopening removes that spawned occurrence again so nothing is duplicated.
    */
-  toggleDone(id: string): Task | null {
+  toggleDone(id: string, now: Date = new Date()): Task | null {
     const d = ensure();
     const t = d.tasks.find((x) => x.id === id);
     if (!t) return null;
-
     if (t.status === "done") {
-      const tasks = d.tasks
-        .filter((x) => !(t.nextId && x.id === t.nextId && x.status === "open"))
-        .map((x) => (x.id === id ? { ...x, status: "open" as const, completedAt: undefined, nextId: undefined } : x));
-      commit({ ...d, tasks });
+      const next = reopenTaskIn(d, id);
+      if (next) commit(withTargetEffects(d, next, now));
       return null;
     }
-
-    const today = todayISO();
-    let next: Task | null = null;
-    if (t.recur) {
-      // If it's overdue, count from today so we don't spawn a pile of missed occurrences.
-      const base = t.due && t.due > today ? t.due : today;
-      next = {
-        ...t,
-        id: uid(),
-        due: nextOccurrence(t.recur, base),
-        steps: t.steps.map((s) => ({ ...s, id: uid(), done: false })),
-        status: "open",
-        completedAt: undefined,
-        nextId: undefined,
-        focus: false,
-        lastCheckIn: undefined,
-        createdAt: Date.now(),
-      };
-    }
-    const done: Task = { ...t, status: "done", completedAt: Date.now(), focus: false, nextId: next?.id };
-    commit({ ...d, tasks: [...(next ? [next] : []), ...d.tasks.map((x) => (x.id === id ? done : x))] });
-    return next;
+    const r = completeTaskIn(d, id, now);
+    if (!r) return null;
+    commit(withTargetEffects(d, r.data, now));
+    return r.next;
   },
 
   remove(id: string) {
@@ -463,32 +443,57 @@ export const actions = {
   },
 
   /**
-   * Counts a session: "Power BI session 14". One per area per day; calling it again for the same day undoes it.
-   * Returns the log that was added, or null if it was removed.
+   * Counts a session: "Power BI session 14". As many as you like per day, each its own numbered session.
+   * A date before today is a backdated session. Returns the log that was added (null if the area has no weekly target).
    */
-  toggleSession(areaId: string, date: ISODate = todayISO(), source: SessionLog["source"] = "manual"): SessionLog | null {
+  addSession(areaId: string, date: ISODate = todayISO(), source: SessionLog["source"] = "manual", now: Date = new Date()): SessionLog | null {
     const d = ensure();
-    const existing = (d.sessions ?? []).find((l) => l.areaId === areaId && l.date === date);
-    if (existing) {
-      commit({ ...d, sessions: (d.sessions ?? []).filter((l) => l.id !== existing.id) });
-      return null;
-    }
-    const area = d.profile?.areas.find((a) => a.id === areaId);
-    if (!area?.target) return null;
-    const n = nextNumber(d.sessions, areaId, area.target.startAt);
-    const log: SessionLog = {
-      id: uid(),
-      areaId,
-      date,
-      minutes: area.target.minutes,
-      n,
-      variant: variantFor(area, n),
-      at: Date.now(),
-      source,
-    };
-    // Counting a session also clears any "skipped" mark for it.
-    commit({ ...d, sessions: [...(d.sessions ?? []), log], log: (d.log ?? []).filter((e) => e.key !== `session:${areaId}:${date}`) });
-    return log;
+    const r = addLog(d, areaId, date, source, now);
+    if (!r) return null;
+    commit(withTargetEffects(d, r.data, now));
+    return r.log;
+  },
+
+  /** Takes back ONE session, by its id. Never removes "the one on that day": a second walk leaves the first alone. */
+  removeSession(logId: string, now: Date = new Date()) {
+    const d = ensure();
+    const next = removeLog(d, logId);
+    if (next !== d) commit(withTargetEffects(d, next, now));
+  },
+
+  /**
+   * Ticks anything off: a session, a check-in, a bill, a chore or a task. Every route (the Calendar, Today, typing,
+   * the timer) comes through here, so the rules live in one place (see lib/done.ts). The reminders re-plan by themselves.
+   */
+  markDone(target: DoneTarget, opts: DoneOptions): DoneOutcome & { reached: string[] } {
+    const d = ensure();
+    const now = opts.now ?? new Date();
+    const r = applyDone(d, target, opts);
+    if (r.noop) return { ...r, reached: [] };
+    commit(withTargetEffects(d, r.data, now));
+    return { ...r, reached: newlyFinished(d, r.data, toISO(now)) };
+  },
+
+  /** Takes a tick back exactly (the receipt comes from markDone). */
+  undoDone(receipt: DoneReceipt, now: Date = new Date()) {
+    const d = ensure();
+    commit(withTargetEffects(d, revertDone(d, receipt), now));
+  },
+
+  /** The freed-time card: fills the slot with a normal task, or leaves it empty (Rest). Either way it is answered. */
+  answerFreed(choice: FreedChoice, now: Date = new Date()): Task | null {
+    const d = ensure();
+    const offer = d.settings.freed;
+    if (!offer) return null;
+    const task = taskForFreedSlot(d, offer, choice, now);
+    commit({ ...d, tasks: task ? [task, ...d.tasks] : d.tasks, settings: { ...d.settings, freed: undefined } });
+    return task;
+  },
+
+  /** Remembers "this phrase means that item" for next time (see lib/learn.ts). */
+  learnDone(title: string, item: string) {
+    const d = ensure();
+    commit({ ...d, learned: learnItem(d.learned, title, item) });
   },
 
   /** Marks a check-in done / skipped / snoozed for a day. Pass status null to clear it. */
@@ -502,7 +507,7 @@ export const actions = {
   /** "Did you do today's sessions?" → Done: counts everything still planned for that day. */
   markDayDone(date: ISODate = todayISO()) {
     const plan = planSessions(ensure(), new Date());
-    for (const s of pendingOn(plan, date)) actions.toggleSession(s.areaId, date, "checkin");
+    for (const s of pendingOn(plan, date)) actions.addSession(s.areaId, date, "checkin");
     actions.setEntry(wrapKey(date), "done");
   },
 

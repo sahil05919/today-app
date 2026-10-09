@@ -561,6 +561,8 @@ export async function interpret(
   opts: { fetcher?: Fetcher; key?: string; model?: string; timeoutMs?: number } = {},
 ): Promise<SmartResult> {
   if (!(opts.key ?? getGeminiKey())) return { parsed: rules, used: "rules" };
+  // A tick of something you have is decided by your own items and your learned fixes; Gemini only ever helps pick between them.
+  if (rules.kind === "done") return { parsed: rules, used: "rules" };
   try {
     const r = await callGemini({ system: buildSystemPrompt(data, now), user: `Note: ${JSON.stringify(text)}` }, opts);
     if (!r.ok) return { parsed: rules, used: "rules", reason: r.reason };
@@ -569,6 +571,37 @@ export async function interpret(
     return { parsed: finalize(built, data, now), used: "ai" };
   } catch {
     return { parsed: rules, used: "rules", reason: "failed" };
+  }
+}
+
+const CHOOSE_SCHEMA = { type: "OBJECT", properties: { choice: { type: "INTEGER" }, confidence: { type: "NUMBER" } }, required: ["choice"] };
+
+/**
+ * "Which of these did they mean?" Used only when the rules can't decide between your own items. Returns the index of one of
+ * the options, or null (no key, offline, unsure): then the app simply asks you.
+ */
+export async function chooseAmong(
+  text: string,
+  options: string[],
+  opts: { fetcher?: Fetcher; key?: string; model?: string; timeoutMs?: number } = {},
+): Promise<number | null> {
+  if (options.length < 2 || !(opts.key ?? getGeminiKey())) return null;
+  try {
+    const r = await callGemini(
+      {
+        system: "The user says they finished something. Pick the numbered item they mean. Answer choice = its number, or -1 if none clearly fits. Never invent an item.",
+        user: ["Phrase: " + JSON.stringify(text), "Items:", ...options.map((o, i) => `${i}: ${o}`)].join("\n"),
+        schema: CHOOSE_SCHEMA,
+      },
+      opts,
+    );
+    if (!r.ok) return null;
+    const c = r.result as unknown as { choice?: unknown; confidence?: unknown };
+    const n = typeof c.choice === "number" ? Math.round(c.choice) : -1;
+    const conf = typeof c.confidence === "number" ? c.confidence : 0.8;
+    return n >= 0 && n < options.length && conf >= 0.7 ? n : null;
+  } catch {
+    return null;
   }
 }
 

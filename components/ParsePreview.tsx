@@ -47,6 +47,13 @@ export function ParsePreview({
       </div>
     );
   }
+  if (parsed.kind === "done") {
+    return (
+      <div className={wrap}>
+        <Chip tone="accent">✓ Ticks off: {parsed.title}</Chip>
+      </div>
+    );
+  }
   if (parsed.kind === "paid") {
     return (
       <div className={wrap}>
