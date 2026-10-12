@@ -10,8 +10,10 @@ import { pileUp } from "@/lib/pileup";
 import { weeklyPercent } from "@/lib/progress";
 import { actions } from "@/lib/store";
 import { weekStart } from "@/lib/stats";
+import type { BlockId } from "@/lib/busy";
 import { nextUp, type TLItem, type Timeline } from "@/lib/timeline";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
+import { BlockSheet } from "./BlockSheet";
 import { CalendarEventInfo } from "./CalendarSheet";
 import { CatchUpCard } from "./CatchUpCard";
 import { FreedCard } from "./FreedCard";
@@ -41,7 +43,7 @@ function Nudge({ emoji, title, body, action, onAction }: { emoji: string; title:
 /** "Open this card now": a tapped notification or a widget deep link asks the home screen to show a sheet. */
 export type OpenRequest = { id: number } & ({ k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "progress" });
 
-type Sheet = { k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "reschedule"; target: RescheduleTarget } | { k: "progress" } | null;
+type Sheet = { k: "block"; id: BlockId; date: ISODate } | { k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "reschedule"; target: RescheduleTarget } | { k: "progress" } | null;
 
 /**
  * The home screen, built to be one glance: what's next (with Start / Done / Reschedule), your top must-have as one line,
@@ -191,14 +193,17 @@ export function TodayView({
     );
   }
 
-  const open = (it: TLItem) => {
+  /** Opens whatever a row is: a task, an event, a routine block, a session / chore / bill, on any day. */
+  const openAt = (it: TLItem, date: ISODate) => {
+    if (it.blockId) return setSheet({ k: "block", id: it.blockId, date });
     if (it.taskId) return ctx.open(it.taskId);
     if (it.eventId) {
       const e = [...(data.events ?? []), ...(data.calendarEvents ?? [])].find((x) => x.id === it.eventId);
       if (e) return setSheet({ k: "event", e });
     }
-    setSheet({ k: "item", it, date: tl.date });
+    setSheet({ k: "item", it, date });
   };
+  const open = (it: TLItem) => openAt(it, tl.date);
 
   const reschedule = (it: TLItem) => setSheet({ k: "reschedule", target: it.taskId ? { kind: "task", taskId: it.taskId } : { kind: "item", item: it, date: sheet?.k === "item" && sheet.it.key === it.key ? sheet.date : tl.date } });
 
@@ -216,7 +221,7 @@ export function TodayView({
 
       <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} onReschedule={reschedule} />
 
-      <NextDays data={data} today={ctx.today} onOpenDay={onCalendar} />
+      <NextDays data={data} today={ctx.today} onOpenDay={onCalendar} onOpenItem={openAt} />
 
       {hasSessions && (
         <button onClick={() => setSheet({ k: "progress" })} className="block w-full rounded-2xl border border-line bg-surface px-4 py-3 text-left" aria-label="This week's progress, tap for details">
@@ -246,7 +251,8 @@ export function TodayView({
 
       {sheet?.k === "progress" && <ProgressSheet data={data} ctx={ctx} onClose={() => setSheet(null)} onReview={() => (setSheet(null), openPanel("review"))} />}
       {sheet?.k === "item" && <ItemSheet item={sheet.it} date={sheet.date} left={sheet.date === tl.date ? openCount(tl.items, sheet.it.key) : 1} ctx={ctx} onClose={() => setSheet(null)} onReschedule={reschedule} openPanel={openPanel} />}
-      {sheet?.k === "event" && (sheet.e.source === "calendar" ? <CalendarEventInfo event={sheet.e} onClose={() => setSheet(null)} /> : <EventSheet event={sheet.e} data={data} ctx={ctx} onClose={() => setSheet(null)} />)}
+      {sheet?.k === "block" && <BlockSheet id={sheet.id} date={sheet.date} ctx={ctx} onClose={() => setSheet(null)} />}
+      {sheet?.k === "event" && (sheet.e.source === "calendar" ? <CalendarEventInfo event={sheet.e} onClose={() => setSheet(null)} notify={ctx.notify} /> : <EventSheet event={sheet.e} data={data} ctx={ctx} onClose={() => setSheet(null)} />)}
       {sheet?.k === "reschedule" && <RescheduleSheet target={sheet.target} ctx={ctx} onClose={() => setSheet(null)} />}
     </div>
   );

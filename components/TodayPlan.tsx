@@ -1,6 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import { fromISO } from "@/lib/dates";
+import { eventMarkKey, isEventDone } from "@/lib/fixed";
 import { toHHMM, withDefaults } from "@/lib/profile";
 import { planSessions } from "@/lib/schedule";
 import { paceStatus } from "@/lib/pace";
@@ -204,6 +205,15 @@ export function EventSheet({ event, data, ctx, onClose }: { event: FixedEvent; d
   return (
     <Sheet title="Fixed event" onClose={onClose}>
       <div className="space-y-4">
+        <button
+          className={`${isEventDone(data, event) ? btn.ghost : btn.primary} min-h-12 w-full`}
+          onClick={() => {
+            actions.markEvent(eventMarkKey(event), { done: isEventDone(data, event) ? undefined : Date.now() });
+            onClose();
+          }}
+        >
+          ✓ {isEventDone(data, event) ? "Not done after all" : "Done"}
+        </button>
         <input value={event.title} onChange={(e) => set({ title: e.target.value })} aria-label="Title" className={`${field} text-lg font-semibold`} />
         <div className="grid grid-cols-2 gap-3">
           <label>

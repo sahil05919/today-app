@@ -1,5 +1,5 @@
 import { addDays, fromISO, toISO } from "./dates";
-import { dayRules, fixedSpans, overlapMinutes, planningBusy } from "./busy";
+import { dayRules, fixedSpans, LATEST_END, overlapMinutes, planningBusy } from "./busy";
 import { learnedSlots, orderSlots } from "./capacity";
 import { countedByEvent } from "./fixed";
 import { isOffDay, OFF_DAY_MAX_MIN } from "./offday";
@@ -62,8 +62,10 @@ interface Placed extends Item {
 }
 
 /** Free stretches of a slot on a day, after the clock (today) and fixed events are taken out. */
-function windows(slot: Slot, date: ISODate, earliest: number, busy: BusyFn): Array<[number, number]> {
-  let ws: Array<[number, number]> = [[Math.max(toMin(slot.start), earliest), toMin(slot.end)]];
+function windows(slot: Slot, date: ISODate, earliest: number, busy: BusyFn, shift = 0): Array<[number, number]> {
+  // A routine block that ran long (data.blocks) pushes the evening later: the slot moves with it, but never past ~22:30.
+  const end = shift ? Math.min(toMin(slot.end) + shift, Math.max(LATEST_END, toMin(slot.end))) : toMin(slot.end);
+  let ws: Array<[number, number]> = [[Math.max(toMin(slot.start) + shift, earliest), end]];
   for (const [bs, be] of busy(date)) {
     ws = ws.flatMap(([s, e]) => (be <= s || bs >= e ? [[s, e] as [number, number]] : [[s, Math.min(e, bs)] as [number, number], [Math.max(s, be), e] as [number, number]]));
   }
@@ -128,6 +130,14 @@ export function planSessions(raw: AppData, now: Date = new Date(), busyOverride?
       .filter((s): s is Slot => !!s && s.days.includes(fromISO(d).getDay()));
   };
   const earliest = (d: ISODate) => (d === today ? nowMin + 5 : 0);
+  // How far a day's evening and night slots move because of a long routine block (0 on an ordinary day).
+  const rules = new Map<ISODate, ReturnType<typeof dayRules>>();
+  const rulesOf = (d: ISODate) => {
+    let r = rules.get(d);
+    if (!r) rules.set(d, (r = dayRules(data, d)));
+    return r;
+  };
+  const shiftFor = (s: Slot, d: ISODate) => (toMin(s.start) >= rulesOf(d).eveningStart ? rulesOf(d).shift : 0);
 
   /** Days this area could still happen on this week. */
   const eligible = (a: Area): ISODate[] =>
@@ -136,7 +146,7 @@ export function planSessions(raw: AppData, now: Date = new Date(), busyOverride?
       if (!a.target!.weekends && isWeekend(d)) return false;
       // An off day keeps one SHORT session; anything longer waits for another day.
       if (isOffDay(data, d) && (a.target!.minutes > OFF_DAY_MAX_MIN || logs.some((l) => l.date === d))) return false;
-      return slotsFor(a, d).some((s) => windows(s, d, earliest(d), busy).some(([ws, we]) => we - ws >= a.target!.minutes));
+      return slotsFor(a, d).some((s) => windows(s, d, earliest(d), busy, shiftFor(s, d)).some(([ws, we]) => we - ws >= a.target!.minutes));
     });
 
   // cell = one slot on one day
@@ -163,9 +173,9 @@ export function planSessions(raw: AppData, now: Date = new Date(), busyOverride?
       // The evening holds about 2.5 hours of plans (lighter on office days), counting fixed events in it too.
       // Sessions may use a little over ("about"); tasks added later only get what the cap itself leaves.
       if (toMin(s.start) >= r.eveningStart && eveningUsed(d, r) + a.target!.minutes > r.eveningCap * SESSION_CAP_SLACK) continue;
-      const item: Item = { area: a, minutes: a.target!.minutes, order: a.target!.order ?? 5, at: a.target!.at ? toMin(a.target!.at) : undefined };
+      const item: Item = { area: a, minutes: a.target!.minutes, order: a.target!.order ?? 5, at: a.target!.at ? toMin(a.target!.at) + shiftFor(s, d) : undefined };
       const existing = cells.get(cellKey(d, s)) ?? [];
-      if (layout([...existing, item], windows(s, d, earliest(d), busy), buffer)) {
+      if (layout([...existing, item], windows(s, d, earliest(d), busy, shiftFor(s, d)), buffer)) {
         cells.set(cellKey(d, s), [...existing, item]);
         return true;
       }
@@ -209,7 +219,7 @@ export function planSessions(raw: AppData, now: Date = new Date(), busyOverride?
   for (const [k, items] of cells) {
     const [date, slotId] = k.split("|");
     const slot = slots.get(slotId)!;
-    const laid = layout(items, windows(slot, date, earliest(date), busy), buffer);
+    const laid = layout(items, windows(slot, date, earliest(date), busy, shiftFor(slot, date)), buffer);
     if (laid) placed.push(...laid.map((l) => ({ ...l, date, slot })));
   }
   placed.sort((x, y) => x.date.localeCompare(y.date) || x.start - y.start);

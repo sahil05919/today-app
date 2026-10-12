@@ -1,13 +1,13 @@
 import { billsOnDay } from "./bills";
-import { dayRules, planningBusy, timedDuration, type DayRules, type Span } from "./busy";
+import { dayRules, planningBusy, timedDuration, type BlockId, type DayRules, type Span } from "./busy";
 import { addDays, fromISO, toISO } from "./dates";
 import { nextStep, remainingMinutes } from "./estimate";
-import { eventSpan, eventsOn } from "./fixed";
+import { eventMarkKey, eventSpan, eventsOn, isEventDone } from "./fixed";
 import { toHHMM, toMin, withDefaults } from "./profile";
 import { priorityScore } from "./rescue";
 import { plannedForDay } from "./schedule";
 import { windowFor, withOccurrences } from "./series";
-import { choreKey, entryFor } from "./sessions";
+import { blockLogKey, choreKey, entryFor } from "./sessions";
 import { buildDurationModel } from "./stats";
 import type { AppData, ISODate, Task } from "./types";
 
@@ -57,6 +57,10 @@ export interface TLItem {
   /** A finished session: which log it is, so Undo / Remove takes back exactly this one. */
   logId?: string;
   eventId?: string;
+  /** An event's local marks (done, hidden, time override): "<calId or id>@<date>". */
+  eventKey?: string;
+  /** A routine block (lunch, commute, tea break): tap to change its time, run late, tick or skip it. */
+  blockId?: BlockId;
   choreId?: string;
   bill?: { id: string; due: ISODate; key: string; offset: number; label: string };
   /** Calendar event read from the phone. */
@@ -133,20 +137,21 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
   };
 
   // ---- 1. Fixed: breaks, commute, events, timed tasks ---------------------------------------------------
+  const blockDone = (id: BlockId) => entryFor(data.log, blockLogKey(id, date))?.status === "done";
   if (r.commuteTo) {
-    items.push({ key: "commute:to", kind: "commute", title: "Commute to the office", emoji: "🚌", start: r.commuteTo[0], end: r.commuteTo[1], fixed: true, done: false, skipped: false, muted: true });
+    items.push({ key: "commute:to", kind: "commute", title: "Commute to the office", emoji: "🚌", start: r.commuteTo[0], end: r.commuteTo[1], fixed: true, done: blockDone("commute-to"), skipped: false, muted: true, blockId: "commute-to" });
     take(r.commuteTo, 0);
   }
   if (r.commuteFrom) {
-    items.push({ key: "commute:from", kind: "commute", title: "Commute home", emoji: "🚌", start: r.commuteFrom[0], end: r.commuteFrom[1], fixed: true, done: false, skipped: false, muted: true });
+    items.push({ key: "commute:from", kind: "commute", title: "Commute home", emoji: "🚌", start: r.commuteFrom[0], end: r.commuteFrom[1], fixed: true, done: blockDone("commute-from"), skipped: false, muted: true, blockId: "commute-from" });
     take(r.commuteFrom, 0);
   }
   if (r.lunch) {
-    items.push({ key: "break:lunch", kind: "break", title: "Lunch", emoji: "🍽️", start: r.lunch[0], end: r.lunch[1], fixed: true, done: false, skipped: false, muted: true });
+    items.push({ key: "break:lunch", kind: "break", title: "Lunch", emoji: "🍽️", start: r.lunch[0], end: r.lunch[1], fixed: true, done: blockDone("lunch"), skipped: false, muted: true, blockId: "lunch" });
     take(r.lunch, 0);
   }
   if (r.tea) {
-    items.push({ key: "break:tea", kind: "break", title: "Tea & food break", emoji: "🍵", start: r.tea[0], end: r.tea[1], fixed: true, done: false, skipped: false, muted: true });
+    items.push({ key: "break:tea", kind: "break", title: "Tea & food break", emoji: "🍵", start: r.tea[0], end: r.tea[1], fixed: true, done: blockDone("tea"), skipped: false, muted: true, blockId: "tea" });
     take(r.tea, 0);
   }
 
@@ -157,9 +162,10 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
       title: e.title,
       emoji: e.source === "calendar" ? "🗓️" : "📌",
       fixed: true,
-      done: false,
+      done: isEventDone(data, e),
       skipped: false,
       eventId: e.id,
+      eventKey: eventMarkKey(e),
       fromCalendar: e.source === "calendar",
     };
     if (!e.start) {

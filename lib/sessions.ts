@@ -8,6 +8,8 @@ import type { Area, AppData, DayEntry, ISODate, SessionLog } from "./types";
 export const sessionKey = (areaId: string, date: ISODate) => `session:${areaId}:${date}`;
 export const choreKey = (id: string, date: ISODate) => `chore:${id}:${date}`;
 export const wrapKey = (date: ISODate) => `wrap:${date}`;
+/** A routine block (lunch, commute, tea break) ticked off for a day. */
+export const blockLogKey = (id: string, date: ISODate) => `block:${id}:${date}`;
 
 export const entryFor = (log: DayEntry[] | undefined, key: string) => log?.find((e) => e.key === key);
 

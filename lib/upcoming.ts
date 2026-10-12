@@ -13,7 +13,7 @@ export interface UpcomingDay {
   /** Things that are still open that day (breaks and commute don't count). */
   count: number;
   /** The first few: fixed things first, with their times. */
-  top: Array<{ time?: string; title: string; fixed: boolean }>;
+  top: Array<{ time?: string; title: string; fixed: boolean; item: TLItem }>;
 }
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -38,7 +38,7 @@ export function upcomingDays(data: AppData, today: ISODate, days = 3, perDay = 3
       label: i === 0 ? "Tomorrow" : i === 1 ? "Day after" : WEEKDAYS[d.getDay()],
       dateText: `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`,
       count: items.length,
-      top: ordered.slice(0, perDay).map((x) => ({ time: x.allDay ? undefined : x.fixed || x.kind === "event" || x.kind === "calendar" ? toHHMM(x.start) : undefined, title: x.title, fixed: x.fixed })),
+      top: ordered.slice(0, perDay).map((x) => ({ time: x.allDay ? undefined : x.fixed || x.kind === "event" || x.kind === "calendar" ? toHHMM(x.start) : undefined, title: x.title, fixed: x.fixed, item: x })),
     };
   });
 }

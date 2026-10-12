@@ -2,7 +2,7 @@ import { fromISO } from "./dates";
 import { allEvents, eventSpan } from "./fixed";
 import { isOffDay } from "./offday";
 import { toMin, withDefaults } from "./profile";
-import type { AppData, ISODate, Task } from "./types";
+import type { AppData, BlockOverride, ISODate, Task } from "./types";
 
 /**
  * The rules of a realistic day, in one place. Both the weekly session planner (lib/schedule.ts) and the day timeline
@@ -38,13 +38,40 @@ export interface DayRules {
   /** Most minutes of plans in the evening. */
   eveningCap: number;
   buffer: number;
+  /**
+   * How much later today's evening starts than usual because a routine block ran long ("Commute +75 min"). Evening and
+   * night sessions shift later by this much (and what no longer fits before ~22:30 moves to another day).
+   */
+  shift: number;
 }
+
+/** The routine blocks of a day you can change: work hours, lunch, the two commutes and the tea break. */
+export type BlockId = "work" | "lunch" | "commute-to" | "commute-from" | "tea";
+export const BLOCK_IDS: BlockId[] = ["work", "commute-to", "lunch", "commute-from", "tea"];
+export const blockKey = (id: BlockId, date: ISODate) => `${id}@${date}`;
+
+/** A block with today's tweak applied: its own start and length (keeps the base start when only the length changed). */
+const shaped = (o: BlockOverride | undefined, span: Span | null): Span | null => {
+  if (!span || o?.skip) return null;
+  const start = o?.start ?? span[0];
+  const len = o?.min ?? span[1] - span[0];
+  return [start, start + Math.max(0, len)];
+};
 
 const ceil5 = (n: number) => Math.ceil(n / 5) * 5;
 export const LATEST_END = 22 * 60 + 30;
 
 export function dayRules(data: AppData, date: ISODate): DayRules {
+  const r = rulesOf(data, date, true);
+  if (!data.blocks) return r;
+  // How much later the evening starts than on an ordinary day: the ripple of a block that ran long.
+  const base = rulesOf(data, date, false);
+  return { ...r, shift: r.tea && base.tea ? Math.max(0, r.tea[1] - base.tea[1]) : 0 };
+}
+
+function rulesOf(data: AppData, date: ISODate, overrides: boolean): DayRules {
   const p = withDefaults(data.profile);
+  const get = (id: BlockId) => (overrides ? data.blocks?.[blockKey(id, date)] : undefined);
   const dow = fromISO(date).getDay();
   const weekday = dow >= 1 && dow <= 5;
   const office = p.officeDays.includes(dow);
@@ -55,10 +82,14 @@ export function dayRules(data: AppData, date: ISODate): DayRules {
   const we = toMin(p.workEnd);
   const to = office ? p.officeCommuteMin : p.commuteToMin;
   const from = office ? p.officeCommuteMin : p.commuteFromMin;
-  const work: Span | null = workDay ? [ws, we] : null;
-  const commuteTo: Span | null = workDay && to > 0 ? [ws - to, ws] : null;
-  const commuteFrom: Span | null = workDay && from > 0 ? [we, we + from] : null;
-  const lunch: Span | null = workDay && p.lunchMin > 0 ? [toMin(p.lunchStart), toMin(p.lunchStart) + p.lunchMin] : null;
+  // Each block can be tweaked for one day (see data.blocks). They chain: you start work when you arrive, the commute home
+  // starts when work ends, and the tea break starts when you are back.
+  const commuteTo = shaped(get("commute-to"), workDay && to > 0 ? [ws - to, ws] : null);
+  const wsEff = commuteTo && commuteTo[1] > ws ? commuteTo[1] : ws;
+  const work = workDay ? shaped(get("work"), [wsEff, we]) : null;
+  const workEnd = work ? work[1] : we;
+  const commuteFrom = shaped(get("commute-from"), workDay && from > 0 ? [workEnd, workEnd + from] : null);
+  const lunch = shaped(get("lunch"), workDay && p.lunchMin > 0 ? [toMin(p.lunchStart), toMin(p.lunchStart) + p.lunchMin] : null);
 
   const bs = toMin(p.breakStart);
   const be = toMin(p.breakEnd);
@@ -66,7 +97,7 @@ export function dayRules(data: AppData, date: ISODate): DayRules {
   if (weekday && be > bs) {
     // After a commute home the break starts when you're back, and keeps its length.
     const start = commuteFrom ? Math.max(bs, commuteFrom[1]) : bs;
-    tea = [start, start + (be - bs)];
+    tea = shaped(get("tea"), [start, start + (be - bs)]);
   }
 
   const qs = toMin(p.quietStart);
@@ -92,6 +123,7 @@ export function dayRules(data: AppData, date: ISODate): DayRules {
     eveningStart: be,
     eveningCap: cap,
     buffer: p.bufferMin,
+    shift: 0,
   };
 }
 

@@ -33,10 +33,13 @@ import {
 import { billKey } from "./bills";
 import { forget, learnFix, learnItem } from "./learn";
 import { taskEvent } from "./history";
+import { type BlockId } from "./busy";
+import { withMark } from "./fixed";
+import { BLOCK_LABEL, blockSpan, rippleNote, setBlock as applyBlock, skipBlock as applySkipBlock, tickBlock, type Scope } from "./ripple";
 import { applyReschedule, carryMissed, rescheduleNow, undoReschedule, type Dest, type RescheduleChoice, type RescheduleTarget } from "./reschedule";
 import { canTakeOffDay } from "./offday";
 import { withLetter } from "./letters";
-import type { AppData, Bill, BoredIdea, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
+import type { AppData, Bill, BoredIdea, EventMark, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
 /**
@@ -420,6 +423,51 @@ export const actions = {
     if (!r) return null;
     commit(r.data);
     return { message: r.message, undo: () => commit(undoReschedule(ensure(), r.receipt)) };
+  },
+
+  // --- Routine blocks (see lib/ripple.ts) ---------------------------------------------------------------
+  /**
+   * Changes a routine block (Work, Lunch, Commute, Tea break): "today" for just that day, "every" for the rhythm itself.
+   * Returns a one-line note about what moved ("Commute +75 min → moved English Reading to Wed") and an Undo.
+   */
+  setBlock(id: BlockId, date: ISODate, edit: { start?: number; min?: number }, scope: Scope, now: Date = new Date()): { note: string | null; undo: () => void } {
+    const before = ensure();
+    const was = blockSpan(before, id, date);
+    const after = applyBlock(before, id, date, edit, scope);
+    commit(after);
+    const now2 = blockSpan(after, id, date);
+    const delta = was && now2 ? now2[1] - now2[0] - (was[1] - was[0]) : 0;
+    return {
+      note: rippleNote(before, after, date, BLOCK_LABEL[id], delta, now),
+      undo: () => {
+        const c = ensure();
+        commit({ ...c, blocks: before.blocks, profile: before.profile });
+      },
+    };
+  },
+
+  /** "Skip today" for a routine block: it is not there that day, and its time is free again. */
+  skipBlock(id: BlockId, date: ISODate, now: Date = new Date()): { note: string | null; undo: () => void } {
+    const before = ensure();
+    const after = applySkipBlock(before, id, date);
+    commit(after);
+    return { note: rippleNote(before, after, date, BLOCK_LABEL[id] + " skipped", 0, now), undo: () => commit({ ...ensure(), blocks: before.blocks }) };
+  },
+
+  /** Brings a skipped routine block back. */
+  unskipBlock(id: BlockId, date: ISODate) {
+    commit(applySkipBlock(ensure(), id, date, false));
+  },
+
+  /** Ticks a routine block off for a day (or takes it back). */
+  tickBlock(id: BlockId, date: ISODate, done: boolean) {
+    commit(tickBlock(ensure(), id, date, done, Date.now()));
+  },
+
+  // --- Events: local marks only (the phone's calendar is never written to) ---------------------------------
+  /** Done, hidden for the day, or a local time override on an event. null clears every mark. */
+  markEvent(key: string, patch: Partial<EventMark> | null) {
+    commit(withMark(ensure(), key, patch));
   },
 
   /**

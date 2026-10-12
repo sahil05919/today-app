@@ -3,13 +3,16 @@ import { useMemo, useState } from "react";
 import { addDays, dayOfMonth, fromISO, toISO, weekdayShort } from "@/lib/dates";
 import { toHHMM } from "@/lib/profile";
 import { weekStart } from "@/lib/stats";
+import { eventMarkKey, isEventDone, markOf } from "@/lib/fixed";
+import { buzz } from "@/lib/haptics";
+import { actions, useData } from "@/lib/store";
 import { buildTimeline, type TLItem, type Timeline } from "@/lib/timeline";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
 import type { RescheduleTarget } from "@/lib/reschedule";
 import { RescheduleSheet } from "./RescheduleSheet";
 import { EventSheet, ItemSheet } from "./TodayPlan";
 import { LaterView } from "./LaterView";
-import { Chip, Sheet, type ViewCtx } from "./ui";
+import { btn, Chip, field, Sheet, type ViewCtx } from "./ui";
 
 type View = "week" | "month" | "someday";
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -207,19 +210,91 @@ export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppDat
 
       {item && <ItemSheet item={item.it} date={item.date} left={1} ctx={ctx} onClose={() => setItem(null)} onReschedule={(it) => setResched({ kind: "item", item: it, date: item.date })} />}
       {resched && <RescheduleSheet target={resched} ctx={ctx} onClose={() => setResched(null)} />}
-      {event && (event.source === "calendar" ? <CalendarEventInfo event={event} onClose={() => setEvent(null)} /> : <EventSheet event={event} data={data} ctx={ctx} onClose={() => setEvent(null)} />)}
+      {event && (event.source === "calendar" ? <CalendarEventInfo event={event} onClose={() => setEvent(null)} notify={ctx.notify} /> : <EventSheet event={event} data={data} ctx={ctx} onClose={() => setEvent(null)} />)}
     </Sheet>
   );
 }
 
-/** A read-only event from the phone's calendar. Change it in your calendar app; Today shows it and plans around it. */
-export function CalendarEventInfo({ event, onClose }: { event: FixedEvent; onClose: () => void }) {
+/**
+ * An event from the phone's calendar. Tick it done, hide it for the day, or give it a different time here. These marks live
+ * only on this phone: nothing is ever written to your calendar. (Change the event itself in your calendar app.)
+ */
+export function CalendarEventInfo({ event: raw, onClose, notify }: { event: FixedEvent; onClose: () => void; notify?: (msg: string, undo?: () => void) => void }) {
+  const data = useData();
+  const key = eventMarkKey(raw);
+  const mark = data ? markOf(data, raw) : undefined;
+  const done = data ? isEventDone(data, raw) : false;
+  // The calendar's own time, and the local override shown over it.
+  const [start, setStart] = useState(mark?.start ?? raw.start ?? "");
+  const [end, setEnd] = useState(mark?.end ?? raw.end ?? "");
+  const overridden = !!(mark?.start || mark?.end);
+  const changed = !!raw.start && (start !== (mark?.start ?? raw.start) || end !== (mark?.end ?? raw.end ?? ""));
   return (
-    <Sheet title={event.title} onClose={onClose}>
-      <p className="-mt-1 mb-3 text-sm text-muted">
-        {event.start ? `${event.date} · ${event.start}${event.end ? `–${event.end}` : ""}` : `${event.date} · all day`}
+    <Sheet title={raw.title} onClose={onClose}>
+      <p className="-mt-1 mb-4 text-sm text-muted">
+        🗓️ {raw.date} · {raw.start ? `${mark?.start ?? raw.start}${(mark?.end ?? raw.end) ? `–${mark?.end ?? raw.end}` : ""}` : "all day"}
+        {overridden ? " · time changed here" : ""}
       </p>
-      <p className="rounded-2xl bg-bg p-3 text-sm">🗓️ This comes from your phone's calendar. It's read-only here: Today plans your day around it. To change it, edit it in your calendar app.</p>
+      <div className="space-y-2">
+        <button
+          className={`${done ? btn.ghost : btn.primary} flex min-h-12 w-full items-center justify-center gap-1.5`}
+          onClick={() => {
+            buzz(20);
+            actions.markEvent(key, { done: done ? undefined : Date.now() });
+            notify?.(done ? "Back on the list" : `${raw.title}: done`);
+            onClose();
+          }}
+        >
+          ✓ {done ? "Not done after all" : "Done"}
+        </button>
+        <button
+          className={`${btn.ghost} min-h-12 w-full`}
+          onClick={() => {
+            actions.markEvent(key, { hidden: true });
+            notify?.(`${raw.title}: hidden for today`, () => actions.markEvent(key, { hidden: undefined }));
+            onClose();
+          }}
+        >
+          Hide for today
+        </button>
+      </div>
+
+      {raw.start && (
+        <div className="mt-4 rounded-2xl border border-line p-3">
+          <p className="mb-2 text-sm font-semibold">Different time (only here)</p>
+          <div className="grid grid-cols-2 gap-2">
+            <input type="time" value={start} onChange={(e) => setStart(e.target.value)} className={field} aria-label="Starts" />
+            <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className={field} aria-label="Ends" />
+          </div>
+          <div className="mt-2 flex gap-2">
+            {changed && (
+              <button
+                className={`${btn.primary} min-h-12 flex-1`}
+                disabled={!start}
+                onClick={() => {
+                  actions.markEvent(key, { start: start === raw.start ? undefined : start, end: end && end !== raw.end ? end : undefined });
+                  notify?.("Time changed on this phone. Your calendar is untouched.");
+                  onClose();
+                }}
+              >
+                Save time
+              </button>
+            )}
+            {overridden && (
+              <button
+                className={`${btn.ghost} min-h-12 flex-1`}
+                onClick={() => {
+                  actions.markEvent(key, { start: undefined, end: undefined });
+                  onClose();
+                }}
+              >
+                Use the calendar's time
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      <p className="mt-3 text-xs text-muted">Done, hidden and time changes are stored on this phone only. Your calendar is never changed.</p>
     </Sheet>
   );
 }

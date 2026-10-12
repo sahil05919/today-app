@@ -1,6 +1,8 @@
 "use client";
 import { useState } from "react";
 import { friendlyDate } from "@/lib/dates";
+import { actions } from "@/lib/store";
+import { buzz } from "@/lib/haptics";
 import { toHHMM } from "@/lib/profile";
 import type { Timeline as TL, TLItem } from "@/lib/timeline";
 import type { AppData, Goal } from "@/lib/types";
@@ -75,9 +77,20 @@ export function NextUpCard({
           </button>
           <div className="mt-3.5 flex gap-2">
             {isEvent ? (
-              <button onClick={() => onOpen(item)} className="min-h-12 flex-1 rounded-2xl bg-accent px-4 text-[15px] font-semibold text-accent-ink active:scale-[0.98]">
-                Open
-              </button>
+              <>
+                <button onClick={() => onOpen(item)} className="min-h-12 flex-1 rounded-2xl bg-accent px-4 text-[15px] font-semibold text-accent-ink active:scale-[0.98]">
+                  Open
+                </button>
+                <button
+                  onClick={() => {
+                    buzz(20);
+                    if (item.eventKey) actions.markEvent(item.eventKey, { done: Date.now() });
+                  }}
+                  className="flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-2xl bg-surface px-4 text-[15px] font-semibold text-ink transition active:scale-[0.98]"
+                >
+                  <CheckIcon width={16} height={16} /> Done
+                </button>
+              </>
             ) : (
               <>
                 <button
@@ -147,11 +160,14 @@ function Row({ it, ctx, tl, nowMin, onOpen, onReschedule }: { it: TLItem; ctx: V
 
   if (it.muted) {
     return (
-      <li className="flex items-center gap-3 py-1.5 pl-1 text-xs text-muted">
-        <span className="w-11 shrink-0 tabular-nums">{toHHMM(it.start)}</span>
-        <span className="flex-1">
-          {it.emoji} {it.title} · {it.end - it.start} min
-        </span>
+      <li>
+        <button onClick={() => onOpen(it)} className={`flex min-h-11 w-full items-center gap-3 py-1.5 pl-1 text-left text-xs ${it.done ? "text-muted/70 line-through" : "text-muted"}`} aria-label={`${it.title}: change it, run late, or skip`}>
+          <span className="w-11 shrink-0 tabular-nums">{toHHMM(it.start)}</span>
+          <span className="flex-1">
+            {it.done ? "✓ " : ""}
+            {it.emoji} {it.title} · {it.end - it.start} min
+          </span>
+        </button>
       </li>
     );
   }
@@ -162,9 +178,18 @@ function Row({ it, ctx, tl, nowMin, onOpen, onReschedule }: { it: TLItem; ctx: V
     <div className="flex items-stretch">
       <span className={`w-11 shrink-0 pt-3.5 text-xs tabular-nums ${current ? "font-semibold text-accent" : "text-muted"}`}>{it.allDay ? "all day" : toHHMM(it.start)}</span>
       {isEvent ? (
-        <span className="flex h-12 w-9 shrink-0 items-center justify-center text-base" aria-hidden="true">
-          {it.emoji}
-        </span>
+        <button
+          onClick={() => {
+            buzz(20);
+            if (it.eventKey) actions.markEvent(it.eventKey, { done: it.done ? undefined : Date.now() });
+          }}
+          aria-label={it.done ? `Mark ${it.title} as not done` : `Mark ${it.title} as done`}
+          className="flex h-12 w-9 shrink-0 items-center justify-center"
+        >
+          <span className={`flex h-6 w-6 items-center justify-center rounded-full border-2 transition ${it.done ? "border-accent bg-accent text-accent-ink" : "border-muted/40 text-transparent"}`}>
+            <CheckIcon width={14} height={14} />
+          </span>
+        </button>
       ) : (
         <button
           onClick={() => (it.done ? (it.kind === "session" ? onOpen(it) : undoItem(it, ctx, tl.date)) : completeItem(it, ctx, tl.date, openCount(tl.items, it.key)))}
@@ -178,7 +203,7 @@ function Row({ it, ctx, tl, nowMin, onOpen, onReschedule }: { it: TLItem; ctx: V
       )}
       <button onClick={() => onOpen(it)} className="min-h-12 min-w-0 flex-1 border-b border-line py-2 pl-1 text-left">
         <span className={`block truncate text-[15px] font-medium ${it.done ? "text-muted line-through" : ""}`}>
-          {!isEvent && it.emoji && <span className="mr-1">{it.emoji}</span>}
+          {it.emoji && <span className="mr-1">{it.emoji}</span>}
           {it.title}
         </span>
         <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
@@ -249,7 +274,17 @@ export function TimelineList({ tl, ctx, nowMin, onOpen, onReschedule, openPanel 
     <section aria-label="Today's plan">
       <div className="flex items-center justify-between gap-2 px-1 pb-1">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">Today</h2>
-        <span className="text-xs text-muted">{workLabel}</span>
+        {r.work ? (
+          <button
+            onClick={() => onOpen({ key: "block:work", kind: "break", title: "Work hours", start: r.work![0], end: r.work![1], fixed: true, done: false, skipped: false, muted: true, blockId: "work" })}
+            className="min-h-9 text-xs text-muted underline-offset-2 hover:underline"
+            aria-label="Work hours: change them for today or every day"
+          >
+            {workLabel}
+          </button>
+        ) : (
+          <span className="text-xs text-muted">{workLabel}</span>
+        )}
       </div>
 
       {still.length > 0 && onReschedule && <StillToDo items={still} ctx={ctx} tl={tl} onOpen={onOpen} onReschedule={onReschedule} />}
