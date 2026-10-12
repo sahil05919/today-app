@@ -10,7 +10,10 @@ import type { AppData, SessionLog } from "../lib/types";
 
 // Week of Mon 5 – Sun 11 Oct 2026.
 const MON = new Date(2026, 9, 5, 7, 0);
-const base = (over: Partial<AppData> = {}): AppData => seedIfNeeded({ version: 1, tasks: [], settings: { firstRunAt: new Date(2026, 8, 1).getTime() }, ...over }, MON);
+const base = (over: Partial<AppData> = {}): AppData => withoutLife(seedIfNeeded({ version: 1, tasks: [], settings: { firstRunAt: new Date(2026, 8, 1).getTime() }, ...over }, MON));
+/** These tests are not about life admin: the seeded pack is taken out so it cannot take up room in their days. */
+const withoutLife = (d: AppData): AppData => ({ ...d, series: (d.series ?? []).filter((s) => !s.lifeId) });
+
 const log = (areaId: string, date: string, n = 1): SessionLog => ({ id: `${areaId}${date}${n}`, areaId, date, minutes: 30, n, at: new Date(date + "T19:00:00").getTime(), source: "checkin" });
 const count = (plan: ReturnType<typeof planSessions>, id: string) => plan.filter((s) => s.areaId === id && !s.done).length;
 const hm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;

@@ -1,0 +1,114 @@
+{
+  "note": "Where to look for side work in London. Each source opens a web search for \"<name> London jobs\", so no link goes stale. Add your own inside the app (they are kept with your data), or edit this file.",
+  "weekly": ["King's Talent Bank", "Unitemps", "Pinnacle Event Staff (LiveForce)"],
+  "groups": [
+    {
+      "id": "uni",
+      "name": "Uni & casual banks",
+      "sources": ["King's Talent Bank", "Unitemps", "Pinnacle Event Staff (LiveForce)", "UCL / LSE / Imperial / City temp banks (check eligibility)", "Middlesex University casual work"]
+    },
+    {
+      "id": "shift",
+      "name": "Shift apps",
+      "sources": ["Indeed Flex", "Coople", "Stint", "Temptribe", "Jobandtalent", "Placed App", "Off to Work", "StudentJob UK"]
+    },
+    {
+      "id": "events",
+      "name": "Events & venues",
+      "sources": [
+        "Showforce",
+        "Gallowglass",
+        "Sodexo Live!",
+        "Levy UK",
+        "Delaware North",
+        "Compass Group casual",
+        "ExCeL London casual roles",
+        "Olympia London",
+        "The O2 / AEG casual staff",
+        "Wembley Stadium matchday",
+        "Tottenham Hotspur Stadium matchday",
+        "Emirates Stadium matchday",
+        "Twickenham matchday",
+        "Lord's (MCC) matchday",
+        "Royal Albert Hall casual staff",
+        "Southbank Centre casual staff",
+        "Barbican casual staff"
+      ]
+    },
+    {
+      "id": "christmas",
+      "name": "Christmas & seasonal",
+      "seasonal": true,
+      "sources": [
+        "Hyde Park Winter Wonderland",
+        "Southbank Winter Festival",
+        "Christmas at Kew",
+        "Leicester Square Christmas Market",
+        "Royal Mail Christmas temps",
+        "Amazon seasonal",
+        "Evri seasonal",
+        "DPD seasonal",
+        "John Lewis seasonal",
+        "Selfridges seasonal",
+        "Harrods seasonal",
+        "Liberty London seasonal",
+        "Fortnum & Mason seasonal",
+        "Hamleys seasonal",
+        "Marks & Spencer seasonal",
+        "Boots seasonal",
+        "Primark seasonal",
+        "Sainsbury's / Argos seasonal",
+        "Tesco seasonal",
+        "Lush seasonal",
+        "Waterstones seasonal",
+        "Next seasonal",
+        "TK Maxx seasonal"
+      ]
+    },
+    {
+      "id": "finance",
+      "name": "Finance & office temp (uses my AP / Power BI skills)",
+      "sources": [
+        "Robert Half",
+        "Hays Accountancy & Finance",
+        "Page Personnel",
+        "Michael Page Interim",
+        "Goodman Masson",
+        "Morgan McKinley",
+        "Marks Sattin",
+        "Joslin Rowe",
+        "Venn Group",
+        "Sellick Partnership",
+        "Tate",
+        "Office Angels",
+        "Brook Street",
+        "Tiger Recruitment"
+      ]
+    },
+    {
+      "id": "agencies",
+      "name": "General agencies",
+      "sources": ["Adecco", "Randstad", "Reed", "Blue Arrow", "Manpower", "Pertemps", "Staffline", "Gi Group", "Hays Temps"]
+    },
+    {
+      "id": "boards",
+      "name": "Job boards",
+      "sources": ["Indeed", "Reed.co.uk", "Totaljobs", "CV-Library", "LinkedIn Jobs", "Caterer.com", "Gumtree Jobs", "Guardian Jobs"]
+    },
+    {
+      "id": "freelance",
+      "name": "Freelance (Power BI / Excel / data)",
+      "sources": ["Upwork", "Fiverr", "PeoplePerHour", "Freelancer.com", "Malt", "Bark"]
+    },
+    {
+      "id": "research",
+      "name": "Paid research & testing",
+      "sources": ["Prolific", "UserTesting", "Respondent", "dscout", "Saros Research", "Testing Time", "User Interviews"]
+    },
+    {
+      "id": "gig",
+      "name": "Gig & local",
+      "sources": ["TaskRabbit", "Rover", "Market Force (mystery shopping)", "Deliveroo", "Uber Eats", "Stuart", "Just Eat couriers"]
+    }
+  ]
+}

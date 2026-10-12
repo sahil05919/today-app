@@ -12,7 +12,7 @@ import { isQuoteDay, quoteStateOf } from "@/lib/quoteBag";
 import { quoteMinute } from "@/lib/brief";
 import { dateInKey, resolveTap } from "@/lib/tap";
 import { settleNote, settleOverflow } from "@/lib/settle";
-import { findTask } from "@/lib/series";
+import { findTask, seriesOf } from "@/lib/series";
 import { weekStart } from "@/lib/stats";
 import { checkDue } from "@/lib/selfcheck";
 import { runCheck } from "@/lib/selfcheckRun";
@@ -30,6 +30,7 @@ import { CheckIn } from "./CheckIn";
 import { EveningWrap } from "./EveningWrap";
 import { IdeasSheet } from "./IdeasSheet";
 import { LightenSheet } from "./LightenSheet";
+import { SideWorkSheet } from "./SideWorkSheet";
 import { ImportSheet } from "./ImportSheet";
 import { BillsSheet, GoalsSheet, ShoppingSheet } from "./ListSheets";
 import { CalendarIcon, MenuIcon } from "./icons";
@@ -367,7 +368,8 @@ export default function App() {
         </div>
       )}
 
-      {openTask && <TaskSheet key={openTask.id} task={openTask} ctx={ctx} onClose={() => setOpenId(null)} timerOn={data.settings.timer?.taskId === openTask.id} />}
+      {openTask && seriesOf(data, openTask.id)?.lifeId === "side-work" && <SideWorkSheet key={openTask.id} data={data} ctx={ctx} taskId={openTask.id} onClose={() => setOpenId(null)} />}
+      {openTask && seriesOf(data, openTask.id)?.lifeId !== "side-work" && <TaskSheet key={openTask.id} task={openTask} ctx={ctx} onClose={() => setOpenId(null)} timerOn={data.settings.timer?.taskId === openTask.id} />}
       {panel === "menu" && <MenuSheet onClose={closePanel} onPanel={(p) => (setCalendarDay(undefined), setPanel(p))} />}
       {panel === "calendar" && <CalendarSheet data={data} ctx={ctx} onClose={closePanel} initialDay={calendarDay} />}
       {panel === "shopping" && <ShoppingSheet data={data} ctx={ctx} onClose={closePanel} />}

@@ -2,6 +2,7 @@ import { toISO } from "./dates";
 import { toHHMM } from "./profile";
 import { behindAreaRows } from "./pileup";
 import { quoteStateOf } from "./quoteBag";
+import { seriesOf } from "./series";
 import { actionable, type Timeline } from "./timeline";
 import { toMin } from "./profile";
 import type { AppData, ISODate } from "./types";
@@ -12,13 +13,16 @@ import type { AppData, ISODate } from "./types";
  */
 
 /** The three things most worth knowing about a day: booked things first, then what is due. Sessions are routine and left out. */
-export function mustDos(tl: Timeline, max = 3): string[] {
-  const items = tl.items.filter((x) => actionable(x) && !x.done && !x.skipped && ["task", "bill", "event", "calendar"].includes(x.kind));
+export function mustDos(tl: Timeline, max = 3, skip: Set<string> = new Set()): string[] {
+  const items = tl.items.filter((x) => actionable(x) && !x.done && !x.skipped && ["task", "bill", "event", "calendar"].includes(x.kind) && !(x.taskId && skip.has(x.taskId)));
   const ordered = [...items.filter((x) => x.fixed), ...items.filter((x) => !x.fixed)];
   const titles = ordered.map((x) => (x.fixed && x.kind !== "task" ? `${toHHMM(x.start)} ${x.title}` : x.title));
   for (const o of tl.overflow) titles.push(o.task.title);
   return [...new Set(titles)].slice(0, max);
 }
+
+/** Is this task an occurrence of a life-admin series? */
+const isLifeTask = (data: AppData, taskId: string) => !!seriesOf(data, taskId)?.lifeId;
 
 /** "Focus: Job Apply is behind": the one area furthest behind its weekly target, or null. */
 export function focusLine(data: AppData, day: ISODate): string | null {
@@ -28,7 +32,9 @@ export function focusLine(data: AppData, day: ISODate): string | null {
 
 /** The morning brief: one line with today's must-dos and one focus. null when there is nothing worth saying. */
 export function briefFor(data: AppData, day: ISODate, tl: Timeline, name: string, off = false): { title: string; body: string } | null {
-  const dos = mustDos(tl);
+  // Life admin (laundry, haircut…) is gentle and has its own place on Today: it is not a must-do for the brief.
+  const life = new Set(tl.items.filter((x) => x.taskId && isLifeTask(data, x.taskId)).map((x) => x.taskId!));
+  const dos = mustDos(tl, 3, life);
   // An off day is for resting: gentle words, no focus.
   if (off) return { title: `Easy day, ${name}`, body: `Off day: ${dos.length ? dos.join(", ") : "just rest"}.` };
   const focus = focusLine(data, day);

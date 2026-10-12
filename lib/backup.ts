@@ -11,6 +11,7 @@ import type {
   BoredIdea,
   CheckInAnswer,
   CheckResult,
+  SideWorkState,
   CheckInStatus,
   CoachLetter,
   DayEntry,
@@ -280,6 +281,19 @@ function cleanOccurrences(v: any): Occurrence[] | undefined {
     });
   }
   return out;
+}
+
+function cleanSideWork(v: any): SideWorkState | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const ids = (x: unknown, max: number) => (Array.isArray(x) ? [...new Set<string>(x.filter((i: unknown) => typeof i === "string" && i.length < 120))].slice(0, max) : []);
+  const checks: Record<string, string[]> = {};
+  if (v.checks && typeof v.checks === "object") for (const [k, list] of Object.entries(v.checks).slice(-60)) if (isISO(k)) checks[k] = ids(list, 200);
+  return {
+    weekly: ids(v.weekly, 100),
+    hidden: ids(v.hidden, 400),
+    custom: Array.isArray(v.custom) ? v.custom.filter((c: any) => c && typeof c.id === "string" && typeof c.name === "string" && c.name.trim()).slice(0, 200).map((c: any) => ({ id: c.id.slice(0, 120), name: c.name.slice(0, 120) })) : [],
+    checks,
+  };
 }
 
 function cleanCheck(v: any): CheckResult | undefined {
@@ -602,6 +616,7 @@ export function migrate(raw: unknown): AppData {
     series: cleanSeries(r.series),
     occurrences: cleanOccurrences(r.occurrences),
     history: cleanHistory(r.history),
+    sideWork: cleanSideWork(r.sideWork),
     blocks: cleanBlocks(r.blocks),
     eventMarks: cleanEventMarks(r.eventMarks),
     weeks: cleanWeeks(r.weeks),

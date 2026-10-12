@@ -353,6 +353,10 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
     const todays = open.filter((t) => t.due === date && !t.dueTime);
     const order = (a: Task, b: Task) => priorityScore(b, date) - priorityScore(a, date) || a.createdAt - b.createdAt;
     const queue = [...carried.sort(order).map((t) => ({ t, carried: true })), ...todays.sort(order).map((t) => ({ t, carried: false }))];
+    // Life admin (laundry, side work check…) belongs to its own day: it is never sent away to "wait for room". It takes the best
+    // free gap, and if the evening is full it simply goes a little past the cap.
+    const lifeSeries = new Set((data.series ?? []).filter((s) => s.lifeId).map((s) => s.id));
+    const isLife = (t: Task) => !!t.seriesId && lifeSeries.has(t.seriesId);
 
     for (const { t, carried: isCarried } of queue) {
       // Parked by "Adjust my day": it waits until that day.
@@ -373,6 +377,11 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
           cut = m < minutes;
           break;
         }
+      }
+      if (placedAt == null && isLife(t)) {
+        const any: Win[] = [{ span: [r.dayStart, Math.max(r.dayEnd, toMin(p.quietStart) - 15)], evening: false }, { span: [0, 1440], evening: false }];
+        placedAt = findSpot(minutes, windows, notBefore, false) ?? findSpot(minutes, any, 0, false);
+        used = minutes;
       }
       if (placedAt == null) {
         overflow.push({ task: t, carried: isCarried });

@@ -38,6 +38,13 @@ export function extractRecurrence(text: string): { text: string; recur?: Recurre
   return { text };
 }
 
+/** Is this day the Nth (1–4) or, for -1, the last occurrence of its weekday in its month? */
+export function isNthWeekday(date: ISODate, nth: number): boolean {
+  const d = Number(date.slice(8, 10));
+  const last = new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0).getDate();
+  return nth === -1 ? d + 7 > last : Math.ceil(d / 7) === nth;
+}
+
 const dayNum = (iso: ISODate) => {
   const [y, m, d] = iso.split("-").map(Number);
   return Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
@@ -55,6 +62,12 @@ function addMonths(iso: ISODate, n: number, day: number): ISODate {
 
 /** First date on or after `from` that fits the rule. */
 export function firstOccurrence(r: Recurrence, from: ISODate): ISODate {
+  if (r.freq === "monthly" && r.weekdays?.length && r.nth) {
+    for (let i = 0; i < 400; i++) {
+      const d = addDays(from, i);
+      if (r.weekdays.includes(dow(d)) && isNthWeekday(d, r.nth)) return d;
+    }
+  }
   if (r.freq === "weekly" && r.weekdays?.length) {
     for (let i = 0; i < 7; i++) {
       const d = addDays(from, i);
@@ -80,6 +93,15 @@ export function nextOccurrence(r: Recurrence, after: ISODate): ISODate {
     }
     return addDays(after, 7 * n);
   }
+  if (r.weekdays?.length && r.nth) {
+    let d = after;
+    // Within the same month first, then every n months after it.
+    for (let i = 1; i <= 31 * (n + 1); i++) {
+      d = addDays(after, i);
+      const months = (fromISO(d).getFullYear() - fromISO(after).getFullYear()) * 12 + fromISO(d).getMonth() - fromISO(after).getMonth();
+      if (r.weekdays.includes(dow(d)) && isNthWeekday(d, r.nth) && months % n === 0) return d;
+    }
+  }
   const day = r.monthDay ?? fromISO(after).getDate();
   if (r.monthDay) {
     const cand = addMonths(after, 0, day);
@@ -101,6 +123,10 @@ export function recurLabel(r: Recurrence): string {
     if (n === 1 && wd.length === 5 && WEEKDAYS.every((d) => wd.includes(d))) return "Weekdays";
     if (wd.length) return `${n === 1 ? "Every" : `Every ${n} wks:`} ${wd.map((d) => DOW_NAMES[d]).join(", ")}`;
     return n === 1 ? "Weekly" : `Every ${n} weeks`;
+  }
+  if (r.weekdays?.length && r.nth) {
+    const which = r.nth === -1 ? "last" : ordinal(r.nth);
+    return `${n === 1 ? "Monthly" : `Every ${n} months`}, ${which} ${r.weekdays.map((d) => DOW_NAMES[d]).join(", ")}`;
   }
   if (r.monthDay) return n === 1 ? `Monthly, ${ordinal(r.monthDay)}` : `Every ${n} months, ${ordinal(r.monthDay)}`;
   return n === 1 ? "Monthly" : `Every ${n} months`;

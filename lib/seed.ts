@@ -1,5 +1,6 @@
 import { toISO } from "./dates";
 import { AREA_ORDER, DEFAULT_BILLS, DEFAULT_BORED, EXTRA_AREAS, SEED_VERSION, SESSION_AREAS } from "./defaults";
+import { addLifePack } from "./lifeAdmin";
 import { toMin, withDefaults } from "./profile";
 import type { AppData } from "./types";
 
@@ -85,6 +86,11 @@ export function seedIfNeeded(d: AppData, today = new Date()): AppData {
         rhythm: untouched ? p.rhythm.filter((r) => r.id !== "emails") : p.rhythm,
       },
     };
+  }
+
+  if (from < 5) {
+    // The life admin pack (Laundry, Haircut, Side work check…): all on, each switchable in Settings → Life admin.
+    out = addLifePack(out, toISO(today));
   }
 
   return { ...out, settings: { ...out.settings, seeded: SEED_VERSION } };

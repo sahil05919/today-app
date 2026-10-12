@@ -1,5 +1,5 @@
 import { addDays, toISO } from "./dates";
-import { firstOccurrence } from "./recur";
+import { firstOccurrence, isNthWeekday } from "./recur";
 import { addLog, removeLog } from "./sessions";
 import type { AppData, ISODate, Occurrence, Recurrence, Series, Step, Task } from "./types";
 
@@ -46,9 +46,11 @@ export function ruleHits(rule: Recurrence, anchor: ISODate, date: ISODate): bool
     const days = rule.weekdays?.length ? rule.weekdays : [dowOf(anchor)];
     return days.includes(dowOf(date)) && mod(weekNum(date) - weekNum(anchor), n) === 0;
   }
+  if (rule.weekdays?.length && rule.nth) return rule.weekdays.includes(dowOf(date)) && isNthWeekday(date, rule.nth) && mod(monthIdx(date) - monthIdx(anchor), n) === 0;
   const day = rule.monthDay ?? Number(anchor.slice(8, 10));
   return Number(date.slice(8, 10)) === Math.min(day, lastDayOfMonth(date)) && mod(monthIdx(date) - monthIdx(anchor), n) === 0;
 }
+
 
 const seriesAnchor = (s: Series) => s.anchor ?? s.startDate;
 
@@ -190,8 +192,11 @@ export function getOccurrences(data: AppData, start: ISODate, end: ISODate, toda
       entries.push({ key: occKey(s.id, date), seriesId: s.id, date, on, time: task.dueTime, status, carried: false, series: s, record: rec, task });
     }
     const pastOpen = entries.filter((e) => e.status === "open" && e.on < today).sort((a, b) => a.on.localeCompare(b.on) || a.date.localeCompare(b.date));
+    // Life admin rolls forward ONCE: yesterday's missed one is still to do today, an older one is dropped (and logged as missed).
+    const oldest = s.lifeId ? addDays(today, -1) : "";
     pastOpen.forEach((e, i) => {
-      if (i === pastOpen.length - 1) e.carried = true;
+      if (e.on < oldest) e.status = "missed";
+      else if (i === pastOpen.length - 1) e.carried = true;
       else e.status = "missed";
     });
     for (const e of entries) if (e.on >= start && e.on <= end) out.push(e);

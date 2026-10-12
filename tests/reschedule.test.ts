@@ -14,7 +14,10 @@ import type { AppData, FixedEvent, Task } from "../lib/types";
 const NOW = new Date(2026, 9, 14, 9, 30);
 const TODAY = "2026-10-14";
 const YESTERDAY = "2026-10-13";
-const base = (over: Partial<AppData> = {}): AppData => ({ ...seedIfNeeded({ version: 2, tasks: [], settings: { firstRunAt: new Date(2026, 8, 1).getTime() } }, NOW), ...over });
+const base = (over: Partial<AppData> = {}): AppData => ({ ...withoutLife(seedIfNeeded({ version: 2, tasks: [], settings: { firstRunAt: new Date(2026, 8, 1).getTime() } }, NOW)), ...over });
+/** These tests are not about life admin: the seeded pack is taken out so it cannot take up room in their days. */
+const withoutLife = (d: AppData): AppData => ({ ...d, series: (d.series ?? []).filter((s) => !s.lifeId) });
+
 let n = 0;
 const task = (o: Partial<Task>): Task => ({ id: `t${++n}`, title: "Task", important: false, tags: [], steps: [], focus: false, status: "open", createdAt: n, ...o });
 const ev = (o: Partial<FixedEvent>): FixedEvent => ({ id: `e${++n}`, title: "Booked", date: TODAY, createdAt: 1, ...o });

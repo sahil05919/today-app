@@ -399,6 +399,15 @@ export function planNotifications(raw: AppData, now: Date = new Date(), opts: { 
     }
   }
 
+  // --- Life admin (laundry, side work check…): they are flexible to-dos on their day, with ONE reminder at 19:00 if still open ---
+  if (p.notify.reminders) {
+    const life = new Set((data.series ?? []).filter((s) => s.lifeId && !s.off).map((s) => s.id));
+    for (const t of open) {
+      if (!t.seriesId || !life.has(t.seriesId) || t.dueTime || !t.due || t.due < today || t.due > horizon) continue;
+      push({ key: `life:${t.id}`, at: at(t.due, "19:00"), kind: "life", title: t.title, body: "Still open today. Tick it, or let it go for tomorrow.", taskId: t.id, actions: true, exact: false, work: isWorkTask(t) });
+    }
+  }
+
   // --- "Snooze" from an earlier notification --------------------------------
   for (const t of open) {
     if (!t.remindAt || t.remindAt <= now.getTime()) continue;

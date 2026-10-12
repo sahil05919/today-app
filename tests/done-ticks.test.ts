@@ -132,7 +132,7 @@ describe("tick it anywhere", () => {
     const r = actions.markDone({ kind: "task", id: t.id }, { when: "today", now: WED });
     expect(r.early).toBe(true);
     // Nothing is generated: the other Fridays are still just computed, and no copy exists in the task list.
-    const open = () => getOccurrences(getData(), "2026-10-09", "2026-10-31", TODAY).filter((o) => o.status === "open").map((o) => o.date);
+    const open = () => getOccurrences(getData(), "2026-10-09", "2026-10-31", TODAY).filter((o) => o.status === "open" && o.series.title === "Water plants").map((o) => o.date);
     expect(open()).toEqual(["2026-10-16", "2026-10-23", "2026-10-30"]);
     expect(getData().tasks).toHaveLength(0);
     actions.undoDone(r.receipt, WED);

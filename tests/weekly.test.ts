@@ -256,9 +256,11 @@ describe("repeats in the store: undo, missed log", () => {
 
   it("undoing 'Added' on a repeat removes the whole series, not just its first day", () => {
     const t = actions.addTask({ title: "Vitamin", due: "2026-10-16", dueTime: "11:00", timeSource: "typed", important: false, tags: [], recur: { freq: "daily", interval: 1 } });
-    expect(getData().series).toHaveLength(1);
+    // (The life admin pack is in `series` too; this is about the one just added.)
+    const mine = () => (getData().series ?? []).filter((s) => !s.lifeId);
+    expect(mine()).toHaveLength(1);
     actions.undoAdd(t.id);
-    expect(getData().series ?? []).toHaveLength(0);
+    expect(mine()).toHaveLength(0);
     expect(getData().occurrences ?? []).toHaveLength(0);
   });
 

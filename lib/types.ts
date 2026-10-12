@@ -519,6 +519,15 @@ export interface WeekSnapshot {
   text: string;
 }
 
+/** Side work (the Monday check): what you star, hide and add, and what is ticked each week (Monday ISO date → source ids). */
+export interface SideWorkState {
+  /** The "Every week" sources (source ids). */
+  weekly: string[];
+  hidden: string[];
+  custom: Array<{ id: string; name: string }>;
+  checks: Record<ISODate, string[]>;
+}
+
 /** One thing the morning self-check found that needs a look (see lib/selfcheck.ts). */
 export interface CheckIssue {
   id: string;
@@ -632,6 +641,8 @@ export interface AppData {
   occurrences?: Occurrence[];
   /** Everything that was done / skipped / missed / rescheduled, append-only. */
   history?: HistoryEvent[];
+  /** Side work: the Monday check (see lib/sideWork.ts). */
+  sideWork?: SideWorkState;
   /** "Just today" tweaks to routine blocks, keyed "<blockId>@<date>". */
   blocks?: Record<string, BlockOverride>;
   /** Marks on phone-calendar events, keyed "<calId or id>@<date>". */

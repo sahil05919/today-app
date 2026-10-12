@@ -239,6 +239,8 @@ export function parseCapture(raw: string, now = new Date(), profile?: Profile): 
       title = urls[0];
     }
   }
+  // "remind me every Wednesday to water the plants": what is left after the repeat and the day are taken out starts with "to".
+  if (/\bremind\s+me\b/i.test(noUrls)) title = title.replace(/^to\s+/i, "");
   title = title.charAt(0).toUpperCase() + title.slice(1);
   // No @area given: guess from the words, else Others.
   if (!area) {

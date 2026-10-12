@@ -44,6 +44,8 @@ import { applyReschedule, carryMissed, rescheduleNow, undoReschedule, type Dest,
 import { canTakeOffDay } from "./offday";
 import { withLetter } from "./letters";
 import { applyPull, lighterLine, type PullCandidate } from "./lighten";
+import { ensureLifeSeries } from "./lifeAdmin";
+import { addCustomSource, setTick, toggleHidden, toggleWeekly } from "./sideWork";
 import type { AppData, Bill, BoredIdea, CheckResult, EventMark, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
@@ -416,6 +418,27 @@ export const actions = {
     const snap = { series: (d.series ?? []).filter((s) => s.id === seriesId), records: (d.occurrences ?? []).filter((r) => r.seriesId === seriesId) };
     commit(deleteSeriesWhole(d, seriesId));
     return () => commit(restoreSnapshot(ensure(), snap));
+  },
+
+  /** Side work: tick a source for a week, star it into "Every week", hide it, or add your own. */
+  sideWork: {
+    tick(week: ISODate, id: string, on: boolean) {
+      commit(setTick(ensure(), week, id, on));
+    },
+    star(id: string) {
+      commit(toggleWeekly(ensure(), id));
+    },
+    hide(id: string) {
+      commit(toggleHidden(ensure(), id));
+    },
+    add(name: string) {
+      commit(addCustomSource(ensure(), name));
+    },
+  },
+
+  /** Settings → Life admin: switching an item on brings it back if it had been deleted. */
+  ensureLife(id: string) {
+    commit(ensureLifeSeries(ensure(), id, todayISO()));
   },
 
   /** Switches a series off or on (Life admin). */

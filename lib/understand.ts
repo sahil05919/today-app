@@ -65,6 +65,12 @@ export function finalize(p: ParsedCapture, data: AppData, now: Date): ParsedCapt
     const mine = userWordArea(out.raw ?? out.title, data.userWords, new Set(profile.areas.map((a) => a.id)));
     if (mine) out = { ...out, area: mine, areaSource: "learned" };
   }
+  // "Remind me every Wednesday to …" is life admin: it goes to the Life area, unless you named an area or fixed it before,
+  // or it is about one of your weekly practice areas.
+  if ((!out.kind || out.kind === "task") && out.recur && /\bremind\s*me\b.*\bevery\b/i.test(out.raw ?? "") && out.areaSource !== "explicit" && out.areaSource !== "learned") {
+    const guessed = profile.areas.find((a) => a.id === out.area);
+    if (profile.areas.some((a) => a.id === "life") && !guessed?.target) out = { ...out, area: "life", areaSource: "guess" };
+  }
   if (out.kind === "event") {
     return { ...out, event: { ...out.event, countsFor: out.event?.countsFor ?? inferCountsFor(out.title, profile.areas) } };
   }

@@ -11,7 +11,10 @@ const NOW = new Date(2026, 9, 7, 9, 30);
 const TODAY = "2026-10-07";
 let n = 0;
 const task = (o: Partial<Task>): Task => ({ id: `p${++n}`, title: "Task", important: false, tags: [], steps: [], focus: false, status: "open", createdAt: n, ...o });
-const base = (tasks: Task[] = []): AppData => ({ ...seedIfNeeded({ version: 1, tasks: [], settings: { firstRunAt: 1 } }, NOW), tasks });
+const base = (tasks: Task[] = []): AppData => ({ ...withoutLife(seedIfNeeded({ version: 1, tasks: [], settings: { firstRunAt: 1 } }, NOW)), tasks });
+/** These tests are not about life admin: the seeded pack is taken out so it cannot take up room in their days. */
+const withoutLife = (d: AppData): AppData => ({ ...d, series: (d.series ?? []).filter((s) => !s.lifeId) });
+
 
 describe("pending work must not pile up", () => {
   it("three or more overdue items = piling up, said plainly", () => {
