@@ -10,7 +10,8 @@
     "test": "vitest run",
     "android:build": "node scripts/android-build.mjs",
     "android:apk": "node scripts/android-build.mjs --apk",
-    "android:open": "cap open android"
+    "android:open": "cap open android",
+    "android:release": "node scripts/android-build.mjs --release"
   },
   "dependencies": {
     "@capacitor-community/speech-recognition": "^7.0.1",

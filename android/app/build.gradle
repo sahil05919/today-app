@@ -18,7 +18,15 @@ android {
     }
     buildTypes {
         release {
+            // Personal app, never published. It is signed with the SAME debug keystore as the debug build, so
+            // `adb install -r` puts it over the app that is already on the phone and keeps all its data.
+            signingConfig signingConfigs.debug
+            // Production build: the WebView is not debuggable.
+            debuggable false
+            // R8 / minify stays OFF on purpose: Capacitor finds its plugins by name at run time, and our own TodayNative plugin
+            // is reached through reflection, so shrinking risks breaking them for a small gain (the JS is already minified by Next).
             minifyEnabled false
+            shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
