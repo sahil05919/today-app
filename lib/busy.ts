@@ -163,6 +163,8 @@ export function planningBusy(data: AppData): (date: ISODate) => Span[] {
     if (hit) return hit;
     const r = dayRules(data, date);
     const extra: Span[] = [];
+    // A cleared stretch is busy time: nothing is planned into it.
+    for (const c of data.cleared ?? []) if (c.date === date) extra.push([c.start, c.end]);
     if (r.tea) extra.push(r.tea);
     if (r.commuteTo) extra.push(r.commuteTo);
     if (r.commuteFrom) extra.push(r.commuteFrom);

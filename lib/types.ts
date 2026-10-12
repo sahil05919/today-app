@@ -501,7 +501,7 @@ export interface HistoryEvent {
   at: number;
   /** The day the item belonged to. */
   date: ISODate;
-  kind: "done" | "skipped" | "missed" | "rescheduled" | "reopened" | "pulled";
+  kind: "done" | "skipped" | "missed" | "rescheduled" | "reopened" | "pulled" | "cleared";
   type: "session" | "task" | "event" | "bill" | "routine";
   /** The item's identity ("session:powerbi:2026-10-07", "occ:<series>@<date>", "task:<id>", "event:<id>:<date>"). */
   key: string;
@@ -674,6 +674,8 @@ export interface AppData {
   occurrences?: Occurrence[];
   /** Everything that was done / skipped / missed / rescheduled, append-only. */
   history?: HistoryEvent[];
+  /** Cleared stretches of days (see ClearedWindow). */
+  cleared?: ClearedWindow[];
   /** Notes about the app, from "app: …" in Capture. */
   notes?: AppNote[];
   /** Side work: the Monday check (see lib/sideWork.ts). */
@@ -694,6 +696,18 @@ export interface AppNote {
   at: number;
   date: ISODate;
   text: string;
+}
+
+/** A stretch of a day you cleared ("clear until 7pm"): a busy block the planner will not refill (lib/clear.ts). */
+export interface ClearedWindow {
+  id: string;
+  /** All the windows of one command share a group (a clear across midnight is two windows). */
+  group: string;
+  date: ISODate;
+  /** Minutes after midnight. */
+  start: number;
+  end: number;
+  at: number;
 }
 
 export const MAX_FOCUS = 3;

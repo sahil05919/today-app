@@ -173,7 +173,7 @@ function cleanSeries(v: any): Series[] | undefined {
   return out;
 }
 
-const HIST_KINDS = ["done", "skipped", "missed", "rescheduled", "reopened", "pulled"];
+const HIST_KINDS = ["done", "skipped", "missed", "rescheduled", "reopened", "pulled", "cleared"];
 const HIST_TYPES = ["session", "task", "event", "bill", "routine"];
 
 function cleanHistory(v: any): HistoryEvent[] | undefined {
@@ -628,6 +628,12 @@ export function migrate(raw: unknown): AppData {
     occurrences: cleanOccurrences(r.occurrences),
     history: cleanHistory(r.history),
     sideWork: cleanSideWork(r.sideWork),
+    cleared: Array.isArray(r.cleared)
+      ? r.cleared
+          .filter((c: any) => c && isISO(c.date) && Number.isFinite(c.start) && Number.isFinite(c.end) && c.end > c.start)
+          .slice(-60)
+          .map((c: any) => ({ id: str(c.id, 64) || crypto.randomUUID(), group: str(c.group, 64) || str(c.id, 64) || "g", date: c.date, start: Math.max(0, Math.round(c.start)), end: Math.min(1440, Math.round(c.end)), at: num(c.at) ?? Date.now() }))
+      : undefined,
     notes: Array.isArray(r.notes)
       ? r.notes
           .filter((n: any) => n && typeof n.text === "string" && n.text.trim() && isISO(n.date))

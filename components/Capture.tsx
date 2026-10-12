@@ -3,6 +3,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { aiEnabled, chooseAmong, interpret } from "@/lib/ai";
 import { diffDays, friendlyDate, toISO } from "@/lib/dates";
 import { appNoteText } from "@/lib/appNotes";
+import { clearSuggestions, parseClear } from "@/lib/clearParse";
 import { intentOf } from "@/lib/intentPhrases";
 import { correctTick, tickFromText, type TickResult } from "@/lib/doneRun";
 import { matchDone } from "@/lib/doneText";
@@ -13,6 +14,7 @@ import { buildTimeline, movedNote } from "@/lib/timeline";
 import { understand } from "@/lib/understand";
 import { voiceSupported } from "@/lib/voice";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
+import { ClearFlow, type ClearFlowState } from "./ClearSheet";
 import { ConfirmCard, type CaptureResult } from "./ConfirmCard";
 import { ArrowUpIcon, MicIcon } from "./icons";
 import { ParsePreview } from "./ParsePreview";
@@ -59,6 +61,7 @@ export function Capture({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CaptureResult | null>(null);
   const [editing, setEditing] = useState<FixedEvent | null>(null);
+  const [clearFlow, setClearFlow] = useState<ClearFlowState | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const seq = useRef(0);
 
@@ -68,6 +71,15 @@ export function Capture({
   const intent = intentOf(text);
   const typed = useDeferredValue(text);
   const parsed = useMemo(() => (typed.trim() && !intentOf(typed) ? understand(typed, data, new Date()) : null), [typed, data]);
+
+  /** "clear until 7pm": an action, never a task. A window it understood goes to the preview; otherwise the range picker opens, prefilled. */
+  const startClear = (value: string) => {
+    const p = parseClear(value, new Date());
+    if (!p) return;
+    setClearFlow(p.windows.length ? { windows: p.windows, label: p.label } : { picker: true, understood: p.understood });
+  };
+  // Chips appear as soon as the text starts with "clear" (and while it is still only that).
+  const chips = useMemo(() => (intent === "clear" || (/^\s*clear\b/i.test(text) && text.trim().split(/\s+/).length <= 2) ? clearSuggestions(text, new Date()) : null), [text, intent]);
 
   /** "app: …" is a note to the app, never a task: it goes to Settings → App notes. */
   const saveAppNote = (value: string) => {
@@ -182,7 +194,7 @@ export function Capture({
         pick: next,
         asTask: () => {
           if (t.receipt) actions.undoDone(t.receipt);
-          const task = actions.addTask(understand(value.replace(/(done|kiya)/gi, "").trim() || value, getData(), new Date()), defaultDate);
+          const task = actions.addTask(understand(value.replace(/\b(done|kiya)\b/gi, "").trim() || value, getData(), new Date()), defaultDate);
           setResult({ id: ++seq.current, kind: "task", title: task.title, taskId: task.id, source, undo: () => actions.undoAdd(task.id) });
         },
       },
@@ -192,6 +204,7 @@ export function Capture({
   const save = async (value: string) => {
     const kind = intentOf(value);
     if (kind === "app") return saveAppNote(value);
+    if (kind === "clear") return startClear(value);
     if (kind === "lighten") {
       onLighten?.();
       return;
@@ -235,6 +248,7 @@ export function Capture({
   return (
     <div>
       {result && <ConfirmCard key={result.id} result={result} data={data} ctx={ctx} onClose={closeCard} />}
+      {clearFlow && <ClearFlow flow={clearFlow} data={data} ctx={ctx} onClose={() => setClearFlow(null)} />}
       {editing && <EventSheet event={editing} data={getData()} ctx={ctx} onClose={() => setEditing(null)} />}
 
       {voiceOpen && voiceOk && (
@@ -262,7 +276,7 @@ export function Capture({
       )}
       {intent && !voiceOpen && (
         <p className="mb-2 rounded-xl bg-accent-soft px-3 py-2 text-sm font-medium" role="status">
-          {intent === "app" ? `✨ That's a request, not a task: Enter saves it to App notes (“${appNoteText(text).slice(0, 60)}”).` : "✨ That's a request, not a task: Enter opens Lighten my week."}
+          {intent === "clear" ? "✨ That's a request, not a task: Enter shows what clearing it would move." : intent === "app" ? `✨ That's a request, not a task: Enter saves it to App notes (“${appNoteText(text).slice(0, 60)}”).` : "✨ That's a request, not a task: Enter opens Lighten my week."}
         </p>
       )}
       {parsed && !voiceOpen && (
@@ -270,9 +284,32 @@ export function Capture({
           <ParsePreview parsed={parsed} today={ctx.today} defaultDate={defaultDate} areas={ctx.profile.areas} />
         </div>
       )}
+      {chips && !voiceOpen && (
+        <div className="mb-2 flex flex-wrap gap-1.5" role="group" aria-label="Clear suggestions">
+          {chips.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className="min-h-9 rounded-full bg-accent-soft px-3 text-sm font-medium text-accent"
+              onClick={() => {
+                setText("");
+                setClearFlow(c.windows.length ? { windows: c.windows, label: c.label.replace(/^Clear /, "") } : { picker: true, understood: {} });
+              }}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (intent === "clear") {
+            const value = text;
+            setText("");
+            startClear(value);
+            return;
+          }
           if (intent === "app") {
             const value = text;
             setText("");

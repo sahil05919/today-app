@@ -59,6 +59,8 @@ export interface TLItem {
   eventId?: string;
   /** An event's local marks (done, hidden, time override): "<calId or id>@<date>". */
   eventKey?: string;
+  /** A cleared stretch (lib/clear.ts): tap to put it back. */
+  clearedId?: string;
   /** A routine block (lunch, commute, tea break): tap to change its time, run late, tick or skip it. */
   blockId?: BlockId;
   choreId?: string;
@@ -160,6 +162,13 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
   if (r.tea) {
     items.push({ key: "break:tea", kind: "break", title: "Tea & food break", emoji: "🍵", start: r.tea[0], end: r.tea[1], fixed: true, done: blockDone("tea"), skipped: false, muted: true, blockId: "tea" });
     take(r.tea, 0);
+  }
+
+  // A cleared stretch ("clear until 7pm") is a busy block of its own: shown, and never refilled.
+  for (const c of data.cleared ?? []) {
+    if (c.date !== date) continue;
+    items.push({ key: `cleared:${c.id}`, kind: "break", title: "Cleared", emoji: "🧹", start: c.start, end: c.end, fixed: true, done: false, skipped: false, muted: true, clearedId: c.id });
+    take([c.start, c.end], 0);
   }
 
   for (const e of eventsOn(data, date)) {

@@ -4,6 +4,7 @@
  * by an older build is cleaned up by lib/cleanup.ts).
  */
 import { isAppNote } from "./appNotes";
+import { parseClear } from "./clearParse";
 
 const norm = (t: string) =>
   t
@@ -39,8 +40,9 @@ export function isLightenIntent(text: string): boolean {
 export const isCommandTitle = (text: string) => isLightenIntent(text) || isAppNote(text);
 
 /** What a typed line means when it is not a task: "lighten" (work done, I'm free…), "app" (a note for the app: "app: …"). */
-export type Intent = "lighten" | "app";
+export type Intent = "lighten" | "app" | "clear";
 export function intentOf(text: string): Intent | null {
   if (isAppNote(text)) return "app";
+  if (parseClear(text, new Date()) !== null) return "clear";
   return isLightenIntent(text) ? "lighten" : null;
 }

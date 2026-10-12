@@ -38,6 +38,9 @@ import {
   type SeriesSnapshot,
 } from "./series";
 import { billKey } from "./bills";
+import { applyMoves } from "./moves";
+import { applyClear, clearedEvent, clearedToast } from "./clear";
+import type { ClearWindow } from "./clearParse";
 import { forget, learnFix, learnItem } from "./learn";
 import { taskEvent, withHistory } from "./history";
 import { type BlockId } from "./busy";
@@ -711,20 +714,7 @@ export const actions = {
    * or you accepted a catch-up plan).
    */
   moveTasks(moves: Array<{ taskId: string; to: ISODate; time?: string }>) {
-    let d = ensure();
-    const by = new Map(moves.map((m) => [m.taskId, m]));
-    for (const m of moves) {
-      if (!isOccId(m.taskId) || d.tasks.some((t) => t.id === m.taskId)) continue;
-      const t = findTask(d, m.taskId);
-      if (t) d = applyOccTask(d, m.taskId, t, { ...t, due: m.to, dueTime: m.time, remindAt: undefined, slot: undefined, hideUntil: undefined });
-    }
-    commit({
-      ...d,
-      tasks: d.tasks.map((t) => {
-        const m = by.get(t.id);
-        return m ? { ...t, due: m.to, dueTime: m.time, remindAt: undefined, slot: undefined, hideUntil: undefined } : t;
-      }),
-    });
+    commit(applyMoves(ensure(), moves));
   },
 
   /** Returns false when the focus list is full. */
@@ -1085,6 +1075,27 @@ export const actions = {
     const d = ensure();
     const q = quoteStateOf(d);
     commit({ ...d, quotes: { ...q, saved: q.saved.includes(id) ? q.saved.filter((x) => x !== id) : [...q.saved, id] } });
+  },
+
+  /**
+   * "Clear until 7pm" confirmed: the windows become busy blocks, flexible items re-plan around them, and the fixed ones you chose
+   * to move are moved. Returns the toast text and an Undo that restores everything, including the block.
+   */
+  clearWindows(windows: ClearWindow[], label: string, choose: ReadonlySet<string>, now: Date = new Date()): { message: string; undo: () => void } {
+    const d = ensure();
+    const group = uid();
+    const r = applyClear(d, windows, choose, now, group);
+    commit(r.data);
+    // A cleared window is its own kind of entry (moved is not skipped, see the weekly review).
+    const c = ensure();
+    commit({ ...c, history: [...(c.history ?? []), clearedEvent(group, label, windows, now.getTime())] }, { history: false });
+    return { message: clearedToast(label, r.moved), undo: () => commit(d, { history: false }) };
+  },
+
+  /** Puts a cleared stretch back (every window of that command). */
+  removeCleared(group: string) {
+    const d = ensure();
+    commit({ ...d, cleared: (d.cleared ?? []).filter((c) => c.group !== group) });
   },
 
   /** "app: …" in Capture: saved to Settings → App notes, never a task. Returns the note (for Undo). */

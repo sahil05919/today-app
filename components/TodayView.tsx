@@ -17,6 +17,7 @@ import type { AppData, FixedEvent, ISODate } from "@/lib/types";
 import { BlockSheet } from "./BlockSheet";
 import { CalendarEventInfo } from "./CalendarSheet";
 import { CatchUpCard } from "./CatchUpCard";
+import { ClearedSheet } from "./ClearSheet";
 import { FreedCard } from "./FreedCard";
 import { openCount } from "./itemActions";
 import { NextDays } from "./NextDays";
@@ -51,7 +52,7 @@ function Nudge({ emoji, title, body, action, onAction }: { emoji: string; title:
 /** "Open this card now": a tapped notification or a widget deep link asks the home screen to show a sheet. */
 export type OpenRequest = { id: number } & ({ k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "progress" });
 
-type Sheet = { k: "targets" } | { k: "block"; id: BlockId; date: ISODate } | { k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "reschedule"; target: RescheduleTarget } | { k: "progress" } | null;
+type Sheet = { k: "targets" } | { k: "cleared"; id: string } | { k: "block"; id: BlockId; date: ISODate } | { k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "reschedule"; target: RescheduleTarget } | { k: "progress" } | null;
 
 /**
  * The home screen, built to be one glance: what's next (with Start / Done / Reschedule), your top must-have as one line,
@@ -224,6 +225,7 @@ export function TodayView({
 
   /** Opens whatever a row is: a task, an event, a routine block, a session / chore / bill, on any day. */
   const openAt = (it: TLItem, date: ISODate) => {
+    if (it.clearedId) return setSheet({ k: "cleared", id: it.clearedId });
     if (it.blockId) return setSheet({ k: "block", id: it.blockId, date });
     if (it.taskId) return ctx.open(it.taskId);
     if (it.eventId) {
@@ -290,6 +292,7 @@ export function TodayView({
       {sheet?.k === "targets" && <ShortfallSheet data={data} ctx={ctx} now={now} onClose={() => setSheet(null)} />}
       {sheet?.k === "progress" && <ProgressSheet data={data} ctx={ctx} onClose={() => setSheet(null)} onReview={() => (setSheet(null), openPanel("review"))} />}
       {sheet?.k === "item" && <ItemSheet item={sheet.it} date={sheet.date} left={sheet.date === tl.date ? openCount(tl.items, sheet.it.key) : 1} ctx={ctx} onClose={() => setSheet(null)} onReschedule={reschedule} openPanel={openPanel} />}
+      {sheet?.k === "cleared" && <ClearedSheet id={sheet.id} data={data} ctx={ctx} onClose={() => setSheet(null)} />}
       {sheet?.k === "block" && <BlockSheet id={sheet.id} date={sheet.date} ctx={ctx} onClose={() => setSheet(null)} />}
       {sheet?.k === "event" && (sheet.e.source === "calendar" ? <CalendarEventInfo event={sheet.e} onClose={() => setSheet(null)} notify={ctx.notify} /> : <EventSheet event={sheet.e} data={data} ctx={ctx} onClose={() => setSheet(null)} />)}
       {sheet?.k === "reschedule" && <RescheduleSheet target={sheet.target} ctx={ctx} onClose={() => setSheet(null)} />}
