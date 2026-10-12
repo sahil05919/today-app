@@ -9,6 +9,7 @@ import type { AppData, Area, AreaTarget, Bill, LearnedRule, Profile, RhythmItem,
 import { CalendarSettings } from "./CalendarSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { RepeatingTasks } from "./RepeatingTasks";
+import { BackupSettings } from "./BackupSettings";
 import { HealthSettings } from "./HealthSettings";
 import { LifeAdminSettings } from "./LifeAdminSettings";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
@@ -487,6 +488,10 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
               </button>
             ))}
           </div>
+        </Section>
+
+        <Section title="Backups" hint="Every Sunday 21:30, kept when the app is uninstalled">
+          <BackupSettings data={data} ctx={ctx} />
         </Section>
 
         <Section title="Backup & data" hint={lastBackup ? `Last backup ${new Date(lastBackup).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : "No backup yet"}>

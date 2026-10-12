@@ -6,7 +6,6 @@ import type { ParsedShare } from "@/lib/shareParse";
 import { toHHMM } from "@/lib/profile";
 import { actions } from "@/lib/store";
 import type { AppData } from "@/lib/types";
-import { syncEventToCalendar } from "@/lib/calendarWrite";
 import { btn, Chip, field, Sheet, type ViewCtx } from "./ui";
 
 /**
@@ -30,9 +29,7 @@ export function ShareEventSheet({ share, data, ctx, onClose }: { share: ParsedSh
     const e = actions.addFixedEvent({ title: title.trim() || "Booking", date, start: start || undefined, end: start ? end || undefined : undefined, area: area || undefined, status: share.status, shift: share.shift ? true : undefined });
     // A Just-today routine edit: work starts after the event (and still ends when it did).
     if (adjust && work?.fix) actions.setBlock("work", date, { start: work.fix.start, min: work.fix.min }, "today");
-    void syncEventToCalendar(e.id).then((r) => {
-      if (r === "no-permission") ctx.notify("Added. Allow calendar access in Settings to put it in your Google Calendar too.");
-    });
+    // (The phone calendar follows by itself: every event you add is written there, see lib/calendarWrite.ts.)
     ctx.notify(`Added: ${e.title}, ${friendlyDate(date, ctx.today)}${start ? ` ${start}${end ? "–" + end : ""}` : ""}`, () => actions.removeEvent(e.id));
     onClose();
   };

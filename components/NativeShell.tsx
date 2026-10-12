@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import { getStatus, initNotifications, listenForActions, markActivated, openExactAlarmSettings, rescheduleAll, type TapTarget } from "@/lib/notifications/native";
 import { syncPhoneCalendar } from "@/lib/calendarSync";
+import { installCalendarWriter } from "@/lib/calendarWrite";
+import { ensureWeeklyBackup } from "@/lib/backupFiles";
 import { isNative } from "@/lib/platform";
 import { pushWidgetSnapshot, takeWidgetActions } from "@/lib/nativeBridge";
 import { actions, getData, reloadFromStorage, whenLoaded } from "@/lib/store";
@@ -94,6 +96,13 @@ export function NativeShell({ data, onTap }: { data: AppData; onTap: (t: TapTarg
       cancelled = true;
       cleanup.forEach((fn) => fn());
     };
+  }, []);
+
+  // From now on the events you create follow into the phone calendar, and the Sunday 21:30 backup alarm is armed (a missed one is taken now).
+  useEffect(() => {
+    if (!isNative()) return;
+    installCalendarWriter();
+    void whenLoaded().then(() => ensureWeeklyBackup());
   }, []);
 
   // Cold start: apply anything tapped on the widget while the app was closed.

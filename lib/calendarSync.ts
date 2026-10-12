@@ -1,4 +1,5 @@
 import { askCalendarAccess, calendarAccess, readPhoneCalendar } from "./nativeBridge";
+import { withoutOwnEvents } from "./calendarWrite";
 import { calendarAsked, convertCalendarEvents, markCalendarAsked, syncWindow } from "./calendar";
 import { isNative } from "./platform";
 import { withDefaults } from "./profile";
@@ -30,7 +31,8 @@ export async function syncPhoneCalendar(opts: { ask?: boolean } = {}): Promise<S
   const { from, to } = syncWindow();
   const raw = await readPhoneCalendar(from, to);
   if (!raw) return "error";
-  const events = convertCalendarEvents(raw, 0);
+  // The events Today wrote to the calendar itself are already in Today: reading them back must not show them twice.
+  const events = convertCalendarEvents(withoutOwnEvents(raw, d.events ?? []), 0);
   if (sig(events) !== sig(getData().calendarEvents)) actions.setCalendarEvents(events);
   else actions.settings({ calendarSyncedAt: Date.now() });
   return "ok";

@@ -2,11 +2,12 @@
 import { useEffect, useRef, useState } from "react";
 import { parseICS, type CalendarAccess, type IcsEvent } from "@/lib/calendar";
 import { syncPhoneCalendar } from "@/lib/calendarSync";
-import { askCalendarAccess, calendarAccess } from "@/lib/nativeBridge";
+import { askCalendarAccess, askCalendarWriteAccess, calendarAccess, calendarWriteAccess, listWritableCalendars, type WritableCalendar } from "@/lib/nativeBridge";
+import { pickDefaultCalendar } from "@/lib/calendarWrite";
 import { isNative } from "@/lib/platform";
 import type { Profile } from "@/lib/types";
 import { ImportSheet } from "./ImportSheet";
-import { btn, type ViewCtx } from "./ui";
+import { btn, field, type ViewCtx } from "./ui";
 
 /** Settings → Calendar: read the phone's calendar (read-only), and add events from an .ics file. */
 export function CalendarSettings({ p, set, syncedAt, ctx }: { p: Profile; set: <K extends keyof Profile>(k: K, v: Profile[K]) => void; syncedAt?: number; ctx: ViewCtx }) {
@@ -14,12 +15,29 @@ export function CalendarSettings({ p, set, syncedAt, ctx }: { p: Profile; set: <
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [imported, setImported] = useState<IcsEvent[] | null>(null);
+  const [writeAccess, setWriteAccess] = useState<CalendarAccess>("unsupported");
+  const [calendars, setCalendars] = useState<WritableCalendar[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const native = isNative();
 
   useEffect(() => {
     calendarAccess().then(setAccess);
+    calendarWriteAccess().then(async (a) => {
+      setWriteAccess(a);
+      if (a === "granted") setCalendars((await listWritableCalendars()) ?? []);
+    });
   }, []);
+
+  const allowWrite = async () => {
+    setBusy(true);
+    const a = await askCalendarWriteAccess();
+    setWriteAccess(a);
+    setAccess(await calendarAccess());
+    if (a === "granted") setCalendars((await listWritableCalendars()) ?? []);
+    else setMsg("Android didn't allow it. You can switch Calendar on in Settings → Apps → Today → Permissions.");
+    setBusy(false);
+  };
+  const target = calendars.find((c) => String(c.id) === p.writeCalendarId) ?? pickDefaultCalendar(calendars);
 
   const sync = async () => {
     setBusy(true);
@@ -80,6 +98,33 @@ export function CalendarSettings({ p, set, syncedAt, ctx }: { p: Profile; set: <
         </>
       ) : (
         <p className="text-sm text-muted">Reading your phone's calendar works in the Android app. Here, you can still add events from an invite file.</p>
+      )}
+      {native && (
+        <div className="space-y-2 rounded-2xl border border-line p-3">
+          <label className="flex min-h-10 items-center gap-2 text-sm">
+            <input type="checkbox" checked={p.calendarWrite} onChange={(e) => set("calendarWrite", e.target.checked)} className="h-5 w-5 accent-[var(--accent)]" />
+            Also put events I create here into my calendar
+          </label>
+          <p className="text-xs text-muted">Events you type (“event …”) or confirm from an email are written to the calendar below, so they reach Google Calendar. Routine sessions are never written. Ticks and hides on phone events stay in Today.</p>
+          {p.calendarWrite && writeAccess !== "granted" && (
+            <button type="button" className={`${btn.primary} min-h-11 w-full`} disabled={busy} onClick={allowWrite}>
+              Allow adding to my calendar
+            </button>
+          )}
+          {p.calendarWrite && writeAccess === "granted" && (
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted">Calendar</span>
+              <select value={target ? String(target.id) : ""} onChange={(e) => set("writeCalendarId", e.target.value || undefined)} className={field} disabled={!calendars.length}>
+                {!calendars.length && <option value="">No calendar found</option>}
+                {calendars.map((c) => (
+                  <option key={c.id} value={String(c.id)}>
+                    {c.name}{c.account && c.account !== c.name ? ` (${c.account})` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
       )}
       <div>
         <button type="button" className={`${btn.ghost} min-h-11 w-full`} onClick={() => fileRef.current?.click()}>

@@ -9,6 +9,8 @@ import type { FixedEvent, ISODate } from "./types";
  */
 export interface RawCalendarEvent {
   id: string;
+  /** The phone's own id of the event (to tell the ones Today wrote itself from everyone else's). */
+  eventId?: number;
   title: string;
   /** Epoch ms. All-day events are UTC midnights (Android's rule); `end` is exclusive. */
   begin: number;

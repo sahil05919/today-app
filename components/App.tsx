@@ -32,6 +32,7 @@ import { Capture, type CaptureCommand } from "./Capture";
 import { CheckIn } from "./CheckIn";
 import { EveningWrap } from "./EveningWrap";
 import { IdeasSheet } from "./IdeasSheet";
+import { BackupsSheet } from "./BackupSettings";
 import { LightenSheet } from "./LightenSheet";
 import { ShareEventSheet } from "./ShareEventSheet";
 import { SideWorkSheet } from "./SideWorkSheet";
@@ -409,6 +410,7 @@ export default function App() {
       {panel === "quotes" && <QuotesSheet onClose={closePanel} />}
       {panel === "quote" && <QuoteCard date={quoteDate} onClose={closePanel} />}
       {panel === "evening" && <EveningWrap data={data} ctx={ctx} onClose={closePanel} />}
+      {panel === "backups" && <BackupsSheet data={data} ctx={ctx} onClose={closePanel} />}
       {panel === "lighten" && <LightenSheet data={data} ctx={ctx} now={new Date()} onClose={closePanel} />}
       {when && when.mode === "reschedule" && !!findTask(data, when.id) && <RescheduleSheet target={{ kind: "task", taskId: when.id }} ctx={ctx} onClose={() => setWhen(null)} />}
       {when && when.mode === "schedule" && findTask(data, when.id) && <WhenSheet task={findTask(data, when.id)!} mode="schedule" ctx={ctx} onClose={() => setWhen(null)} />}

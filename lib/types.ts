@@ -312,8 +312,12 @@ export interface Profile {
   wakeTime: string;
   /** Hide the in-app microphone (the keyboard's own mic still works). */
   hideMic: boolean;
-  /** Read events from the phone's calendar (Android, read-only). */
+  /** Read events from the phone's calendar (Android). */
   calendarSync: boolean;
+  /** Also write the events you create in Today (typed "event …", or from an email) to the phone's calendar. */
+  calendarWrite: boolean;
+  /** Which calendar they go to (the phone's own id). Empty = your Google account's calendar. */
+  writeCalendarId?: string;
   /** Weekend time of the morning "How are you feeling?" (weekdays use `morningCheckIn`). */
   morningWeekend: string;
   /** A quote notification every N days (1 = every day); 0 = off. */

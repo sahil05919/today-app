@@ -14,6 +14,34 @@ export interface LaunchIntent {
   key?: string;
 }
 
+/** A calendar an event can be written to. */
+export interface WritableCalendar {
+  id: number;
+  name: string;
+  account: string;
+  accountType: string;
+  /** The account's own calendar. */
+  primary: boolean;
+}
+
+/** An event as the Android calendar wants it (epoch ms). */
+export interface NativeEvent {
+  calendarId: number;
+  title: string;
+  start: number;
+  end: number;
+  allDay?: boolean;
+  description?: string;
+  location?: string;
+}
+
+export interface BackupFile {
+  name: string;
+  uri: string;
+  size: number;
+  modified: number;
+}
+
 interface TodayNativePlugin {
   consumeLaunchIntent(): Promise<{ intent?: LaunchIntent }>;
   createAlarmChannel(opts: { id: string }): Promise<void>;
@@ -22,6 +50,18 @@ interface TodayNativePlugin {
   calendarPermission(): Promise<{ state: "granted" | "denied" | "prompt" }>;
   requestCalendarPermission(): Promise<{ state: "granted" | "denied" | "prompt" }>;
   queryCalendar(opts: { from: number; to: number }): Promise<{ events: RawCalendarEvent[] }>;
+  calendarWritePermission(): Promise<{ state: "granted" | "denied" | "prompt" }>;
+  requestCalendarWritePermission(): Promise<{ state: "granted" | "denied" | "prompt" }>;
+  listCalendars(): Promise<{ calendars: WritableCalendar[] }>;
+  upsertCalendarEvent(opts: NativeEvent & { eventId?: number }): Promise<{ eventId: number }>;
+  deleteCalendarEvent(opts: { eventId: number }): Promise<void>;
+  saveBackup(opts: { name: string; text: string }): Promise<{ name: string; uri: string }>;
+  listBackups(): Promise<{ backups: BackupFile[] }>;
+  pruneBackups(opts: { keep: number; kind?: "weekly" | "restore" }): Promise<{ deleted: number }>;
+  readBackup(opts: { uri: string }): Promise<{ text: string }>;
+  shareBackup(opts: { uri: string }): Promise<void>;
+  backupStatus(): Promise<{ lastAt: number; count: number; nextAt: number }>;
+  scheduleWeeklyBackup(): Promise<{ at: number }>;
   vibrate(opts: { ms: number }): Promise<void>;
   widgetUpdate(opts: { snapshot: string }): Promise<void>;
   widgetTakePending(): Promise<{ actions: WidgetAction[] }>;
@@ -106,6 +146,124 @@ export async function readPhoneCalendar(from: number, to: number): Promise<RawCa
   if (!isNative()) return null;
   try {
     return (await TodayNative.queryCalendar({ from, to })).events;
+  } catch {
+    return null;
+  }
+}
+
+// ---- Phone calendar (write) -------------------------------------------------------------------------------
+
+export async function calendarWriteAccess(): Promise<CalendarAccess> {
+  if (!isNative()) return "unsupported";
+  try {
+    return (await TodayNative.calendarWritePermission()).state;
+  } catch {
+    return "unsupported";
+  }
+}
+
+export async function askCalendarWriteAccess(): Promise<CalendarAccess> {
+  if (!isNative()) return "unsupported";
+  try {
+    return (await TodayNative.requestCalendarWritePermission()).state;
+  } catch {
+    return "unsupported";
+  }
+}
+
+/** The calendars Today can write to (null when it cannot be read: no permission, or an older app build). */
+export async function listWritableCalendars(): Promise<WritableCalendar[] | null> {
+  if (!isNative()) return null;
+  try {
+    return (await TodayNative.listCalendars()).calendars;
+  } catch {
+    return null;
+  }
+}
+
+/** Adds the event, or updates it when its phone id is given. Resolves the phone's id of the event, or null. */
+export async function upsertPhoneEvent(e: NativeEvent & { eventId?: number }): Promise<number | null> {
+  if (!isNative()) return null;
+  try {
+    return (await TodayNative.upsertCalendarEvent(e)).eventId;
+  } catch {
+    return null;
+  }
+}
+
+export async function deletePhoneEvent(eventId: number): Promise<boolean> {
+  if (!isNative()) return false;
+  try {
+    await TodayNative.deleteCalendarEvent({ eventId });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ---- Backups (Documents/TodayBackups) ---------------------------------------------------------------------
+
+export async function saveBackupFile(name: string, text: string): Promise<BackupFile | null> {
+  if (!isNative()) return null;
+  try {
+    const r = await TodayNative.saveBackup({ name, text });
+    return { name: r.name, uri: r.uri, size: text.length, modified: Date.now() };
+  } catch {
+    return null;
+  }
+}
+
+export async function listBackupFiles(): Promise<BackupFile[]> {
+  if (!isNative()) return [];
+  try {
+    return (await TodayNative.listBackups()).backups;
+  } catch {
+    return [];
+  }
+}
+
+export async function pruneBackupFiles(keep: number, kind: "weekly" | "restore" = "weekly"): Promise<number> {
+  if (!isNative()) return 0;
+  try {
+    return (await TodayNative.pruneBackups({ keep, kind })).deleted;
+  } catch {
+    return 0;
+  }
+}
+
+export async function readBackupFile(uri: string): Promise<string | null> {
+  if (!isNative()) return null;
+  try {
+    return (await TodayNative.readBackup({ uri })).text;
+  } catch {
+    return null;
+  }
+}
+
+export async function shareBackupFile(uri: string): Promise<boolean> {
+  if (!isNative()) return false;
+  try {
+    await TodayNative.shareBackup({ uri });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function backupFileStatus(): Promise<{ lastAt: number; count: number; nextAt: number } | null> {
+  if (!isNative()) return null;
+  try {
+    return await TodayNative.backupStatus();
+  } catch {
+    return null;
+  }
+}
+
+/** Arms the Sunday 21:30 alarm that writes the weekly backup, even with the app closed. */
+export async function armWeeklyBackup(): Promise<number | null> {
+  if (!isNative()) return null;
+  try {
+    return (await TodayNative.scheduleWeeklyBackup()).at;
   } catch {
     return null;
   }

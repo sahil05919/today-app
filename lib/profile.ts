@@ -55,6 +55,7 @@ export function defaultProfile(): Profile {
     wakeTime: "06:00",
     hideMic: false,
     calendarSync: true,
+    calendarWrite: true,
     notify: { morning: true, taskCheckIns: true, wrap: true, reminders: true, slots: true, events: true, bills: true, nudges: true, review: true, weekSoFar: true, quote: true, tonight: true, sessionNudges: true, dayDone: true },
   };
 }

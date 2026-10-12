@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.ContentResolver;
 import android.content.ContentUris;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.database.Cursor;
@@ -36,11 +37,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.List;
+import java.util.TimeZone;
 
 /**
  * Small native helper for Sahil's Today:
  *  - launch intents: "Share to Today" (text), selected text ("Add to Today"), calendar invites (.ics), app-icon shortcuts
- *  - read-only phone calendar (Android Calendar Provider, offline)
+ *  - the phone calendar (Android Calendar Provider, offline): read your events; write the ones you create in Today
+ *  - weekly backups to Documents/TodayBackups (see BackupStore), and the Sunday 21:30 alarm that makes them
  *  - a short audio recorder (16 kHz mono WAV) so Gemini can transcribe what you said
  *  - vibration, battery optimisation status, the alarm notification channel
  */
@@ -48,6 +52,10 @@ import java.nio.ByteOrder;
     name = "TodayNative",
     permissions = {
         @Permission(strings = { Manifest.permission.READ_CALENDAR }, alias = "calendar"),
+        // Writing the events you create in Today to the phone's calendar (Google Calendar syncs them).
+        @Permission(strings = { Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR }, alias = "calendarWrite"),
+        // Only used on Android 7-9: newer Android writes the backup through MediaStore without any permission.
+        @Permission(strings = { Manifest.permission.WRITE_EXTERNAL_STORAGE }, alias = "storage"),
         @Permission(strings = { Manifest.permission.RECORD_AUDIO }, alias = "microphone")
     }
 )
@@ -272,6 +280,8 @@ public class TodayNativePlugin extends Plugin {
                 if (attendee == CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED) continue;
                 JSObject e = new JSObject();
                 e.put("id", c.getLong(0) + ":" + c.getLong(2));
+                // The phone's own id of the event, so an event Today wrote itself is not read back in as a second one.
+                e.put("eventId", c.getLong(0));
                 String title = c.getString(1);
                 e.put("title", title == null || title.trim().isEmpty() ? "Event" : title);
                 e.put("begin", c.getLong(2));
@@ -292,6 +302,289 @@ public class TodayNativePlugin extends Plugin {
         } finally {
             if (c != null) c.close();
         }
+    }
+
+    // ---- Calendar (write) --------------------------------------------------------------------------------
+
+    /** { state } for reading AND writing the calendar. */
+    @PluginMethod
+    public void calendarWritePermission(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("state", stateOf("calendarWrite"));
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void requestCalendarWritePermission(PluginCall call) {
+        if (getPermissionState("calendarWrite") == PermissionState.GRANTED) {
+            calendarWritePermission(call);
+            return;
+        }
+        requestPermissionForAlias("calendarWrite", call, "calendarWritePermissionResult");
+    }
+
+    @PermissionCallback
+    private void calendarWritePermissionResult(PluginCall call) {
+        calendarWritePermission(call);
+    }
+
+    /** The calendars an event can be written to: { calendars: [{ id, name, account, accountType, primary }] }. */
+    @PluginMethod
+    public void listCalendars(PluginCall call) {
+        if (getPermissionState("calendarWrite") != PermissionState.GRANTED) {
+            call.reject("Calendar permission is not granted");
+            return;
+        }
+        JSArray list = new JSArray();
+        Cursor c = null;
+        try {
+            String[] projection = new String[] {
+                CalendarContract.Calendars._ID,
+                CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
+                CalendarContract.Calendars.ACCOUNT_NAME,
+                CalendarContract.Calendars.ACCOUNT_TYPE,
+                CalendarContract.Calendars.OWNER_ACCOUNT,
+                CalendarContract.Calendars.IS_PRIMARY
+            };
+            c = getContext().getContentResolver().query(
+                CalendarContract.Calendars.CONTENT_URI,
+                projection,
+                CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL + " >= ?",
+                new String[] { String.valueOf(CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) },
+                CalendarContract.Calendars.ACCOUNT_NAME + " ASC"
+            );
+            while (c != null && c.moveToNext()) {
+                JSObject o = new JSObject();
+                o.put("id", c.getLong(0));
+                o.put("name", c.getString(1));
+                o.put("account", c.getString(2));
+                o.put("accountType", c.getString(3));
+                String owner = c.getString(4);
+                // The account's own calendar: its owner is the account, or it says it is the primary one.
+                o.put("primary", c.getInt(5) == 1 || (owner != null && owner.equals(c.getString(2))));
+                list.put(o);
+            }
+            JSObject r = new JSObject();
+            r.put("calendars", list);
+            call.resolve(r);
+        } catch (SecurityException se) {
+            call.reject("Calendar permission is not granted");
+        } catch (Exception e) {
+            call.reject("Could not list the calendars");
+        } finally {
+            if (c != null) c.close();
+        }
+    }
+
+    /**
+     * Adds an event to a calendar, or updates it when `eventId` is given (and still exists). Resolves { eventId }.
+     * { calendarId, eventId?, title, start, end (epoch ms), allDay?, description?, location? }
+     */
+    @PluginMethod
+    public void upsertCalendarEvent(PluginCall call) {
+        if (getPermissionState("calendarWrite") != PermissionState.GRANTED) {
+            call.reject("Calendar permission is not granted");
+            return;
+        }
+        Long calendarId = call.getLong("calendarId");
+        Long start = call.getLong("start");
+        Long end = call.getLong("end");
+        String title = call.getString("title");
+        if (calendarId == null || start == null || end == null || title == null) {
+            call.reject("calendarId, title, start and end are required");
+            return;
+        }
+        boolean allDay = Boolean.TRUE.equals(call.getBoolean("allDay", false));
+        try {
+            ContentValues v = new ContentValues();
+            v.put(CalendarContract.Events.TITLE, title);
+            v.put(CalendarContract.Events.DTSTART, start);
+            v.put(CalendarContract.Events.DTEND, Math.max(end, start + 60_000L));
+            v.put(CalendarContract.Events.ALL_DAY, allDay ? 1 : 0);
+            // All-day events live in UTC (Android's rule); timed ones in the phone's zone.
+            v.put(CalendarContract.Events.EVENT_TIMEZONE, allDay ? "UTC" : TimeZone.getDefault().getID());
+            String description = call.getString("description");
+            String location = call.getString("location");
+            if (description != null) v.put(CalendarContract.Events.DESCRIPTION, description);
+            if (location != null) v.put(CalendarContract.Events.EVENT_LOCATION, location);
+            ContentResolver cr = getContext().getContentResolver();
+            Long eventId = call.getLong("eventId");
+            if (eventId != null) {
+                int n = cr.update(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId), v, null, null);
+                if (n > 0) {
+                    JSObject r = new JSObject();
+                    r.put("eventId", eventId);
+                    call.resolve(r);
+                    return;
+                }
+                // It was deleted in the calendar app: write it again.
+            }
+            v.put(CalendarContract.Events.CALENDAR_ID, calendarId);
+            Uri uri = cr.insert(CalendarContract.Events.CONTENT_URI, v);
+            if (uri == null) {
+                call.reject("Could not add the event");
+                return;
+            }
+            JSObject r = new JSObject();
+            r.put("eventId", ContentUris.parseId(uri));
+            call.resolve(r);
+        } catch (SecurityException se) {
+            call.reject("Calendar permission is not granted");
+        } catch (Exception e) {
+            call.reject("Could not write the event");
+        }
+    }
+
+    @PluginMethod
+    public void deleteCalendarEvent(PluginCall call) {
+        if (getPermissionState("calendarWrite") != PermissionState.GRANTED) {
+            call.reject("Calendar permission is not granted");
+            return;
+        }
+        Long eventId = call.getLong("eventId");
+        if (eventId == null) {
+            call.reject("eventId is required");
+            return;
+        }
+        try {
+            getContext().getContentResolver().delete(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId), null, null);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not delete the event");
+        }
+    }
+
+    // ---- Backups ---------------------------------------------------------------------------------------------
+
+    /** Writes { name, text } to Documents/TodayBackups. Resolves { name, uri }. */
+    @PluginMethod
+    public void saveBackup(PluginCall call) {
+        String name = call.getString("name");
+        String text = call.getString("text");
+        if (name == null || text == null || !name.matches("^today-[A-Za-z0-9._-]+\\.json$")) {
+            call.reject("A backup needs a name (today-….json) and text");
+            return;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && getPermissionState("storage") != PermissionState.GRANTED) {
+            requestPermissionForAlias("storage", call, "storagePermissionResult");
+            return;
+        }
+        doSaveBackup(call);
+    }
+
+    @PermissionCallback
+    private void storagePermissionResult(PluginCall call) {
+        if (getPermissionState("storage") != PermissionState.GRANTED) {
+            call.reject("Storage permission is not granted");
+            return;
+        }
+        doSaveBackup(call);
+    }
+
+    private void doSaveBackup(PluginCall call) {
+        String name = call.getString("name");
+        try {
+            Uri uri = BackupStore.save(getContext(), name, call.getString("text"));
+            if (BackupStore.WEEKLY_NAME.matcher(name).matches()) BackupStore.markDone(getContext(), name);
+            JSObject r = new JSObject();
+            r.put("name", name);
+            r.put("uri", uri.toString());
+            call.resolve(r);
+        } catch (Exception e) {
+            call.reject(e.getMessage() == null ? "Could not write the backup" : e.getMessage());
+        }
+    }
+
+    /** { backups: [{ name, uri, size, modified }] }, newest name first. */
+    @PluginMethod
+    public void listBackups(PluginCall call) {
+        JSArray list = new JSArray();
+        for (BackupStore.Info i : BackupStore.list(getContext())) {
+            JSObject o = new JSObject();
+            o.put("name", i.name);
+            o.put("uri", i.uri);
+            o.put("size", i.size);
+            o.put("modified", i.modified);
+            list.put(o);
+        }
+        JSObject r = new JSObject();
+        r.put("backups", list);
+        call.resolve(r);
+    }
+
+    /** Keeps the newest `keep` of the weekly backups (today-YYYY-MM-DD.json), or of the pre-restore ones. */
+    @PluginMethod
+    public void pruneBackups(PluginCall call) {
+        int keep = Math.max(1, Math.min(60, call.getInt("keep", 8)));
+        boolean restore = "restore".equals(call.getString("kind"));
+        int n = BackupStore.prune(getContext(), restore ? java.util.regex.Pattern.compile("^today-pre-restore-.*\\.json$") : BackupStore.WEEKLY_NAME, keep);
+        JSObject r = new JSObject();
+        r.put("deleted", n);
+        call.resolve(r);
+    }
+
+    @PluginMethod
+    public void readBackup(PluginCall call) {
+        String uri = call.getString("uri");
+        if (uri == null) {
+            call.reject("uri is required");
+            return;
+        }
+        try {
+            JSObject r = new JSObject();
+            r.put("text", BackupStore.read(getContext(), Uri.parse(uri)));
+            call.resolve(r);
+        } catch (Exception e) {
+            call.reject("Could not read that backup");
+        }
+    }
+
+    /** Opens Android's share sheet for a backup file (Google Drive, email, WhatsApp…). */
+    @PluginMethod
+    public void shareBackup(PluginCall call) {
+        String uri = call.getString("uri");
+        if (uri == null) {
+            call.reject("uri is required");
+            return;
+        }
+        try {
+            Uri u = Uri.parse(uri);
+            if ("file".equals(u.getScheme())) {
+                u = androidx.core.content.FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", new java.io.File(u.getPath()));
+            }
+            Intent send = new Intent(Intent.ACTION_SEND);
+            send.setType("application/json");
+            send.putExtra(Intent.EXTRA_STREAM, u);
+            send.putExtra(Intent.EXTRA_SUBJECT, "Today backup");
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent chooser = Intent.createChooser(send, "Share backup");
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(chooser);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not share that backup");
+        }
+    }
+
+    /** { lastAt, count, nextAt }: the last weekly backup (epoch ms, 0 = never), how many files the app can see, and when the alarm is set for. */
+    @PluginMethod
+    public void backupStatus(PluginCall call) {
+        List<BackupStore.Info> all = BackupStore.list(getContext());
+        int weekly = 0;
+        for (BackupStore.Info i : all) if (BackupStore.WEEKLY_NAME.matcher(i.name).matches()) weekly++;
+        JSObject r = new JSObject();
+        r.put("lastAt", BackupStore.lastAt(getContext()));
+        r.put("count", weekly);
+        r.put("nextAt", BackupStore.nextSunday2130(System.currentTimeMillis()));
+        call.resolve(r);
+    }
+
+    /** Sets the Sunday 21:30 alarm that writes the weekly backup (also after a reboot, see BackupReceiver). */
+    @PluginMethod
+    public void scheduleWeeklyBackup(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("at", BackupStore.scheduleWeekly(getContext()));
+        call.resolve(r);
     }
 
     // ---- Vibration -------------------------------------------------------------------------------------

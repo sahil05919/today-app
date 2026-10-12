@@ -124,6 +124,13 @@ function saveNative(data: AppData) {
 
 const native = isNative();
 
+/** Called after an event you own is added, edited or deleted: the Android shell uses it to keep the phone calendar in step. */
+export type EventChange = "add" | "update" | "remove";
+let eventHook: ((kind: EventChange, e: FixedEvent) => void) | null = null;
+export const onEventChange = (fn: (kind: EventChange, e: FixedEvent) => void) => {
+  eventHook = fn;
+};
+
 /** Applies one-off defaults (see lib/seed.ts) to freshly loaded data and saves them if anything changed. */
 function prepare(d: AppData): AppData {
   const seeded = seedIfNeeded(d);
@@ -775,6 +782,7 @@ export const actions = {
       createdAt: Date.now(),
     };
     commit({ ...d, events: [...(d.events ?? []), event] });
+    eventHook?.("add", event);
     return event;
   },
 
@@ -783,17 +791,28 @@ export const actions = {
     const d = ensure();
     const event: FixedEvent = { ...e, id: uid(), createdAt: Date.now() };
     commit({ ...d, events: [...(d.events ?? []), event] });
+    eventHook?.("add", event);
     return event;
   },
 
   updateEvent(id: string, patch: Partial<FixedEvent>) {
     const d = ensure();
     commit({ ...d, events: (d.events ?? []).map((e) => (e.id === id ? { ...e, ...patch } : e)) });
+    const e = ensure().events?.find((x) => x.id === id);
+    if (e) eventHook?.("update", e);
+  },
+
+  /** Keeps the phone's id of an event Today wrote to the calendar (no hook: this is the answer to one). */
+  setCalEventId(id: string, calEventId: string) {
+    const d = ensure();
+    commit({ ...d, events: (d.events ?? []).map((e) => (e.id === id ? { ...e, calEventId } : e)) });
   },
 
   removeEvent(id: string) {
     const d = ensure();
+    const gone = (d.events ?? []).find((e) => e.id === id);
     commit({ ...d, events: (d.events ?? []).filter((e) => e.id !== id) });
+    if (gone) eventHook?.("remove", gone);
   },
 
   /** Replaces the read-only mirror of the phone's calendar. */

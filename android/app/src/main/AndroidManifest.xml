@@ -79,6 +79,14 @@
                 android:resource="@xml/today_widget_info" />
         </receiver>
 
+        <!-- Every Sunday 21:30 the weekly backup is written; the alarm is put back after a reboot or an update -->
+        <receiver android:name=".BackupReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -93,8 +101,13 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Read-only: events from your phone's calendar appear as fixed blocks -->
+    <!-- Events from your phone's calendar appear as fixed blocks, and events you create in Today are written to the calendar you choose -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <!-- The weekly backup alarm comes back after a reboot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Android 7-9 only: the backup goes to Documents/TodayBackups. Newer Android needs no storage permission for it. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <!-- Recording what you say, for transcription -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.VIBRATE" />

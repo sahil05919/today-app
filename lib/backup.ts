@@ -558,6 +558,8 @@ function cleanProfile(p: any): Profile {
       wakeTime: hhmm(p.wakeTime),
       hideMic: bool(p.hideMic),
       calendarSync: bool(p.calendarSync),
+      calendarWrite: bool(p.calendarWrite),
+      writeCalendarId: typeof p.writeCalendarId === "string" && /^\d{1,12}$/.test(p.writeCalendarId) ? p.writeCalendarId : undefined,
       officeDays: days(p.officeDays),
       slots: Array.isArray(p.slots)
         ? p.slots
