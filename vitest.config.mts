@@ -4,5 +4,6 @@ import { defineConfig } from "vitest/config";
 process.env.TZ = "Europe/London";
 
 export default defineConfig({
-  test: { include: ["tests/**/*.test.ts"] },
+  // The phrase-dictionary test is heavy (about 6 s when 30+ test files run at once), so the default 5 s is too tight.
+  test: { include: ["tests/**/*.test.ts"], testTimeout: 30_000 },
 });
