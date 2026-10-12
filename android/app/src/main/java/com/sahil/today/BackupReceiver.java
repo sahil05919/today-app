@@ -5,8 +5,10 @@ import android.content.Context;
 import android.content.Intent;
 
 /**
- * Fires every Sunday at 21:30 (set by BackupStore.scheduleWeekly) and writes the weekly backup, even when the app is closed.
- * It also puts the alarm back after a reboot or an app update, which clear it.
+ * Two alarms live here:
+ *  - every Sunday 21:30 (BackupStore.scheduleWeekly): the weekly backup, even when the app is closed;
+ *  - every day ~06:00 (MirrorStore.scheduleDaily): rolls the "Today - Plan" calendar mirror forward from the last plan the app saved.
+ * Both are put back after a reboot or an app update, which clear alarms.
  */
 public class BackupReceiver extends BroadcastReceiver {
     @Override
@@ -14,6 +16,7 @@ public class BackupReceiver extends BroadcastReceiver {
         String action = intent == null ? null : intent.getAction();
         if (Intent.ACTION_BOOT_COMPLETED.equals(action) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
             BackupStore.scheduleWeekly(context);
+            MirrorStore.scheduleDaily(context);
             return;
         }
         if (BackupStore.ACTION_WEEKLY.equals(action)) {
@@ -26,6 +29,16 @@ public class BackupReceiver extends BroadcastReceiver {
                     pending.finish();
                 }
             }, "today-weekly-backup").start();
+        } else if (MirrorStore.ACTION_DAILY.equals(action)) {
+            final PendingResult pending = goAsync();
+            new Thread(() -> {
+                try {
+                    MirrorStore.reconcile(context);
+                } finally {
+                    MirrorStore.scheduleDaily(context);
+                    pending.finish();
+                }
+            }, "today-daily-mirror").start();
         }
     }
 }

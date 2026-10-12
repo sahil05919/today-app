@@ -17,6 +17,9 @@ export interface RawCalendarEvent {
   end: number;
   allDay: boolean;
   location?: string;
+  /** Which phone calendar it is in, and its notes (the first 2000 characters): used to leave Today's own calendars out and to read tags. */
+  calendarId?: number;
+  description?: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");

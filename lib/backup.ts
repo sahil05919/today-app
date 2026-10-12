@@ -302,7 +302,7 @@ function cleanCheck(v: any): CheckResult | undefined {
     at: v.at,
     date: v.date,
     issues: v.issues
-      .filter((i: any) => i && typeof i.id === "string" && typeof i.text === "string" && ["target", "notification", "orphan", "backup"].includes(i.kind))
+      .filter((i: any) => i && typeof i.id === "string" && typeof i.text === "string" && ["target", "notification", "orphan", "backup", "mirror"].includes(i.kind))
       .slice(0, 20)
       .map((i: any) => ({ id: i.id.slice(0, 60), kind: i.kind, text: i.text.slice(0, 200), action: ["targets", "lighten", "backup"].includes(i.action) ? i.action : undefined })),
     fixed: Array.isArray(v.fixed) ? v.fixed.filter((x: unknown) => typeof x === "string").slice(0, 20).map((x: string) => x.slice(0, 200)) : [],
@@ -693,6 +693,10 @@ export function migrate(raw: unknown): AppData {
       checkDismissed: isISO(s.checkDismissed) ? s.checkDismissed : undefined,
       compactedDate: isISO(s.compactedDate) ? s.compactedDate : undefined,
       compactFailedAt: num(s.compactFailedAt),
+      mirror:
+        s.mirror && Number.isFinite(s.mirror.at) && ["ok", "off", "no-calendar", "not-google", "no-permission", "error", "unsupported"].includes(s.mirror.status)
+          ? { at: s.mirror.at, status: s.mirror.status, calendar: str(s.mirror.calendar, 80), written: num(s.mirror.written) }
+          : undefined,
       shortDismissed: s.shortDismissed && isISO(s.shortDismissed.week) && Array.isArray(s.shortDismissed.areas) ? { week: s.shortDismissed.week, areas: s.shortDismissed.areas.filter((a: unknown) => typeof a === "string").slice(0, 20) } : undefined,
       sofarWeek: isISO(s.sofarWeek) ? s.sofarWeek : undefined,
       focus: s.focus && isISO(s.focus.week) && Array.isArray(s.focus.areas) ? { week: s.focus.week, areas: s.focus.areas.filter((a: unknown) => typeof a === "string").slice(0, 4) } : undefined,

@@ -1,4 +1,6 @@
 import { addDays, toISO } from "./dates";
+import { PLAN_HELP } from "./calendarNames";
+import { withDefaults } from "./profile";
 import { dedupeSeriesReport, removeStrayTasks, strayTasks } from "./cleanup";
 import { planNotifications } from "./notifications/plan";
 import { withRepeats } from "./series";
@@ -132,6 +134,14 @@ export function runSelfCheck(input: AppData, now: Date = new Date(), opts: Check
   if (hasData && now.getTime() - last > BACKUP_MAX_DAYS * DAY) {
     const days = Math.floor((now.getTime() - last) / DAY);
     issues.push({ id: "backup", kind: "backup", text: `No backup for ${days} days.`, action: "backup" });
+  }
+
+  // ---- The Google Calendar safety copy ("Today – Plan") --------------------------------------------------------------------
+  const mirror = data.settings.mirror;
+  if (mirror && withDefaults(data.profile).planMirror) {
+    if (mirror.status === "no-calendar" || mirror.status === "not-google") issues.push({ id: "mirror", kind: "mirror", text: PLAN_HELP });
+    else if (mirror.status === "no-permission") issues.push({ id: "mirror", kind: "mirror", text: "Allow Today to add to your calendar (Settings → Calendar) to turn on your safety copy." });
+    else if (mirror.status === "error") issues.push({ id: "mirror", kind: "mirror", text: "The safety copy in Google Calendar could not be updated. See Settings → Health → Recent errors." });
   }
 
   const result: CheckResult = { at: now.getTime(), date: today, issues, fixed };

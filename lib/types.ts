@@ -548,7 +548,7 @@ export interface SideWorkState {
 /** One thing the morning self-check found that needs a look (see lib/selfcheck.ts). */
 export interface CheckIssue {
   id: string;
-  kind: "target" | "notification" | "orphan" | "backup";
+  kind: "target" | "notification" | "orphan" | "backup" | "mirror";
   text: string;
   /** What the button does: open the targets chooser, offer the old items for Lighten my week, or back up now. */
   action?: "targets" | "lighten" | "backup";
@@ -623,6 +623,8 @@ export interface Settings {
   /** History compaction (lib/compact.ts): the day it last ran, and when an archive write last failed (retry later). */
   compactedDate?: ISODate;
   compactFailedAt?: number;
+  /** The "Today – Plan" mirror: when it last ran and how it went (shown in Settings and the Health check). */
+  mirror?: { at: number; status: "ok" | "off" | "no-calendar" | "not-google" | "no-permission" | "error" | "unsupported"; calendar?: string; written?: number };
 }
 
 export interface AppData {

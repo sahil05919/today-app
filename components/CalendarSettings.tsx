@@ -4,6 +4,8 @@ import { parseICS, type CalendarAccess, type IcsEvent } from "@/lib/calendar";
 import { syncPhoneCalendar } from "@/lib/calendarSync";
 import { askCalendarAccess, askCalendarWriteAccess, calendarAccess, calendarWriteAccess, listWritableCalendars, type WritableCalendar } from "@/lib/nativeBridge";
 import { pickDefaultCalendar } from "@/lib/calendarWrite";
+import { findTodayCalendar, INBOX_HELP, INBOX_NAME, PLAN_HELP, PLAN_NAME } from "@/lib/calendarNames";
+import { useData } from "@/lib/store";
 import { isNative } from "@/lib/platform";
 import type { Profile } from "@/lib/types";
 import { ImportSheet } from "./ImportSheet";
@@ -19,6 +21,21 @@ export function CalendarSettings({ p, set, syncedAt, ctx }: { p: Profile; set: <
   const [calendars, setCalendars] = useState<WritableCalendar[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const native = isNative();
+  const data = useData();
+  const mirror = data?.settings.mirror;
+  const planFound = findTodayCalendar(calendars, "plan", p.planCalendarId);
+  const inboxFound = findTodayCalendar(calendars, "inbox", p.inboxCalendarId);
+  const mirrorLine = !p.planMirror
+    ? "Off"
+    : writeAccess !== "granted"
+      ? "Needs permission to add to your calendar"
+      : !planFound.cal
+        ? PLAN_HELP
+        : mirror?.status === "ok"
+          ? `On · ${planFound.cal.name} · updated ${new Date(mirror.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`
+          : mirror?.status === "error"
+            ? "Couldn't update it. See Health → Recent errors"
+            : `Found “${planFound.cal.name}”. It updates in a moment`;
 
   useEffect(() => {
     calendarAccess().then(setAccess);
@@ -123,6 +140,53 @@ export function CalendarSettings({ p, set, syncedAt, ctx }: { p: Profile; set: <
                 ))}
               </select>
             </label>
+          )}
+        </div>
+      )}
+      {native && (
+        <div className="space-y-2 rounded-2xl border border-line p-3">
+          <label className="flex min-h-10 items-center gap-2 text-sm">
+            <input type="checkbox" checked={p.planMirror} onChange={(e) => set("planMirror", e.target.checked)} className="h-5 w-5 accent-[var(--accent)]" />
+            Plan mirror: keep a safety copy of my next 7 days in Google Calendar
+          </label>
+          <p className="text-xs text-muted">
+            Writes the next 7 days (sessions, tasks, life admin) to a Google calendar named “{PLAN_NAME}”, with ✓ when done. Edits made there are overwritten. After a crash or a reinstall your schedule is still in Google. Past days keep their final ✓ / ✗ as your history. Tip: set that calendar's notifications to “None” in Google Calendar so you are not alerted twice.
+          </p>
+          <p className="text-sm" role="status">
+            <span className="text-muted">Status: </span>
+            <span className="font-medium">{mirrorLine}</span>
+          </p>
+          {p.planMirror && writeAccess !== "granted" && (
+            <button type="button" className={`${btn.primary} min-h-11 w-full`} disabled={busy} onClick={allowWrite}>
+              Allow adding to my calendar
+            </button>
+          )}
+          {p.planMirror && writeAccess === "granted" && (
+            <>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-muted">Plan calendar</span>
+                <select value={p.planCalendarId ?? ""} onChange={(e) => set("planCalendarId", e.target.value || undefined)} className={field}>
+                  <option value="">Find “{PLAN_NAME}” by name</option>
+                  {calendars.map((c) => (
+                    <option key={c.id} value={String(c.id)}>
+                      {c.name}{c.account && c.account !== c.name ? ` (${c.account})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-muted">Inbox calendar (the Gmail add-on writes tasks here)</span>
+                <select value={p.inboxCalendarId ?? ""} onChange={(e) => set("inboxCalendarId", e.target.value || undefined)} className={field}>
+                  <option value="">Find “{INBOX_NAME}” by name</option>
+                  {calendars.map((c) => (
+                    <option key={c.id} value={String(c.id)}>
+                      {c.name}{c.account && c.account !== c.name ? ` (${c.account})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {!inboxFound.cal && <p className="text-xs text-muted">{INBOX_HELP}</p>}
+            </>
           )}
         </div>
       )}

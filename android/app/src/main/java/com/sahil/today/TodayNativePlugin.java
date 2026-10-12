@@ -267,10 +267,18 @@ public class TodayNativePlugin extends Plugin {
                 CalendarContract.Instances.ALL_DAY,
                 CalendarContract.Instances.EVENT_LOCATION,
                 CalendarContract.Instances.STATUS,
-                CalendarContract.Instances.SELF_ATTENDEE_STATUS
+                CalendarContract.Instances.SELF_ATTENDEE_STATUS,
+                CalendarContract.Instances.CALENDAR_ID,
+                CalendarContract.Instances.DESCRIPTION
             };
             ContentResolver cr = getContext().getContentResolver();
-            c = cr.query(builder.build(), projection, null, null, CalendarContract.Instances.BEGIN + " ASC");
+            // Calendars to leave out (Today's own "Today - Plan" / "Today - Inbox") or to read exclusively. Numbers only: safe to inline.
+            String selection = null;
+            JSArray exclude = call.getArray("excludeCalendarIds");
+            JSArray only = call.getArray("calendarIds");
+            if (only != null && only.length() > 0) selection = CalendarContract.Instances.CALENDAR_ID + " IN (" + joinIds(only) + ")";
+            else if (exclude != null && exclude.length() > 0) selection = CalendarContract.Instances.CALENDAR_ID + " NOT IN (" + joinIds(exclude) + ")";
+            c = cr.query(builder.build(), projection, selection, null, CalendarContract.Instances.BEGIN + " ASC");
             int count = 0;
             while (c != null && c.moveToNext() && count < 1500) {
                 int status = c.getInt(6);
@@ -289,6 +297,9 @@ public class TodayNativePlugin extends Plugin {
                 e.put("allDay", c.getInt(4) == 1);
                 String loc = c.getString(5);
                 if (loc != null && !loc.isEmpty()) e.put("location", loc);
+                e.put("calendarId", c.getLong(8));
+                String desc = c.getString(9);
+                if (desc != null && !desc.isEmpty()) e.put("description", desc.length() > 2000 ? desc.substring(0, 2000) : desc);
                 events.put(e);
                 count++;
             }
@@ -302,6 +313,57 @@ public class TodayNativePlugin extends Plugin {
         } finally {
             if (c != null) c.close();
         }
+    }
+
+    private static String joinIds(JSArray ids) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ids.length(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(ids.getLong(i));
+        }
+        return sb.toString();
+    }
+
+    // ---- The "Today - Plan" mirror --------------------------------------------------------------------------
+
+    /** { calendarId, map }: the calendar the mirror writes to and the occurrence key -> event id map. */
+    @PluginMethod
+    public void mirrorState(PluginCall call) {
+        try {
+            call.resolve(new JSObject(MirrorStore.state(getContext()).toString()));
+        } catch (Exception e) {
+            call.reject("Could not read the mirror state");
+        }
+    }
+
+    /** { calendarId, ops: [{op, key, day, sig, event?, final?}], plan: [...] }. Resolves { inserted, updated, deleted, failed }. */
+    @PluginMethod
+    public void mirrorApply(PluginCall call) {
+        if (getPermissionState("calendarWrite") != PermissionState.GRANTED) {
+            call.reject("Calendar permission is not granted");
+            return;
+        }
+        Long calendarId = call.getLong("calendarId");
+        JSArray ops = call.getArray("ops");
+        if (calendarId == null || ops == null) {
+            call.reject("calendarId and ops are required");
+            return;
+        }
+        try {
+            call.resolve(new JSObject(MirrorStore.apply(getContext(), calendarId, ops, call.getArray("plan")).toString()));
+        } catch (SecurityException se) {
+            call.reject("Calendar permission is not granted");
+        } catch (Exception e) {
+            call.reject("Could not update the Plan calendar");
+        }
+    }
+
+    /** Arms the daily ~06:00 alarm that rolls the mirror forward (also after a reboot, see BackupReceiver). */
+    @PluginMethod
+    public void scheduleDailyMirror(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("at", MirrorStore.scheduleDaily(getContext()));
+        call.resolve(r);
     }
 
     // ---- Calendar (write) --------------------------------------------------------------------------------
@@ -516,8 +578,9 @@ public class TodayNativePlugin extends Plugin {
     @PluginMethod
     public void pruneBackups(PluginCall call) {
         int keep = Math.max(1, Math.min(60, call.getInt("keep", 8)));
-        boolean restore = "restore".equals(call.getString("kind"));
-        int n = BackupStore.prune(getContext(), restore ? java.util.regex.Pattern.compile("^today-pre-restore-.*\\.json$") : BackupStore.WEEKLY_NAME, keep);
+        String kind = call.getString("kind");
+        java.util.regex.Pattern pattern = "restore".equals(kind) ? java.util.regex.Pattern.compile("^today-pre-restore-.*\\.json$") : "history".equals(kind) ? java.util.regex.Pattern.compile("^today-history-.*\\.json$") : BackupStore.WEEKLY_NAME;
+        int n = BackupStore.prune(getContext(), pattern, keep);
         JSObject r = new JSObject();
         r.put("deleted", n);
         call.resolve(r);

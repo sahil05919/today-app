@@ -3,6 +3,7 @@ import { syncPhoneCalendar } from "./calendarSync";
 import { runCompaction } from "./compactRun";
 import { toISO } from "./dates";
 import { pushWidgetSnapshot, takeWidgetActions } from "./nativeBridge";
+import { mirrorStep } from "./mirrorRun";
 import { rescheduleAll } from "./notifications/native";
 import { isNative } from "./platform";
 import { requestSync, setSyncSteps, type SyncStep } from "./syncPipeline";
@@ -60,6 +61,14 @@ export function syncSteps(): SyncStep[] {
         if (reasons.size === 1 && reasons.has("tick") && today === lastDay) return;
         lastDay = today;
         await rescheduleAll(getData(), { force });
+      },
+    },
+    {
+      // "Today – Plan": the safety copy of the next 7 days in Google Calendar (diff only; zero writes when nothing changed).
+      name: "plan-mirror",
+      reasons: ["change", "open", "resume", "daily", "manual"],
+      async run() {
+        await mirrorStep();
       },
     },
     {
