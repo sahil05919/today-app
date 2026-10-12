@@ -393,6 +393,14 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
 
   // ---- 5. Tidy up ------------------------------------------------------------------------------------------
   items.sort((a, b) => Number(!!b.allDay) - Number(!!a.allDay) || a.start - b.start || Number(b.fixed) - Number(a.fixed) || a.end - b.end);
+  // Two sessions of one area on the same day (the hard-rule pass allows it) would share the key "session:job". A key must be unique
+  // (it is the row's identity in the lists and the Plan calendar); the second one gets "#2", the third "#3", in time order.
+  const seenKeys = new Map<string, number>();
+  for (const it of items) {
+    const n = (seenKeys.get(it.key) ?? 0) + 1;
+    seenKeys.set(it.key, n);
+    if (n > 1) it.key = `${it.key}#${n}`;
+  }
   // "Late" is only for what was booked at a time (an event, a task with its own time). A flexible item's time is a suggestion:
   // it stays on today's to-do list without a mark until the day ends.
   if (isToday) {
@@ -413,6 +421,13 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
         (o): TLItem => ({ key: `task:${o.task.id}`, kind: "task", title: o.task.title, start: 0, end: Math.max(10, o.task.estimateMin ?? 20), fixed: false, done: false, skipped: false, carried: true, since: o.task.due, taskId: o.task.id, areaId: o.task.area }),
       ),
   ].sort((a, b) => (a.since ?? "").localeCompare(b.since ?? ""));
+  // "Still to do" can hold the same session from two different days (two missed Job sessions): same rule, unique keys.
+  const seenStill = new Map<string, number>();
+  for (const it of stillTodo) {
+    const n = (seenStill.get(it.key) ?? 0) + 1;
+    seenStill.set(it.key, n);
+    if (n > 1) it.key = `${it.key}#${n}`;
+  }
   return { date, rules: r, items, overflow, stillTodo, clashes, summary };
 }
 
