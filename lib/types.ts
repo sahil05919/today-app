@@ -504,6 +504,23 @@ export interface WeekSnapshot {
   text: string;
 }
 
+/** One thing the morning self-check found that needs a look (see lib/selfcheck.ts). */
+export interface CheckIssue {
+  id: string;
+  kind: "target" | "notification" | "orphan" | "backup";
+  text: string;
+  /** What the button does: open the targets chooser, offer the old items for Lighten my week, or back up now. */
+  action?: "targets" | "lighten" | "backup";
+}
+
+/** The last result of the self-check: what was fixed quietly, and what needs a look. */
+export interface CheckResult {
+  at: number;
+  date: ISODate;
+  issues: CheckIssue[];
+  fixed: string[];
+}
+
 export interface Settings {
   firstRunAt: number;
   lastCheckInDate?: ISODate;
@@ -554,6 +571,9 @@ export interface Settings {
   freed?: FreedOffer;
   /** Areas whose "2 of 4 fit this week" card was set aside for this week. */
   shortDismissed?: { week: ISODate; areas: string[] };
+  /** The morning self-check: its last result, and the day its card was set aside. */
+  lastCheck?: CheckResult;
+  checkDismissed?: ISODate;
 }
 
 export interface AppData {

@@ -9,6 +9,7 @@ import type { AppData, Area, AreaTarget, Bill, LearnedRule, Profile, RhythmItem,
 import { CalendarSettings } from "./CalendarSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { RepeatingTasks } from "./RepeatingTasks";
+import { HealthSettings } from "./HealthSettings";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
 
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -361,6 +362,10 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
 
         <Section title="Repeating tasks" hint={`${(data.series ?? []).filter((s) => !s.until || s.until >= ctx.today).length} repeating`}>
           <RepeatingTasks series={data.series ?? []} ctx={ctx} />
+        </Section>
+
+        <Section title="Health" hint="The morning self-check">
+          <HealthSettings data={data} ctx={ctx} />
         </Section>
 
         <Section title="Bills & chores" hint="Reminders N days before, or none for autopay">

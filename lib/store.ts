@@ -43,7 +43,7 @@ import { catchUpTask, snapshotsDue } from "./weekly";
 import { applyReschedule, carryMissed, rescheduleNow, undoReschedule, type Dest, type RescheduleChoice, type RescheduleTarget } from "./reschedule";
 import { canTakeOffDay } from "./offday";
 import { withLetter } from "./letters";
-import type { AppData, Bill, BoredIdea, EventMark, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
+import type { AppData, Bill, BoredIdea, CheckResult, EventMark, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
 /**
@@ -458,6 +458,11 @@ export const actions = {
   /** "Apply focus": next week's plan gives these areas first pick of the days. */
   applyFocus(week: ISODate, areas: string[]) {
     actions.settings({ focus: areas.length ? { week, areas } : undefined });
+  },
+
+  /** The morning self-check: its quiet fixes and its result are saved together. */
+  recordCheck(data: AppData, result: CheckResult) {
+    commit({ ...data, settings: { ...data.settings, lastCheck: result } });
   },
 
   /** Saves the weekly snapshots that are due (finished weeks, Friday's "Week so far", Sunday's "Your week"). */

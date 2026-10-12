@@ -21,7 +21,8 @@ import { FreedCard } from "./FreedCard";
 import { openCount } from "./itemActions";
 import { NextDays } from "./NextDays";
 import { RescheduleSheet } from "./RescheduleSheet";
-import { ShortfallCard } from "./ShortfallCard";
+import { CheckCard, type CheckAction } from "./CheckCard";
+import { ShortfallCard, ShortfallSheet } from "./ShortfallCard";
 import type { RescheduleTarget } from "@/lib/reschedule";
 import { NextUpCard, TimelineList } from "./Timeline";
 import { EventSheet, ItemSheet, ProgressSheet } from "./TodayPlan";
@@ -45,7 +46,7 @@ function Nudge({ emoji, title, body, action, onAction }: { emoji: string; title:
 /** "Open this card now": a tapped notification or a widget deep link asks the home screen to show a sheet. */
 export type OpenRequest = { id: number } & ({ k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "progress" });
 
-type Sheet = { k: "block"; id: BlockId; date: ISODate } | { k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "reschedule"; target: RescheduleTarget } | { k: "progress" } | null;
+type Sheet = { k: "targets" } | { k: "block"; id: BlockId; date: ISODate } | { k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "reschedule"; target: RescheduleTarget } | { k: "progress" } | null;
 
 /**
  * The home screen, built to be one glance: what's next (with Start / Done / Reschedule), your top must-have as one line,
@@ -74,6 +75,11 @@ export function TodayView({
   request?: OpenRequest | null;
 }) {
   const [sheet, setSheet] = useState<Sheet>(null);
+  const onCheckAction = (a: CheckAction) => {
+    if (a === "targets") setSheet({ k: "targets" });
+    else if (a === "lighten") openPanel("lighten");
+    else openPanel("backups");
+  };
 
   // A tapped notification lands on its own card.
   useEffect(() => {
@@ -223,6 +229,7 @@ export function TodayView({
       )}
       <FreedCard data={data} ctx={ctx} now={now} />
       <ShortfallCard data={data} ctx={ctx} now={now} />
+      <CheckCard data={data} today={ctx.today} onAction={onCheckAction} />
       {banner}
 
       <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} onReschedule={reschedule} />
@@ -255,6 +262,7 @@ export function TodayView({
         </button>
       </div>
 
+      {sheet?.k === "targets" && <ShortfallSheet data={data} ctx={ctx} now={now} onClose={() => setSheet(null)} />}
       {sheet?.k === "progress" && <ProgressSheet data={data} ctx={ctx} onClose={() => setSheet(null)} onReview={() => (setSheet(null), openPanel("review"))} />}
       {sheet?.k === "item" && <ItemSheet item={sheet.it} date={sheet.date} left={sheet.date === tl.date ? openCount(tl.items, sheet.it.key) : 1} ctx={ctx} onClose={() => setSheet(null)} onReschedule={reschedule} openPanel={openPanel} />}
       {sheet?.k === "block" && <BlockSheet id={sheet.id} date={sheet.date} ctx={ctx} onClose={() => setSheet(null)} />}

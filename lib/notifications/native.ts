@@ -232,6 +232,16 @@ export function rescheduleAll(data: AppData, opts: { force?: boolean } = {}): Pr
   return next;
 }
 
+/** The ids of everything Android has scheduled for this app right now (for the self-check). null when it cannot be read. */
+export async function pendingIds(): Promise<number[] | null> {
+  if (!isNative()) return null;
+  try {
+    return (await LocalNotifications.getPending()).notifications.map((n) => n.id);
+  } catch {
+    return null;
+  }
+}
+
 /** A notification 5 seconds from now, to check everything is wired up. */
 export async function sendTest(): Promise<boolean> {
   if (!isNative()) return false;

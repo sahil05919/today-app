@@ -42,7 +42,7 @@ export function ShortfallCard({ data, ctx, now }: { data: AppData; ctx: ViewCtx;
   );
 }
 
-function ShortfallSheet({ data, ctx, now, onClose }: { data: AppData; ctx: ViewCtx; now: Date; onClose: () => void }) {
+export function ShortfallSheet({ data, ctx, now, onClose }: { data: AppData; ctx: ViewCtx; now: Date; onClose: () => void }) {
   const short = useShortfalls(data, now);
   const areas = withDefaults(data.profile).areas;
   const week = weekStart(ctx.today);

@@ -13,6 +13,8 @@ import { dateInKey, resolveTap } from "@/lib/tap";
 import { settleNote, settleOverflow } from "@/lib/settle";
 import { findTask } from "@/lib/series";
 import { weekStart } from "@/lib/stats";
+import { checkDue } from "@/lib/selfcheck";
+import { runCheck } from "@/lib/selfcheckRun";
 import { actions, getData, useData } from "@/lib/store";
 import { buildTimeline, firstThing, isNight } from "@/lib/timeline";
 import type { ISODate, Task } from "@/lib/types";
@@ -208,6 +210,21 @@ export default function App() {
   useEffect(() => {
     if (loaded) actions.saveWeeks();
   }, [loaded, today, quarter]);
+
+  // The morning self-check: on the first open each day, and on coming back if the last one is over 12 hours old.
+  useEffect(() => {
+    if (!loaded) return;
+    const go = () => {
+      if (checkDue(getData(), new Date())) void runCheck();
+    };
+    const id = setTimeout(go, 2500);
+    const onVisible = () => document.visibilityState === "visible" && go();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearTimeout(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [loaded, today]);
 
   // Each new day (and on start): older unresolved repeats are logged as missed; only the latest carries forward.
   useEffect(() => {

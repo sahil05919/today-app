@@ -10,6 +10,7 @@ import type {
   Bill,
   BoredIdea,
   CheckInAnswer,
+  CheckResult,
   CheckInStatus,
   CoachLetter,
   DayEntry,
@@ -279,6 +280,19 @@ function cleanOccurrences(v: any): Occurrence[] | undefined {
     });
   }
   return out;
+}
+
+function cleanCheck(v: any): CheckResult | undefined {
+  if (!v || typeof v !== "object" || !Number.isFinite(v.at) || !isISO(v.date) || !Array.isArray(v.issues)) return undefined;
+  return {
+    at: v.at,
+    date: v.date,
+    issues: v.issues
+      .filter((i: any) => i && typeof i.id === "string" && typeof i.text === "string" && ["target", "notification", "orphan", "backup"].includes(i.kind))
+      .slice(0, 20)
+      .map((i: any) => ({ id: i.id.slice(0, 60), kind: i.kind, text: i.text.slice(0, 200), action: ["targets", "lighten", "backup"].includes(i.action) ? i.action : undefined })),
+    fixed: Array.isArray(v.fixed) ? v.fixed.filter((x: unknown) => typeof x === "string").slice(0, 20).map((x: string) => x.slice(0, 200)) : [],
+  };
 }
 
 function cleanTarget(t: any): AreaTarget | undefined {
@@ -640,6 +654,8 @@ export function migrate(raw: unknown): AppData {
           ? (Object.fromEntries(Object.entries(s.snoozes).filter(([k, v]) => typeof v === "number" && v > 0 && k.length < 90).slice(0, 300)) as Record<string, number>)
           : undefined,
       exactAsked: s.exactAsked === true ? true : undefined,
+      lastCheck: cleanCheck(s.lastCheck),
+      checkDismissed: isISO(s.checkDismissed) ? s.checkDismissed : undefined,
       shortDismissed: s.shortDismissed && isISO(s.shortDismissed.week) && Array.isArray(s.shortDismissed.areas) ? { week: s.shortDismissed.week, areas: s.shortDismissed.areas.filter((a: unknown) => typeof a === "string").slice(0, 20) } : undefined,
       sofarWeek: isISO(s.sofarWeek) ? s.sofarWeek : undefined,
       focus: s.focus && isISO(s.focus.week) && Array.isArray(s.focus.areas) ? { week: s.focus.week, areas: s.focus.areas.filter((a: unknown) => typeof a === "string").slice(0, 4) } : undefined,
