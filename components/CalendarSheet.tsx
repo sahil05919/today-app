@@ -5,6 +5,8 @@ import { toHHMM } from "@/lib/profile";
 import { weekStart } from "@/lib/stats";
 import { buildTimeline, type TLItem, type Timeline } from "@/lib/timeline";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
+import type { RescheduleTarget } from "@/lib/reschedule";
+import { RescheduleSheet } from "./RescheduleSheet";
 import { EventSheet, ItemSheet } from "./TodayPlan";
 import { LaterView } from "./LaterView";
 import { Chip, Sheet, type ViewCtx } from "./ui";
@@ -61,6 +63,7 @@ export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppDat
   const [event, setEvent] = useState<FixedEvent | null>(null);
   /** A session, chore or bill opened from any day: the same sheet as on Today. */
   const [item, setItem] = useState<{ it: TLItem; date: ISODate } | null>(null);
+  const [resched, setResched] = useState<RescheduleTarget | null>(null);
 
   const now = useMemo(() => new Date(), []);
   const monthStart = `${anchor.slice(0, 7)}-01`;
@@ -202,7 +205,8 @@ export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppDat
         </>
       )}
 
-      {item && <ItemSheet item={item.it} date={item.date} left={1} ctx={ctx} onClose={() => setItem(null)} />}
+      {item && <ItemSheet item={item.it} date={item.date} left={1} ctx={ctx} onClose={() => setItem(null)} onReschedule={(it) => setResched({ kind: "item", item: it, date: item.date })} />}
+      {resched && <RescheduleSheet target={resched} ctx={ctx} onClose={() => setResched(null)} />}
       {event && (event.source === "calendar" ? <CalendarEventInfo event={event} onClose={() => setEvent(null)} /> : <EventSheet event={event} data={data} ctx={ctx} onClose={() => setEvent(null)} />)}
     </Sheet>
   );

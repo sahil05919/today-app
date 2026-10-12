@@ -7,7 +7,7 @@ import { actions } from "@/lib/store";
 import type { ISODate, Task } from "@/lib/types";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
 
-/** One-tap snooze (mode "snooze") or "when?" for tasks with no date (mode "schedule"). */
+/** "When?" for a task with no date yet. (Moving something that already has a day is Reschedule.) */
 export function WhenSheet({
   task,
   mode,
@@ -15,13 +15,12 @@ export function WhenSheet({
   onClose,
 }: {
   task: Task;
-  mode: "snooze" | "schedule";
+  mode: "schedule";
   ctx: ViewCtx;
   onClose: () => void;
 }) {
   const [pick, setPick] = useState("");
-  const kinds: WhenKind[] =
-    mode === "snooze" ? ["later-today", "tomorrow", "weekend", "next-week"] : ["today", "tomorrow", "weekend", "next-week"];
+  const kinds: WhenKind[] = ["today", "tomorrow", "weekend", "next-week"];
 
   const apply = (due: ISODate, kind?: WhenKind) => {
     const prev = { due: task.due, dueTime: task.dueTime, focus: task.focus };
@@ -34,14 +33,14 @@ export function WhenSheet({
     actions.update(task.id, patch);
     buzz(15);
     ctx.notify(
-      `${mode === "snooze" ? "Snoozed" : "Set"} for ${friendlyDate(due, ctx.today).toLowerCase()}`,
+      `Set for ${friendlyDate(due, ctx.today).toLowerCase()}`,
       () => actions.update(task.id, prev),
     );
     onClose();
   };
 
   return (
-    <Sheet title={mode === "snooze" ? "Snooze until…" : "When?"} onClose={onClose}>
+    <Sheet title="When?" onClose={onClose}>
       <p className="-mt-1 mb-3 truncate text-sm text-muted">{task.title}</p>
       <div className="grid grid-cols-2 gap-2.5">
         {kinds.map((k) => {

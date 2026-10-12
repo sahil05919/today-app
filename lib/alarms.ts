@@ -16,8 +16,6 @@ export interface DueAlarm {
   at: number;
 }
 
-/** Snooze choices on the ringing screen, in minutes. */
-export const SNOOZE_CHOICES = [5, 10, 60];
 /** A reminder that is still unanswered this long after its time stops ringing (it's still on Today). */
 export const RING_WINDOW_MS = 3 * 3600_000;
 

@@ -327,7 +327,7 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
             >
               + Add a check-in
             </button>
-            <p className="mt-2 text-xs text-muted">{"{name}"} becomes your name. Tracked check-ins get Done / Snooze / Skip buttons.</p>
+            <p className="mt-2 text-xs text-muted">{"{name}"} becomes your name. Tracked check-ins get Done / +1 hour / Skip buttons.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -32,6 +32,8 @@ import {
 } from "./series";
 import { billKey } from "./bills";
 import { forget, learnFix, learnItem } from "./learn";
+import { taskEvent } from "./history";
+import { applyReschedule, carryMissed, rescheduleNow, undoReschedule, type Dest, type RescheduleChoice, type RescheduleTarget } from "./reschedule";
 import { canTakeOffDay } from "./offday";
 import { withLetter } from "./letters";
 import type { AppData, Bill, BoredIdea, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
@@ -51,8 +53,6 @@ export interface StorageAdapter {
 export const KEY = "today:v1";
 /** A full copy of the data exactly as the older (v1) build saved it, written once before anything is migrated. */
 export const BACKUP_KEY = "today:v1:backup-pre-v2";
-/** A task or item can be snoozed this many times; the next time you must choose. */
-export const MAX_SNOOZES = 2;
 /** "Do it now": a small first push. */
 export const DO_NOW_MIN = 15;
 
@@ -391,11 +391,64 @@ export const actions = {
     commit(restoreSnapshot(ensure(), snap));
   },
 
-  /** Older unresolved occurrences become "missed" (only the latest carries forward). Cheap to call often. */
-  sweep(today: ISODate = todayISO()) {
+  /**
+   * Housekeeping, cheap to call often: older unresolved repeats become "missed" (only the latest carries forward), and
+   * yesterday's missed sessions / bills carry into "Still to do" instead of vanishing.
+   */
+  sweep(now: Date = new Date()) {
     const d = ensure();
-    const next = sweepMissed(d, today);
+    const next = carryMissed(sweepMissed(d, toISO(now)), now);
     if (next !== d) commit(next);
+  },
+
+  /**
+   * Reschedule (it replaces Snooze): +1 hour, this evening, tomorrow morning, a picked date and time, or "Not sure" (the
+   * planner decides). Returns the toast text and an Undo, or null when it could not be done (e.g. "this evening" is gone).
+   */
+  reschedule(target: RescheduleTarget, choice: RescheduleChoice, now: Date = new Date()): { message: string; undo: () => void; dest: Dest } | null {
+    const d = ensure();
+    const r = rescheduleNow(d, target, choice, now);
+    if (!r) return null;
+    commit(r.data);
+    return { message: r.message, dest: r.dest, undo: () => commit(undoReschedule(ensure(), r.receipt)) };
+  },
+
+  /** Moves something to an exact day and time. */
+  rescheduleTo(target: RescheduleTarget, dest: Dest, now: Date = new Date()): { message: string; undo: () => void } | null {
+    const d = ensure();
+    const r = applyReschedule(d, target, dest, now);
+    if (!r) return null;
+    commit(r.data);
+    return { message: r.message, undo: () => commit(undoReschedule(ensure(), r.receipt)) };
+  },
+
+  /**
+   * Skip a task. A repeat's occurrence is marked skipped (it stays in the history); a carried or rescheduled session /
+   * chore / bill marks its original skipped; an ordinary task is removed and logged as skipped. Returns an Undo.
+   */
+  skipTask(id: string, now: Date = new Date()): (() => void) | null {
+    const d = ensure();
+    const t = findTask(d, id);
+    if (!t) return null;
+    if (isOccId(id) && !d.tasks.some((x) => x.id === id)) {
+      commit(setOccSkipped(d, id, true));
+      return () => commit(setOccSkipped(ensure(), id, false));
+    }
+    const key = t.origin?.key;
+    const prevEntry = key ? (d.log ?? []).find((e) => e.key === key) : undefined;
+    const log = key ? [...(d.log ?? []).filter((e) => e.key !== key), { key, status: "skip" as const, at: now.getTime() }] : d.log;
+    // An ordinary task has no "skipped" state: it leaves the list and the history remembers it was skipped.
+    const history = t.origin ? d.history : [...(d.history ?? []), taskEvent(t, "skipped", now.getTime(), t.due ?? toISO(now))];
+    commit({ ...d, tasks: d.tasks.filter((x) => x.id !== id), log, history });
+    return () => {
+      const c = ensure();
+      commit({
+        ...c,
+        tasks: [t, ...c.tasks.filter((x) => x.id !== id)],
+        log: key ? [...(c.log ?? []).filter((e) => e.key !== key), ...(prevEntry ? [prevEntry] : [])] : c.log,
+        history: t.origin ? c.history : (c.history ?? []).filter((e) => !(e.kind === "skipped" && e.key === taskEvent(t, "skipped", 0, "").key && e.at === now.getTime())),
+      });
+    };
   },
 
   /**
@@ -417,76 +470,6 @@ export const actions = {
         return m ? { ...t, due: m.to, dueTime: m.time, remindAt: undefined, slot: undefined, hideUntil: undefined } : t;
       }),
     });
-  },
-
-  /**
-   * Snoozes a task. Returns "decide" instead when it has already been snoozed twice: the third time you choose
-   * (do it now, give it a fixed slot, or drop it), so nothing drifts for ever.
-   */
-  snoozeTask(id: string, kind: "hour" | "evening" | "tomorrow", now: Date = new Date()): "snoozed" | "decide" {
-    const t = findTask(ensure(), id);
-    if (!t) return "snoozed";
-    if ((t.snoozeCount ?? 0) >= MAX_SNOOZES) return "decide";
-    const count = (t.snoozeCount ?? 0) + 1;
-    const today = todayISO(now);
-    if (kind === "tomorrow") {
-      mapTask(id, (x) => ({ ...x, due: addDays(today, 1), remindAt: undefined, snoozeCount: count }));
-      return "snoozed";
-    }
-    const mins = now.getHours() * 60 + now.getMinutes();
-    const target = kind === "hour" ? mins + 60 : Math.max(18 * 60, mins + 60);
-    const at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    at.setMinutes(Math.ceil(target / 5) * 5);
-    if (at.getTime() <= now.getTime() || todayISO(at) !== today) {
-      // Too late in the day for "later today": tomorrow it is.
-      mapTask(id, (x) => ({ ...x, due: addDays(today, 1), remindAt: undefined, snoozeCount: count }));
-      return "snoozed";
-    }
-    // A task with its own time moves that time; an untimed one just won't be placed before then.
-    mapTask(id, (x) =>
-      x.dueTime && x.due === today
-        ? { ...x, dueTime: `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`, snoozeCount: count }
-        : { ...x, due: x.due && x.due < today ? today : x.due, remindAt: at.getTime(), snoozeCount: count },
-    );
-    return "snoozed";
-  },
-
-  /** The third-snooze choice. "now" starts a 15-minute timer, "slot" books a fixed time, "drop" deletes it (undoable by the caller). */
-  decideTask(id: string, choice: "now" | "slot" | "drop", slot?: { date: ISODate; time: string }) {
-    const t = findTask(ensure(), id);
-    if (!t) return;
-    if (choice === "drop") {
-      actions.remove(id);
-      return;
-    }
-    if (choice === "slot" && slot) {
-      mapTask(id, (x) => ({ ...x, due: slot.date, dueTime: slot.time, remindAt: undefined, snoozeCount: 0 }));
-      return;
-    }
-    if (choice === "now") {
-      mapTask(id, (x) => ({ ...x, due: todayISO(), remindAt: undefined, snoozeCount: 0 }));
-      actions.startTimer(id, DO_NOW_MIN);
-    }
-  },
-
-  /** Snoozes a session / chore / bill for today. Returns "decide" on the third time. */
-  snoozeItem(key: string, until: number, date: ISODate = todayISO()): "snoozed" | "decide" {
-    const d = ensure();
-    const k = `${key}@${date}`;
-    // Only today's counters are worth keeping.
-    const snoozes = Object.fromEntries(Object.entries(d.settings.snoozes ?? {}).filter(([x]) => x.endsWith(`@${date}`)));
-    const n = snoozes[k] ?? 0;
-    if (n >= MAX_SNOOZES) return "decide";
-    commit({ ...d, settings: { ...d.settings, snoozes: { ...snoozes, [k]: n + 1 } } });
-    return "snoozed";
-  },
-
-  /** Forgets the snooze count of an item (after you chose what to do with it). */
-  clearSnoozes(key: string, date: ISODate = todayISO()) {
-    const d = ensure();
-    const snoozes = { ...(d.settings.snoozes ?? {}) };
-    delete snoozes[`${key}@${date}`];
-    commit({ ...d, settings: { ...d.settings, snoozes } });
   },
 
   /** Returns false when the focus list is full. */

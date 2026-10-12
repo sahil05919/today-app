@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { dueAlarms, SNOOZE_CHOICES, type DueAlarm } from "@/lib/alarms";
+import { dueAlarms, type DueAlarm } from "@/lib/alarms";
 import { isNative } from "@/lib/platform";
 import { actions } from "@/lib/store";
 import type { AppData } from "@/lib/types";
@@ -48,7 +48,7 @@ async function showSystemNotification(a: DueAlarm) {
 }
 
 /**
- * Rings a timed reminder like an alarm clock while the app is open: a full-screen card with Done and Snooze,
+ * Rings a timed reminder like an alarm clock while the app is open: a full-screen card with Done and +1 hour,
  * a repeating beep and vibration, and a system notification if the tab is hidden. When the app is closed on the
  * web nothing can ring (a browser can't wake itself up); the Android app schedules real alarms for that.
  */
@@ -123,7 +123,7 @@ export function AlarmRinger({ data }: { data: AppData }) {
     return () => clearInterval(id);
   }, [current]);
 
-  const answer = useCallback((a: DueAlarm, what: "done" | "stop" | number) => {
+  const answer = useCallback((a: DueAlarm, what: "done" | "stop" | "hour") => {
     if (!a.taskId) {
       testAlarm.current = null;
     } else if (what === "done") {
@@ -131,14 +131,15 @@ export function AlarmRinger({ data }: { data: AppData }) {
     } else if (what === "stop") {
       actions.update(a.taskId, { alarmAck: Date.now() });
     } else {
-      actions.update(a.taskId, { alarmAck: Date.now(), remindAt: Date.now() + what * 60_000 });
+      // "+1 hour" is Reschedule, the same as everywhere else: the reminder moves and rings again at its new time.
+      actions.update(a.taskId, { alarmAck: Date.now() });
+      actions.reschedule({ kind: "task", taskId: a.taskId }, { kind: "hour" });
     }
     setRinging((r) => r.filter((x) => x.key !== a.key));
   }, []);
 
   if (!current) return null;
   const time = new Date(current.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  const label = (m: number) => (m >= 60 ? `${m / 60} h` : `${m} min`);
 
   return (
     <div role="alertdialog" aria-modal="true" aria-label={`Reminder: ${current.title}`} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-5">
@@ -155,13 +156,9 @@ export function AlarmRinger({ data }: { data: AppData }) {
           </button>
           {current.taskId && (
             <>
-              <div className="grid grid-cols-3 gap-2">
-                {SNOOZE_CHOICES.map((m) => (
-                  <button key={m} className={`${btn.soft} min-h-12`} onClick={() => answer(current, m)}>
-                    Snooze {label(m)}
-                  </button>
-                ))}
-              </div>
+              <button className={`${btn.soft} min-h-12 w-full`} onClick={() => answer(current, "hour")}>
+                ↻ Reschedule +1 hour
+              </button>
               <button className={`${btn.link} min-h-11`} onClick={() => answer(current, "stop")}>
                 Stop ringing (keep the task)
               </button>

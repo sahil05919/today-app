@@ -1,7 +1,10 @@
 import { LocalNotifications, type ActionPerformed } from "@capacitor/local-notifications";
 import { createAlarmChannel } from "../nativeBridge";
+import { toISO } from "../dates";
 import { isNative } from "../platform";
 import { findTask, parseOccKey } from "../series";
+import { itemFromRef } from "../reschedule";
+import { findTimelineItem } from "../tap";
 import { actions, getData, whenLoaded } from "../store";
 import { applyTimerAction } from "../timerRun";
 import { planNotifications, signature, type NotifKind, type PlannedNotification } from "./plan";
@@ -20,12 +23,24 @@ const TASK_ACTIONS = "TASK";
 const ALARM_ACTIONS = "ALARM";
 const CHECKIN_ACTIONS = "CHECKIN";
 const TIMER_ACTIONS = "TIMER";
-export const SNOOZE_MINUTES = 30;
+/** The old Snooze buttons are Reschedule +1 hour now. */
+export const RESCHEDULE_BUTTON = "+1 hour";
+
+/** "+1 hour" on a notification is Reschedule, exactly as in the app. */
+export function reschedulePlusHour(ref: string, nowMs = Date.now()) {
+  const now = new Date(nowMs);
+  const own = ref.split(":").find((p) => /^\d{4}-\d{2}-\d{2}$/.test(p));
+  const found = findTimelineItem(getData(), ref, toISO(now), now);
+  // Use the timeline's item when it is on the reminder's own day; otherwise rebuild it from the reference.
+  const target = found && found.date === own ? { item: found.it, date: found.date } : itemFromRef(getData(), ref);
+  if (target) actions.reschedule({ kind: "item", item: target.item, date: target.date }, { kind: "hour" }, now);
+}
 
 /**
- * Done / Snooze / Skip on a session, chore or end-of-day check-in.
- * `ref` is "session:<areaId>:<date>", "chore:<id>:<date>" or "wrap:<date>".
- * Done counts the session ("Power BI session 14"); Snooze asks again later; Skip leaves it uncounted today.
+ * Done / +1 hour / Skip on a session, chore, bill or end-of-day check-in.
+ * `ref` is "session:<areaId>:<date>", "chore:<id>:<date>", "bill:<id>:<due>" or "wrap:<date>".
+ * Done counts the session ("Power BI session 14"); +1 hour reschedules it (the end-of-day question just asks again);
+ * Skip leaves it uncounted today.
  */
 export function applyCheckInAction(actionId: string, ref: string, now = Date.now()) {
   const [kind, ...rest] = ref.split(":");
@@ -39,7 +54,10 @@ export function applyCheckInAction(actionId: string, ref: string, now = Date.now
     else if (kind === "bill") actions.completeBill(rest[0], date);
     else actions.setEntry(ref, "done");
   } else if (actionId === "skip") actions.setEntry(ref, "skip");
-  else if (actionId === "snooze") actions.setEntry(ref, "snooze", now + SNOOZE_MINUTES * 60_000);
+  else if (actionId === "snooze") {
+    if (kind === "wrap") actions.setEntry(ref, "snooze", now + 60 * 60_000);
+    else reschedulePlusHour(ref, now);
+  }
 }
 
 export type PermissionState = "granted" | "denied" | "prompt";
@@ -77,7 +95,7 @@ export async function openExactAlarmSettings(): Promise<PermissionState | null> 
 }
 
 let inited = false;
-/** Creates the channels and the Done / On track / Snooze buttons. Safe to call repeatedly. */
+/** Creates the channels and the Done / On track / +1 hour buttons. Safe to call repeatedly. */
 export async function initNotifications() {
   if (!isNative() || inited) return;
   inited = true;
@@ -112,13 +130,12 @@ export async function initNotifications() {
     // Android shows at most 3 buttons. "Behind" is what happens when you tap the notification itself.
     await LocalNotifications.registerActionTypes({
       types: [
-        // A timed reminder behaves like a phone alarm: Done, or snooze for a short or a long while.
+        // A timed reminder behaves like a phone alarm: Done, or Reschedule +1 hour.
         {
           id: ALARM_ACTIONS,
           actions: [
             { id: "done", title: "✓ Done" },
-            { id: "snooze10", title: "Snooze 10 min" },
-            { id: "snooze60", title: "Snooze 1 h" },
+            { id: "snooze60", title: "↻ +1 hour" },
           ],
         },
         // The timer ran out: log it, or take five more minutes.
@@ -134,7 +151,7 @@ export async function initNotifications() {
           actions: [
             { id: "done", title: "✓ Done" },
             { id: "ontrack", title: "On track" },
-            { id: "snooze", title: "Snooze 2h" },
+            { id: "snooze", title: "↻ +1 hour" },
           ],
         },
         // Sessions, chores ("Have you sorted your email?") and the end-of-day question.
@@ -142,7 +159,7 @@ export async function initNotifications() {
           id: CHECKIN_ACTIONS,
           actions: [
             { id: "done", title: "✓ Done" },
-            { id: "snooze", title: "Snooze" },
+            { id: "snooze", title: "↻ +1 hour" },
             { id: "skip", title: "Skip" },
           ],
         },
@@ -236,8 +253,8 @@ export async function sendTest(): Promise<boolean> {
 }
 
 /**
- * Buttons on a timed reminder. "done" finishes the task; "snooze10" / "snooze60" ring again later;
- * "ack" just means you saw it. Returns false when the action isn't an alarm one.
+ * Buttons on a timed reminder. "done" finishes the task; "snooze10" / "snooze60" are Reschedule +1 hour (an alarm
+ * that is moved rings again at its new time); "ack" just means you saw it. Returns false when it isn't an alarm one.
  */
 export function applyAlarmAction(actionId: string, taskId: string, firedAt = Date.now(), now = Date.now()): boolean {
   if (!["done", "snooze10", "snooze60", "ack"].includes(actionId)) return false;
@@ -246,7 +263,10 @@ export function applyAlarmAction(actionId: string, taskId: string, firedAt = Dat
   const ack = Math.max(firedAt, now);
   if (actionId === "done") actions.toggleDone(taskId);
   else if (actionId === "ack") actions.update(taskId, { alarmAck: ack });
-  else actions.update(taskId, { alarmAck: ack, remindAt: now + (actionId === "snooze10" ? 10 : 60) * 60_000 });
+  else {
+    actions.update(taskId, { alarmAck: ack });
+    actions.reschedule({ kind: "task", taskId }, { kind: "hour" }, new Date(now));
+  }
   return true;
 }
 
@@ -316,7 +336,7 @@ export async function listenForActions(onTap: (t: TapTarget) => void): Promise<(
       const task = extra.taskId ? findTask(getData(), extra.taskId) : undefined;
       if (!task || task.status !== "open") return;
       if (actionId === "ontrack") actions.recordCheckIn(task.id, "on-track");
-      else if (actionId === "snooze") actions.update(task.id, { remindAt: Date.now() + 2 * 3600_000 });
+      else if (actionId === "snooze") actions.reschedule({ kind: "task", taskId: task.id }, { kind: "hour" });
     }
 
     // If this button press is what brought the app forward, put it back where it was.

@@ -46,7 +46,7 @@ export function TaskCard({
   const rem = remainingMinutes(task);
   const area = task.area ? ctx.profile.areas.find((a) => a.id === task.area) : undefined;
 
-  // --- swipe: right = done, left = snooze -------------------------------
+  // --- swipe: right = done, left = reschedule -------------------------------
   const [dx, setDx] = useState(0);
   const [dragging, setDragging] = useState(false);
   const start = useRef<{ x: number; y: number } | null>(null);
@@ -75,7 +75,7 @@ export function TaskCard({
         }
       } else return;
     }
-    // Done tasks can only be swiped right (to reopen); there's nothing to snooze.
+    // Done tasks can only be swiped right (to reopen); there's nothing to reschedule.
     const v = Math.max(done ? 0 : -MAX_PULL, Math.min(MAX_PULL, ddx));
     dxRef.current = v;
     setDx(v);
@@ -100,7 +100,7 @@ export function TaskCard({
     if (v >= THRESHOLD) completeWithToast(task, ctx);
     else if (v <= -THRESHOLD && !done) {
       buzz(20);
-      ctx.when(task.id, "snooze");
+      ctx.when(task.id, "reschedule");
     }
   };
 
@@ -115,7 +115,7 @@ export function TaskCard({
         }`}
       >
         <span>{dx > 0 ? (done ? "Reopen" : "✓ Done") : ""}</span>
-        <span>{dx < 0 ? "Snooze ⏰" : ""}</span>
+        <span>{dx < 0 ? "Reschedule ↻" : ""}</span>
       </div>
 
       <div

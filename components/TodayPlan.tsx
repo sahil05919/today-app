@@ -17,7 +17,7 @@ const hm = (min: number) => toHHMM(min);
 
 /**
  * Details and actions for a session, chore or bill on the timeline, on ANY day (Today and the Calendar share it).
- *   today   Start / Done / Snooze / Skip, and "One more" for a session
+ *   today   Done, then Start / Reschedule / Skip, and "One more" for a session
  *   future  "Done already": you did it early, so it counts now and its slot and reminder go away
  *   past    "Missed": "I did it" is logged on THAT day (a bill: "Paid"), or Skip
  */
@@ -27,7 +27,7 @@ export function ItemSheet({
   left,
   ctx,
   onClose,
-  onSnooze,
+  onReschedule,
   openPanel,
 }: {
   item: TLItem;
@@ -36,8 +36,8 @@ export function ItemSheet({
   left: number;
   ctx: ViewCtx;
   onClose: () => void;
-  /** Snooze only exists on Today (the Calendar leaves it out). */
-  onSnooze?: (it: TLItem) => void;
+  /** Opens the Reschedule sheet for this item. */
+  onReschedule?: (it: TLItem) => void;
   openPanel?: (p: Panel) => void;
 }) {
   const data = useData();
@@ -145,8 +145,8 @@ export function ItemSheet({
             >
               {mode === "future" ? "✓ Done already" : mode === "past" ? (bill?.kind === "bill" ? "✓ Paid" : "✓ I did it") : "✓ Done"}
             </button>
-            {mode === "today" ? (
-              <div className={`grid gap-2 ${onSnooze ? "grid-cols-3" : "grid-cols-2"}`}>
+            <div className={`grid gap-2 ${mode === "today" ? "grid-cols-3" : "grid-cols-2"}`}>
+              {mode === "today" && (
                 <button
                   className={`${btn.soft} min-h-12`}
                   onClick={() => {
@@ -156,30 +156,20 @@ export function ItemSheet({
                 >
                   ▶ Start
                 </button>
-                {onSnooze && (
-                  <button
-                    className={`${btn.ghost} min-h-12`}
-                    onClick={() => {
-                      onClose();
-                      onSnooze(item);
-                    }}
-                  >
-                    Snooze
-                  </button>
-                )}
+              )}
+              {onReschedule && (
                 <button
                   className={`${btn.ghost} min-h-12`}
                   onClick={() => {
-                    skipItem(item, ctx, date);
                     onClose();
+                    onReschedule(item);
                   }}
                 >
-                  Skip
+                  ↻ Reschedule
                 </button>
-              </div>
-            ) : (
+              )}
               <button
-                className={btnClass("ghost")}
+                className={`${btn.ghost} min-h-12`}
                 onClick={() => {
                   skipItem(item, ctx, date);
                   onClose();
@@ -187,7 +177,7 @@ export function ItemSheet({
               >
                 Skip
               </button>
-            )}
+            </div>
           </>
         )}
       </div>

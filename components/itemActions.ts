@@ -74,6 +74,12 @@ export function undoItem(it: TLItem, ctx: ViewCtx, date: ISODate) {
 }
 
 export function skipItem(it: TLItem, ctx: ViewCtx, date: ISODate) {
+  // A task (an ordinary one, a repeat's occurrence, or a carried / rescheduled session, chore or bill).
+  if (it.kind === "task" && it.taskId) {
+    const undo = actions.skipTask(it.taskId);
+    if (undo) ctx.notify(`Skipped ${it.title}`, undo);
+    return;
+  }
   const key = entryKeyOf(it, date);
   if (!key) return;
   actions.setEntry(key, "skip");

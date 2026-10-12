@@ -11,8 +11,11 @@ import type {
   CheckInStatus,
   CoachLetter,
   DayEntry,
+  BlockOverride,
+  EventMark,
   FixedEvent,
   GroceryItem,
+  HistoryEvent,
   LearnedRule,
   UserWord,
   MonthGoals,
@@ -26,6 +29,7 @@ import type {
   Task,
   TaskOrigin,
   TemplateId,
+  WeekSnapshot,
 } from "./types";
 
 export const BACKUP_EVERY_DAYS = 14;
@@ -130,6 +134,7 @@ function cleanOrigin(v: any): TaskOrigin | undefined {
     billId: str(v.billId, 40),
     due: isISO(v.due) ? v.due : undefined,
     carried: v.carried === true ? true : undefined,
+    prevLastDone: isISO(v.prevLastDone) ? v.prevLastDone : undefined,
   };
 }
 
@@ -159,6 +164,72 @@ function cleanSeries(v: any): Series[] | undefined {
     });
   }
   return out;
+}
+
+const HIST_KINDS = ["done", "skipped", "missed", "rescheduled", "reopened"];
+const HIST_TYPES = ["session", "task", "event", "bill", "routine"];
+
+function cleanHistory(v: any): HistoryEvent[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .filter((e: any) => e && typeof e.key === "string" && isISO(e.date) && HIST_KINDS.includes(e.kind) && HIST_TYPES.includes(e.type) && typeof e.title === "string")
+    .slice(-20000)
+    .map((e: any) => ({
+      id: str(e.id, 64) || crypto.randomUUID(),
+      at: num(e.at) ?? Date.now(),
+      date: e.date,
+      kind: e.kind,
+      type: e.type,
+      key: e.key.slice(0, 120),
+      title: e.title.slice(0, 200),
+      area: str(e.area, 40),
+      createdByMe: e.createdByMe === true,
+      to: e.to && isISO(e.to.date) ? { date: e.to.date, time: hhmmOf(e.to.time) } : undefined,
+    }));
+}
+
+function cleanBlocks(v: any): Record<string, BlockOverride> | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const out: Record<string, BlockOverride> = {};
+  for (const [k, b] of Object.entries(v).slice(-400) as Array<[string, any]>) {
+    if (!/@\d{4}-\d{2}-\d{2}$/.test(k) || k.length > 60 || !b || typeof b !== "object") continue;
+    const start = Number.isFinite(b.start) && b.start >= 0 && b.start < 1440 ? Math.round(b.start) : undefined;
+    const min = Number.isFinite(b.min) && b.min >= 0 && b.min <= 1440 ? Math.round(b.min) : undefined;
+    const skip = b.skip === true ? true : undefined;
+    if (start !== undefined || min !== undefined || skip) out[k] = { start, min, skip };
+  }
+  return out;
+}
+
+function cleanEventMarks(v: any): Record<string, EventMark> | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const out: Record<string, EventMark> = {};
+  for (const [k, m] of Object.entries(v).slice(-2000) as Array<[string, any]>) {
+    if (!/@\d{4}-\d{2}-\d{2}$/.test(k) || k.length > 140 || !m || typeof m !== "object") continue;
+    const mark: EventMark = { done: num(m.done), hidden: m.hidden === true ? true : undefined, start: hhmmOf(m.start), end: hhmmOf(m.end) };
+    if (mark.done || mark.hidden || mark.start || mark.end) out[k] = mark;
+  }
+  return out;
+}
+
+function cleanWeeks(v: any): WeekSnapshot[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .filter((w: any) => w && isISO(w.week) && ["week-so-far", "your-week"].includes(w.kind) && Array.isArray(w.areas))
+    .slice(-60)
+    .map((w: any) => ({
+      week: w.week,
+      at: num(w.at) ?? Date.now(),
+      kind: w.kind,
+      areas: w.areas
+        .filter((a: any) => a && typeof a.id === "string")
+        .slice(0, 30)
+        .map((a: any) => ({ id: a.id.slice(0, 40), name: String(a.name ?? a.id).slice(0, 40), emoji: String(a.emoji ?? "•").slice(0, 8), done: Number.isFinite(a.done) ? Math.max(0, Math.round(a.done)) : 0, target: Number.isFinite(a.target) ? Math.max(0, Math.round(a.target)) : 0 })),
+      own: { added: Number.isFinite(w.own?.added) ? w.own.added : 0, finished: Number.isFinite(w.own?.finished) ? w.own.finished : 0, names: Array.isArray(w.own?.names) ? w.own.names.filter((x: unknown) => typeof x === "string").slice(0, 40).map((x: string) => x.slice(0, 80)) : [] },
+      events: { handled: Number.isFinite(w.events?.handled) ? w.events.handled : 0, names: Array.isArray(w.events?.names) ? w.events.names.filter((x: unknown) => typeof x === "string").slice(0, 40).map((x: string) => x.slice(0, 80)) : [] },
+      focus: Array.isArray(w.focus) ? w.focus.filter((x: unknown) => typeof x === "string").slice(0, 4) : [],
+      text: String(w.text ?? "").slice(0, 3000),
+    }));
 }
 
 function cleanOccurrences(v: any): Occurrence[] | undefined {
@@ -501,6 +572,10 @@ export function migrate(raw: unknown): AppData {
     version: 2,
     series: cleanSeries(r.series),
     occurrences: cleanOccurrences(r.occurrences),
+    history: cleanHistory(r.history),
+    blocks: cleanBlocks(r.blocks),
+    eventMarks: cleanEventMarks(r.eventMarks),
+    weeks: cleanWeeks(r.weeks),
     profile: r.profile && typeof r.profile === "object" ? cleanProfile(r.profile) : undefined,
     sessions: cleanSessions(r.sessions),
     log: cleanLog(r.log),

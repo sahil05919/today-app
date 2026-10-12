@@ -101,9 +101,23 @@ export function completeTaskIn(d: AppData, id: string, now: Date): { data: AppDa
       sessionLogId = r.log.id;
     }
   }
-  const done: Task = { ...t, status: "done", completedAt: now.getTime(), focus: false, sessionLogId };
-  return { data: { ...data, tasks: d.tasks.map((x) => (x.id === id ? done : x)) }, next: null };
+  let done: Task = { ...t, status: "done", completedAt: now.getTime(), focus: false, sessionLogId };
+  let log = data.log;
+  let bills = data.bills;
+  // A rescheduled / carried chore or bill: finishing the task finishes the original (a session already counted above).
+  if (t.origin?.kind === "chore") log = setLog(log, t.origin.key, "done", now.getTime());
+  if (t.origin?.kind === "bill") {
+    const bill = (bills ?? []).find((b) => b.id === t.origin!.billId);
+    log = setLog(log, t.origin.key, "done", now.getTime());
+    if (bill) {
+      done = { ...done, origin: { ...t.origin, prevLastDone: bill.lastDone } };
+      bills = (bills ?? []).map((b) => (b.id === bill.id ? { ...b, lastDone: b.lastDone && b.lastDone > today ? b.lastDone : today } : b));
+    }
+  }
+  return { data: { ...data, log, bills, tasks: d.tasks.map((x) => (x.id === id ? done : x)) }, next: null };
 }
+
+const setLog = (log: DayEntry[] | undefined, key: string, status: DayEntry["status"], at: number): DayEntry[] => [...(log ?? []).filter((e) => e.key !== key), { key, status, at }];
 
 /** Reopens a completed task, and takes back the session it logged. */
 export function reopenTaskIn(d: AppData, id: string): AppData | null {
@@ -111,7 +125,11 @@ export function reopenTaskIn(d: AppData, id: string): AppData | null {
   const t = d.tasks.find((x) => x.id === id);
   if (!t || t.status !== "done") return null;
   const tasks = d.tasks.map((x) => (x.id === id ? { ...x, status: "open" as const, completedAt: undefined, sessionLogId: undefined } : x));
-  const base = { ...d, tasks };
+  let base: AppData = { ...d, tasks };
+  if (t.origin && t.origin.kind !== "session") {
+    base = { ...base, log: setLog(base.log, t.origin.key, "moved", Date.now()) };
+    if (t.origin.kind === "bill") base = { ...base, bills: (base.bills ?? []).map((b) => (b.id === t.origin!.billId ? { ...b, lastDone: t.origin!.prevLastDone } : b)) };
+  }
   return t.sessionLogId ? removeLog(base, t.sessionLogId) : base;
 }
 

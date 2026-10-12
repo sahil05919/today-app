@@ -17,7 +17,8 @@ import { CatchUpCard } from "./CatchUpCard";
 import { FreedCard } from "./FreedCard";
 import { openCount } from "./itemActions";
 import { NextDays } from "./NextDays";
-import { SnoozeSheet, type SnoozeTarget } from "./SnoozeSheet";
+import { RescheduleSheet } from "./RescheduleSheet";
+import type { RescheduleTarget } from "@/lib/reschedule";
 import { NextUpCard, TimelineList } from "./Timeline";
 import { EventSheet, ItemSheet, ProgressSheet } from "./TodayPlan";
 import { btn, type Panel, type ViewCtx } from "./ui";
@@ -40,10 +41,10 @@ function Nudge({ emoji, title, body, action, onAction }: { emoji: string; title:
 /** "Open this card now": a tapped notification or a widget deep link asks the home screen to show a sheet. */
 export type OpenRequest = { id: number } & ({ k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "progress" });
 
-type Sheet = { k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "snooze"; target: SnoozeTarget } | { k: "progress" } | null;
+type Sheet = { k: "item"; it: TLItem; date: ISODate } | { k: "event"; e: FixedEvent } | { k: "reschedule"; target: RescheduleTarget } | { k: "progress" } | null;
 
 /**
- * The home screen, built to be one glance: what's next (with Start / Done / Snooze), your top must-have as one line,
+ * The home screen, built to be one glance: what's next (with Start / Done / Reschedule), your top must-have as one line,
  * then the day as one timeline, then a single "Adjust my day" button. The input lives at the bottom of the app.
  */
 export function TodayView({
@@ -199,11 +200,11 @@ export function TodayView({
     setSheet({ k: "item", it, date: tl.date });
   };
 
-  const snooze = (it: TLItem) => setSheet({ k: "snooze", target: it.taskId ? { kind: "task", taskId: it.taskId } : { kind: "item", item: it, date: sheet?.k === "item" && sheet.it.key === it.key ? sheet.date : tl.date } });
+  const reschedule = (it: TLItem) => setSheet({ k: "reschedule", target: it.taskId ? { kind: "task", taskId: it.taskId } : { kind: "item", item: it, date: sheet?.k === "item" && sheet.it.key === it.key ? sheet.date : tl.date } });
 
   return (
     <div className="space-y-4">
-      <NextUpCard tl={tl} item={item} data={data} ctx={ctx} nowMin={nowMin} goal={goal} onOpen={open} onSnooze={snooze} onGoals={() => openPanel("goals")} />
+      <NextUpCard tl={tl} item={item} data={data} ctx={ctx} nowMin={nowMin} goal={goal} onOpen={open} onReschedule={reschedule} onGoals={() => openPanel("goals")} />
 
       {homeNote && (
         <p className="anim-fade rounded-xl bg-accent-soft px-3 py-2 text-sm" role="status">
@@ -213,7 +214,7 @@ export function TodayView({
       <FreedCard data={data} ctx={ctx} now={now} />
       {banner}
 
-      <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} />
+      <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} onReschedule={reschedule} />
 
       <NextDays data={data} today={ctx.today} onOpenDay={onCalendar} />
 
@@ -244,9 +245,9 @@ export function TodayView({
       </div>
 
       {sheet?.k === "progress" && <ProgressSheet data={data} ctx={ctx} onClose={() => setSheet(null)} onReview={() => (setSheet(null), openPanel("review"))} />}
-      {sheet?.k === "item" && <ItemSheet item={sheet.it} date={sheet.date} left={sheet.date === tl.date ? openCount(tl.items, sheet.it.key) : 1} ctx={ctx} onClose={() => setSheet(null)} onSnooze={(it) => snooze(it)} openPanel={openPanel} />}
+      {sheet?.k === "item" && <ItemSheet item={sheet.it} date={sheet.date} left={sheet.date === tl.date ? openCount(tl.items, sheet.it.key) : 1} ctx={ctx} onClose={() => setSheet(null)} onReschedule={reschedule} openPanel={openPanel} />}
       {sheet?.k === "event" && (sheet.e.source === "calendar" ? <CalendarEventInfo event={sheet.e} onClose={() => setSheet(null)} /> : <EventSheet event={sheet.e} data={data} ctx={ctx} onClose={() => setSheet(null)} />)}
-      {sheet?.k === "snooze" && <SnoozeSheet target={sheet.target} ctx={ctx} onClose={() => setSheet(null)} />}
+      {sheet?.k === "reschedule" && <RescheduleSheet target={sheet.target} ctx={ctx} onClose={() => setSheet(null)} />}
     </div>
   );
 }

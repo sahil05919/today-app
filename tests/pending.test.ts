@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { addDays, toISO } from "../lib/dates";
 import { catchUpPlan, firstDayWithRoom, overdueTasks, pendingForReview, pileUp } from "../lib/pileup";
 import { seedIfNeeded } from "../lib/seed";
-import { actions, DO_NOW_MIN, getData, MAX_SNOOZES } from "../lib/store";
+import { actions, getData } from "../lib/store";
 import { buildTimeline } from "../lib/timeline";
 import type { AppData, Task } from "../lib/types";
 
@@ -62,60 +62,25 @@ describe("pending work must not pile up", () => {
   });
 });
 
-describe("snoozing is limited to twice; the third time you choose", () => {
+describe("Reschedule replaces Snooze", () => {
   const today = toISO(new Date());
   const add = (title: string) => actions.addTask({ title, due: today, important: false, tags: [] });
   const find = (id: string) => getData().tasks.find((t) => t.id === id)!;
+  const at = (h: number, m = 0) => new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), h, m);
 
-  it("snoozes twice, then asks you to decide", () => {
+  it("+1 hour gives it a time an hour from now, and Undo puts it back", () => {
     const t = add("Pay council tax");
-    // Early in the day so "an hour" is still today.
-    const morning = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 8, 0);
-    expect(actions.snoozeTask(t.id, "hour", morning)).toBe("snoozed");
-    expect(actions.snoozeTask(t.id, "hour", morning)).toBe("snoozed");
-    expect(find(t.id).snoozeCount).toBe(MAX_SNOOZES);
-    expect(actions.snoozeTask(t.id, "hour", morning)).toBe("decide");
+    const r = actions.reschedule({ kind: "task", taskId: t.id }, { kind: "hour" }, at(8, 0))!;
+    expect(find(t.id)).toMatchObject({ due: today, dueTime: "09:00" });
+    expect(r.message).toBe("Moved to today 09:00");
+    r.undo();
+    expect(find(t.id).dueTime).toBeUndefined();
   });
 
-  it("do it now starts a 15 minute timer and clears the count", () => {
-    const t = add("Book dentist");
-    actions.update(t.id, { snoozeCount: 2 });
-    actions.decideTask(t.id, "now");
-    expect(getData().settings.timer).toMatchObject({ taskId: t.id, goalMin: DO_NOW_MIN });
-    expect(find(t.id).snoozeCount).toBe(0);
-    actions.discardTimer();
-  });
-
-  it("a fixed slot books an exact time", () => {
-    const t = add("Call landlord");
-    actions.update(t.id, { snoozeCount: 2 });
-    actions.decideTask(t.id, "slot", { date: "2026-12-01", time: "18:30" });
-    expect(find(t.id)).toMatchObject({ due: "2026-12-01", dueTime: "18:30", snoozeCount: 0 });
-  });
-
-  it("drop removes it", () => {
-    const t = add("Sort old photos");
-    actions.decideTask(t.id, "drop");
-    expect(getData().tasks.some((x) => x.id === t.id)).toBe(false);
-  });
-
-  it("a snooze to tomorrow moves the day; late in the day 'an hour' rolls to tomorrow", () => {
-    const t = add("Water the plants");
-    actions.snoozeTask(t.id, "tomorrow");
-    expect(find(t.id).due).toBe(addDays(today, 1));
+  it("late in the day '+1 hour' rolls to tomorrow morning", () => {
     const u = add("Email Priya");
-    const late = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate(), 23, 30);
-    actions.snoozeTask(u.id, "hour", late);
+    actions.reschedule({ kind: "task", taskId: u.id }, { kind: "hour" }, at(23, 30));
     expect(find(u.id).due).toBe(addDays(today, 1));
-  });
-
-  it("sessions and chores have their own count per day", () => {
-    expect(actions.snoozeItem("session:powerbi", Date.now(), today)).toBe("snoozed");
-    expect(actions.snoozeItem("session:powerbi", Date.now(), today)).toBe("snoozed");
-    expect(actions.snoozeItem("session:powerbi", Date.now(), today)).toBe("decide");
-    // a different day starts fresh
-    expect(actions.snoozeItem("session:powerbi", Date.now(), addDays(today, 1))).toBe("snoozed");
-    actions.clearSnoozes("session:powerbi", addDays(today, 1));
   });
 
   it("moving tasks around by the app doesn't count as a snooze", () => {

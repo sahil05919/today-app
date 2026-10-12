@@ -13,8 +13,8 @@ export interface ViewCtx {
   open: (id: string) => void;
   /** Shows a toast. Pass `undo` to add an Undo button. */
   notify: (msg: string, undo?: () => void) => void;
-  /** Opens the snooze / "when?" sheet for a task. */
-  when: (id: string, mode: "snooze" | "schedule") => void;
+  /** Opens the Reschedule sheet (or the "when?" sheet for an undated task) for a task. */
+  when: (id: string, mode: "reschedule" | "schedule") => void;
 }
 
 export function sortTasks(tasks: Task[]): Task[] {

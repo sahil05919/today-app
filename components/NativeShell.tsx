@@ -15,7 +15,7 @@ import { btn, Sheet } from "./ui";
  *  - hardware Back closes the top sheet first, and only minimises the app when none is open
  *  - re-reads storage when the app returns to the foreground
  *  - keeps Android's scheduled notifications in step with your data
- *  - handles taps and Done / On track / Snooze buttons on notifications
+ *  - handles taps and Done / On track / +1 hour buttons on notifications
  *  - keeps the home-screen widget's snapshot fresh, and applies the Dones tapped on it
  */
 

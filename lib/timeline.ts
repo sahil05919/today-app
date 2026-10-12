@@ -42,6 +42,8 @@ export interface TLItem {
   skipped: boolean;
   /** Overdue from an earlier day. */
   carried?: boolean;
+  /** Carried: the day it was meant for. */
+  since?: ISODate;
   /** Its planned time has passed and it isn't done. */
   late?: boolean;
   /** Only a first chunk of a long task was placed. */
@@ -67,6 +69,11 @@ export interface Timeline {
   items: TLItem[];
   /** Tasks that didn't fit today (the evening is full). Carried ones are flagged. */
   overflow: Array<{ task: Task; carried: boolean }>;
+  /**
+   * "Still to do": everything from an earlier day that was not finished, placed or not. Nothing missed disappears; it stays
+   * here until you finish, reschedule or skip it.
+   */
+  stillTodo: TLItem[];
   /** Pairs of fixed items that overlap each other (two things you booked at once). */
   clashes: Array<[TLItem, TLItem]>;
   /** Counts for "Today: 5 of 6 done". */
@@ -185,7 +192,9 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
     const area = p.areas.find((a) => a.id === s.areaId);
     const entry = entryFor(data.log, s.key);
     const skipped = entry?.status === "skip";
-    // "Snooze" on a session: it comes back later today (placed below), not at its original time.
+    // Rescheduled or carried over: it lives on as a task now (lib/reschedule.ts), so it is not shown here as well.
+    if (entry?.status === "moved") continue;
+    // A leftover "snooze" mark on a session: it comes back later today (placed below), not at its original time.
     if (isToday && !s.done && entry?.status === "snooze" && entry.until && entry.until > now.getTime()) {
       snoozedSessions.push(s);
       continue;
@@ -301,6 +310,7 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
     for (const c of p.rhythm) {
       if (!c.enabled || c.kind !== "chore" || !c.days.includes(r.dow)) continue;
       const e = logEntry(choreKey(c.id, date));
+      if (e?.status === "moved") continue;
       const done = e?.status === "done";
       const skipped = e?.status === "skip";
       placeFlexible(
@@ -356,7 +366,7 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
         overflow.push({ task: t, carried: isCarried });
         continue;
       }
-      place({ key: `task:${t.id}`, kind: "task", title: t.title, start: placedAt, end: placedAt + used, fixed: false, done: false, skipped: false, carried: isCarried || undefined, partial: partial || cut || undefined, taskId: t.id, areaId: t.area });
+      place({ key: `task:${t.id}`, kind: "task", title: t.title, start: placedAt, end: placedAt + used, fixed: false, done: false, skipped: false, carried: isCarried || undefined, since: isCarried ? t.due : undefined, partial: partial || cut || undefined, taskId: t.id, areaId: t.area });
     }
   }
 
@@ -372,7 +382,15 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
 
   const counted = items.filter((x) => (x.kind === "task" || x.kind === "session" || x.kind === "chore" || x.kind === "bill") && !x.skipped);
   const summary = { done: counted.filter((x) => x.done).length, total: counted.length + overflow.length };
-  return { date, rules: r, items, overflow, clashes, summary };
+  const stillTodo: TLItem[] = [
+    ...items.filter((x) => x.carried && !x.done && !x.skipped),
+    ...overflow
+      .filter((o) => o.carried)
+      .map(
+        (o): TLItem => ({ key: `task:${o.task.id}`, kind: "task", title: o.task.title, start: 0, end: Math.max(10, o.task.estimateMin ?? 20), fixed: false, done: false, skipped: false, carried: true, since: o.task.due, taskId: o.task.id, areaId: o.task.area }),
+      ),
+  ].sort((a, b) => (a.since ?? "").localeCompare(b.since ?? ""));
+  return { date, rules: r, items, overflow, stillTodo, clashes, summary };
 }
 
 /** Items you can act on (not breaks, commute or all-day banners). */

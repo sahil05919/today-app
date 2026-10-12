@@ -384,6 +384,8 @@ export interface TaskOrigin {
   due?: ISODate;
   /** Made by the end-of-day sweep (it was missed), not by you choosing Reschedule. */
   carried?: boolean;
+  /** Bill: when it was last paid / done before this task finished it (so reopening restores it). */
+  prevLastDone?: ISODate;
 }
 
 /**

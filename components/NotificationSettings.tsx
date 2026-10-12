@@ -15,7 +15,7 @@ import { btn, type ViewCtx } from "./ui";
 
 const TOGGLES: [keyof Profile["notify"], string, string][] = [
   ["morning", "Morning check-in", "“3 things today” plus what's due soon"],
-  ["taskCheckIns", "Task check-ins", "“Due Friday, where are you?” with Done / On track / Snooze"],
+  ["taskCheckIns", "Task check-ins", "“Due Friday, where are you?” with Done / On track / +1 hour"],
   ["wrap", "Evening wrap-up", "A nudge to roll unfinished things forward"],
   ["reminders", "Reminders", "At a task's scheduled time"],
   ["slots", "Plan-my-day slots", "When a planned block starts"],

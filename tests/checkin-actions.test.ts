@@ -7,7 +7,7 @@ import { toISO } from "../lib/dates";
 const today = toISO(new Date());
 const logsFor = (areaId: string) => (getData().sessions ?? []).filter((l) => l.areaId === areaId);
 
-describe("notification buttons: Done / Snooze / Skip", () => {
+describe("notification buttons: Done / +1 hour / Skip", () => {
   it("starts with your areas seeded", () => {
     expect(getData().profile?.areas.find((a) => a.id === "powerbi")?.target?.perWeek).toBe(4);
   });
@@ -35,11 +35,13 @@ describe("notification buttons: Done / Snooze / Skip", () => {
     expect(logsFor("job").map((l) => l.variant)).toEqual(["Job Prep", "Job Apply"]);
   });
 
-  it("Snooze asks again in 30 minutes; Skip clears it for the day", () => {
-    const now = 1_000_000;
-    applyCheckInAction("snooze", `chore:emails:${today}`, now);
-    const e = getData().log!.find((x) => x.key === `chore:emails:${today}`)!;
-    expect([e.status, e.until]).toEqual(["snooze", now + 30 * 60_000]);
+  it("The old Snooze button is Reschedule +1 hour; Skip clears it for the day", () => {
+    const now = new Date(); now.setHours(8, 0, 0, 0);
+    applyCheckInAction("snooze", `chore:emails:${today}`, now.getTime());
+    // The chore moved to a task an hour from now; the original is marked moved.
+    const moved = getData().tasks.find((t) => t.origin?.key === `chore:emails:${today}`)!;
+    expect([moved.title, moved.due, moved.dueTime]).toEqual(["Sort emails", today, "09:00"]);
+    expect(getData().log!.find((x) => x.key === `chore:emails:${today}`)!.status).toBe("moved");
     applyCheckInAction("skip", `chore:emails:${today}`);
     expect(getData().log!.find((x) => x.key === `chore:emails:${today}`)!.status).toBe("skip");
   });

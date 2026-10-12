@@ -46,6 +46,8 @@ export const SESSION_CAP_SLACK = 1.1;
 const WEEKDAY_CAP = 210; // minutes of sessions per day
 const WEEKEND_CAP = 100; // weekends stay light
 const isWeekend = (date: ISODate) => [0, 6].includes(fromISO(date).getDay());
+/** Most minutes of sessions on a day: weekends stay light. */
+export const SESSION_CAP = (date: ISODate) => (isWeekend(date) ? WEEKEND_CAP : WEEKDAY_CAP);
 
 interface Item {
   area: Area;
@@ -107,11 +109,15 @@ export function planSessions(raw: AppData, now: Date = new Date(), busyOverride?
 
   // A finished session, or a fixed event that stands in for it (a weekend outing counts as the walk).
   const doneOn = (a: Area, d: ISODate) => logs.some((l) => l.areaId === a.id && l.date === d) || countedByEvent(data, a.id, d);
-  // A skipped day is avoided; a day whose session was already done early ("early") is used up the same way.
+  // A skipped day is avoided; a day whose session was already done early ("early") or moved elsewhere ("moved": it
+  // carries on as a task, see lib/reschedule.ts) is used up the same way.
   const skipped = (a: Area, d: ISODate) => {
     const s = entryFor(data.log, sessionKey(a.id, d))?.status;
-    return s === "skip" || s === "early";
+    return s === "skip" || s === "early" || s === "moved";
   };
+  // A session that was rescheduled or carried over is a task that counts as that area's session: it is one of this
+  // week's sessions already, so it is never planned twice.
+  const pendingTasks = (a: Area) => data.tasks.filter((t) => t.status === "open" && t.countsFor === a.id && t.due != null && t.due >= week[0] && t.due <= week[6]).length;
 
   // Where an area's sessions really happen is offered first (within the slots he allowed; never over an exact time or a locked order).
   const learned = learnedSlots(data, today);
@@ -174,7 +180,7 @@ export function planSessions(raw: AppData, now: Date = new Date(), busyOverride?
       const done =
         logs.filter((l) => l.areaId === a.id && l.date >= week[0] && l.date <= week[6]).length +
         week.filter((d) => countedByEvent(data, a.id, d) && !logs.some((l) => l.areaId === a.id && l.date === d)).length;
-      const remaining = Math.min(Math.max(0, a.target!.perWeek - done), days.length);
+      const remaining = Math.min(Math.max(0, a.target!.perWeek - done - pendingTasks(a)), days.length);
       return { a, days, remaining, tight: days.length ? remaining / days.length : 0 };
     })
     .filter((x) => x.remaining > 0)

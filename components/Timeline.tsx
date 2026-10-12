@@ -1,10 +1,11 @@
 "use client";
 import { useState } from "react";
+import { friendlyDate } from "@/lib/dates";
 import { toHHMM } from "@/lib/profile";
 import type { Timeline as TL, TLItem } from "@/lib/timeline";
 import type { AppData, Goal } from "@/lib/types";
 import { CheckIcon } from "./icons";
-import { completeItem, entryKeyOf, openCount, startItem, undoItem } from "./itemActions";
+import { completeItem, entryKeyOf, openCount, skipItem, startItem, undoItem } from "./itemActions";
 import { Chip, type ViewCtx } from "./ui";
 
 /** "in 25 min", "in 2 h" */
@@ -18,7 +19,7 @@ function inMinutes(m: number): string {
 const range = (it: TLItem) => (it.allDay ? "All day" : it.end > it.start ? `${toHHMM(it.start)}–${toHHMM(it.end)}` : toHHMM(it.start));
 const minutesOf = (it: TLItem) => it.end - it.start;
 
-/** The single next thing, with the three buttons that matter: Start, Done, Snooze. Your top must-have sits right under it. */
+/** The single next thing, with the three buttons that matter: Start, Done, Reschedule. Your top must-have sits right under it. */
 export function NextUpCard({
   tl,
   item,
@@ -27,7 +28,7 @@ export function NextUpCard({
   nowMin,
   goal,
   onOpen,
-  onSnooze,
+  onReschedule,
   onGoals,
 }: {
   tl: TL;
@@ -37,7 +38,7 @@ export function NextUpCard({
   nowMin: number;
   goal?: Goal;
   onOpen: (it: TLItem) => void;
-  onSnooze: (it: TLItem) => void;
+  onReschedule: (it: TLItem) => void;
   onGoals: () => void;
 }) {
   const timer = data.settings.timer;
@@ -92,8 +93,8 @@ export function NextUpCard({
                 >
                   <CheckIcon width={16} height={16} /> Done
                 </button>
-                <button onClick={() => onSnooze(item)} className="min-h-12 rounded-2xl bg-surface px-4 text-[15px] font-medium text-muted transition active:scale-[0.98]">
-                  Snooze
+                <button onClick={() => onReschedule(item)} className="min-h-12 rounded-2xl bg-surface px-4 text-[15px] font-medium text-muted transition active:scale-[0.98]">
+                  Reschedule
                 </button>
               </>
             )}
@@ -119,7 +120,28 @@ export function NextUpCard({
   );
 }
 
-function Row({ it, ctx, tl, nowMin, onOpen }: { it: TLItem; ctx: ViewCtx; tl: TL; nowMin: number; onOpen: (it: TLItem) => void }) {
+/** ✓ Done · Reschedule · Skip, right on the row: a missed thing is dealt with without opening anything. */
+function MissedActions({ it, ctx, tl, onReschedule }: { it: TLItem; ctx: ViewCtx; tl: TL; onReschedule: (it: TLItem) => void }) {
+  const small = "min-h-11 rounded-xl px-3.5 text-sm font-semibold transition active:scale-[0.98]";
+  return (
+    <div className="mt-1 flex gap-2" role="group" aria-label={`Actions for ${it.title}`}>
+      <button onClick={() => completeItem(it, ctx, tl.date, openCount(tl.items, it.key))} className={`${small} flex items-center gap-1 bg-accent text-accent-ink`}>
+        <CheckIcon width={14} height={14} /> Done
+      </button>
+      <button onClick={() => onReschedule(it)} className={`${small} border border-line bg-surface text-ink`}>
+        ↻ Reschedule
+      </button>
+      <button onClick={() => skipItem(it, ctx, tl.date)} className={`${small} text-muted`}>
+        Skip
+      </button>
+    </div>
+  );
+}
+
+/** Things that can be missed: a planned time that has passed on something you act on (not events, breaks, the commute). */
+const canMiss = (it: TLItem) => !it.muted && !it.allDay && it.kind !== "event" && it.kind !== "calendar";
+
+function Row({ it, ctx, tl, nowMin, onOpen, onReschedule }: { it: TLItem; ctx: ViewCtx; tl: TL; nowMin: number; onOpen: (it: TLItem) => void; onReschedule?: (it: TLItem) => void }) {
   const isEvent = it.kind === "event" || it.kind === "calendar";
   const current = !it.done && it.start <= nowMin && nowMin < it.end && !it.muted;
 
@@ -134,8 +156,10 @@ function Row({ it, ctx, tl, nowMin, onOpen }: { it: TLItem; ctx: ViewCtx; tl: TL
     );
   }
 
+  const missed = !!onReschedule && !it.done && !it.skipped && !!it.late && canMiss(it);
   return (
-    <li className="flex items-stretch">
+    <li>
+    <div className="flex items-stretch">
       <span className={`w-11 shrink-0 pt-3.5 text-xs tabular-nums ${current ? "font-semibold text-accent" : "text-muted"}`}>{it.allDay ? "all day" : toHHMM(it.start)}</span>
       {isEvent ? (
         <span className="flex h-12 w-9 shrink-0 items-center justify-center text-base" aria-hidden="true">
@@ -167,7 +191,42 @@ function Row({ it, ctx, tl, nowMin, onOpen }: { it: TLItem; ctx: ViewCtx; tl: TL
           {it.fromCalendar && <Chip>calendar</Chip>}
         </span>
       </button>
+    </div>
+    {missed && (
+      <div className="border-b border-line pb-2 pl-[5rem]">
+        <MissedActions it={it} ctx={ctx} tl={tl} onReschedule={onReschedule!} />
+      </div>
+    )}
     </li>
+  );
+}
+
+/**
+ * "Still to do": everything from an earlier day that was not finished. Nothing disappears: it stays here, with Done /
+ * Reschedule / Skip right on the row, until you deal with it.
+ */
+function StillToDo({ items, ctx, tl, onOpen, onReschedule }: { items: TLItem[]; ctx: ViewCtx; tl: TL; onOpen: (it: TLItem) => void; onReschedule: (it: TLItem) => void }) {
+  return (
+    <div className="mb-3 rounded-2xl bg-warn-soft px-3 pb-2 pt-3" role="region" aria-label="Still to do">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-warn">Still to do · {items.length}</h3>
+      <ul>
+        {items.map((it) => (
+          <li key={it.key} className="border-b border-warn/10 py-1.5 last:border-b-0">
+            <button onClick={() => onOpen(it)} className="block min-h-11 w-full text-left">
+              <span className="block truncate text-[15px] font-medium">
+                {it.emoji && <span className="mr-1">{it.emoji}</span>}
+                {it.title}
+              </span>
+              <span className="text-xs text-muted">
+                {it.since ? friendlyDate(it.since, ctx.today) : "Earlier"}
+                {it.end > it.start ? ` · ${it.end - it.start} min` : ""}
+              </span>
+            </button>
+            <MissedActions it={it} ctx={ctx} tl={tl} onReschedule={onReschedule} />
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -175,10 +234,12 @@ function Row({ it, ctx, tl, nowMin, onOpen }: { it: TLItem; ctx: ViewCtx; tl: TL
  * Today as one list in time order. Done things fold into a single "✓ N done" line so what's left is what you see.
  * Breaks and the commute are shown quietly so you can see the shape of the day.
  */
-export function TimelineList({ tl, ctx, nowMin, onOpen, openPanel }: { tl: TL; ctx: ViewCtx; nowMin: number; onOpen: (it: TLItem) => void; openPanel?: (p: "adjust") => void }) {
+export function TimelineList({ tl, ctx, nowMin, onOpen, onReschedule, openPanel }: { tl: TL; ctx: ViewCtx; nowMin: number; onOpen: (it: TLItem) => void; onReschedule?: (it: TLItem) => void; openPanel?: (p: "adjust") => void }) {
   const [showDone, setShowDone] = useState(false);
   const done = tl.items.filter((x) => (x.done || x.skipped) && !x.muted);
-  const rest = tl.items.filter((x) => !x.done && !x.skipped);
+  // Overdue things from earlier days sit in "Still to do" at the top (they keep their place in the plan underneath).
+  const still = tl.stillTodo;
+  const rest = tl.items.filter((x) => !x.done && !x.skipped && !x.carried);
   // Past breaks and commutes are just noise.
   const visible = rest.filter((x) => !(x.muted && x.end <= nowMin));
   const r = tl.rules;
@@ -190,6 +251,8 @@ export function TimelineList({ tl, ctx, nowMin, onOpen, openPanel }: { tl: TL; c
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">Today</h2>
         <span className="text-xs text-muted">{workLabel}</span>
       </div>
+
+      {still.length > 0 && onReschedule && <StillToDo items={still} ctx={ctx} tl={tl} onOpen={onOpen} onReschedule={onReschedule} />}
 
       {done.length > 0 && (
         <div className="px-1">
@@ -209,7 +272,7 @@ export function TimelineList({ tl, ctx, nowMin, onOpen, openPanel }: { tl: TL; c
       {visible.length ? (
         <ul>
           {visible.map((it) => (
-            <Row key={it.key} it={it} ctx={ctx} tl={tl} nowMin={nowMin} onOpen={onOpen} />
+            <Row key={it.key} it={it} ctx={ctx} tl={tl} nowMin={nowMin} onOpen={onOpen} onReschedule={onReschedule} />
           ))}
         </ul>
       ) : (
@@ -223,17 +286,18 @@ export function TimelineList({ tl, ctx, nowMin, onOpen, openPanel }: { tl: TL; c
         </p>
       )}
 
-      {tl.overflow.length > 0 && (
+      {tl.overflow.some((o) => !o.carried) && (
         <div className="mt-3 rounded-2xl border border-dashed border-line p-3">
-          <p className="text-sm font-medium">Waiting for room · {tl.overflow.length}</p>
+          <p className="text-sm font-medium">Waiting for room · {tl.overflow.filter((o) => !o.carried).length}</p>
           <p className="mt-0.5 text-xs text-muted">
             {tl.overflow
+              .filter((o) => !o.carried)
               .slice(0, 3)
               .map((o) => o.task.title)
               .join(" · ")}
-            {tl.overflow.length > 3 ? ` +${tl.overflow.length - 3}` : ""}
+            {tl.overflow.filter((o) => !o.carried).length > 3 ? ` +${tl.overflow.filter((o) => !o.carried).length - 3}` : ""}
           </p>
-          <p className="mt-1.5 text-xs text-muted">Today's evening is full. {tl.overflow.some((o) => o.carried) ? "Overdue ones are first in line tomorrow." : "They move to the next day with room."}</p>
+          <p className="mt-1.5 text-xs text-muted">Today's evening is full. They move to the next day with room.</p>
           {openPanel && (
             <button onClick={() => openPanel("adjust")} className="mt-2 min-h-9 text-sm font-medium text-accent">
               Adjust my day

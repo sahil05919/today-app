@@ -33,7 +33,7 @@ import { FeelingSheet } from "./FeelingSheet";
 import { NightHome } from "./NightHome";
 import { ProfileSheet } from "./ProfileSheet";
 import { PWA } from "./PWA";
-import { SnoozeSheet } from "./SnoozeSheet";
+import { RescheduleSheet } from "./RescheduleSheet";
 import { TaskSheet } from "./TaskSheet";
 import { TimerBar } from "./TimerBar";
 import { TimerWatcher } from "./TimerWatcher";
@@ -82,7 +82,7 @@ export default function App() {
   const [panel, setPanel] = useState<Panel | null>(null);
   const [checkIn, setCheckIn] = useState<Task[] | null>(null);
   const [toast, setToast] = useState<{ msg: string; undo?: () => void } | null>(null);
-  const [when, setWhen] = useState<{ id: string; mode: "snooze" | "schedule" } | null>(null);
+  const [when, setWhen] = useState<{ id: string; mode: "reschedule" | "schedule" } | null>(null);
   const [command, setCommand] = useState<CaptureCommand | undefined>();
   const [homeNote, setHomeNote] = useState<{ text: string; day: ISODate } | null>(null);
   const [peek, setPeek] = useState(false);
@@ -203,7 +203,7 @@ export default function App() {
 
   // Each new day (and on start): older unresolved repeats are logged as missed; only the latest carries forward.
   useEffect(() => {
-    if (loaded) actions.sweep(today);
+    if (loaded) actions.sweep();
   }, [loaded, today]);
 
   // The planner moved a session to the slot where it really happens: say so once, never silently.
@@ -323,7 +323,7 @@ export default function App() {
       {panel === "quotes" && <QuotesSheet onClose={closePanel} />}
       {panel === "quote" && <QuoteCard date={quoteDate} onClose={closePanel} />}
       {panel === "evening" && <EveningWrap data={data} ctx={ctx} onClose={closePanel} />}
-      {when && when.mode === "snooze" && !!findTask(data, when.id) && <SnoozeSheet target={{ kind: "task", taskId: when.id }} ctx={ctx} onClose={() => setWhen(null)} />}
+      {when && when.mode === "reschedule" && !!findTask(data, when.id) && <RescheduleSheet target={{ kind: "task", taskId: when.id }} ctx={ctx} onClose={() => setWhen(null)} />}
       {when && when.mode === "schedule" && findTask(data, when.id) && <WhenSheet task={findTask(data, when.id)!} mode="schedule" ctx={ctx} onClose={() => setWhen(null)} />}
       {invite && <ImportSheet events={invite} ctx={ctx} onClose={() => setInvite(null)} />}
       {checkIn && <CheckIn tasks={checkIn} today={today} onFinish={() => setCheckIn(null)} />}

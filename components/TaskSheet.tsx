@@ -107,18 +107,30 @@ export function TaskSheet({ task: live, ctx, onClose, timerOn = false }: { task:
           >
             <CheckIcon width={16} height={16} /> {task.status === "done" ? "Reopen" : "Mark done"}
           </button>
-          {task.status === "open" && (
+        </div>
+        {task.status === "open" && (
+          <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => {
                 onClose();
-                ctx.when(task.id, "snooze");
+                ctx.when(live.id, "reschedule");
               }}
-              className={`${btn.ghost} px-4`}
+              className={`${btn.ghost} min-h-12`}
             >
-              Snooze
+              ↻ Reschedule
             </button>
-          )}
-        </div>
+            <button
+              onClick={() => {
+                const undo = actions.skipTask(live.id);
+                if (undo) ctx.notify(`Skipped ${task.title}`, undo);
+                onClose();
+              }}
+              className={`${btn.ghost} min-h-12`}
+            >
+              Skip
+            </button>
+          </div>
+        )}
 
         {task.status === "open" && (
           <div className="flex items-center gap-3 rounded-xl border border-line bg-bg px-3 py-2">

@@ -41,7 +41,7 @@ export interface DayRules {
 }
 
 const ceil5 = (n: number) => Math.ceil(n / 5) * 5;
-const LATEST_END = 22 * 60 + 30;
+export const LATEST_END = 22 * 60 + 30;
 
 export function dayRules(data: AppData, date: ISODate): DayRules {
   const p = withDefaults(data.profile);
