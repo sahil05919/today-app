@@ -226,7 +226,7 @@ describe("nudges", () => {
 
   it("sends one nudge notification a day at the nudge time", () => {
     const d = seeded({}, MON);
-    const list = planNotifications(d, new Date(2026, 9, 9, 7, 0));
+    const list = planNotifications(d, new Date(2026, 9, 9, 7, 0), { budget: Infinity });
     const n = list.find((x) => x.key === "nudge:2026-10-09")!;
     expect(n.kind).toBe("nudge");
     expect(hm(n.at)).toBe("21:00");
@@ -242,7 +242,7 @@ describe("nudges", () => {
 describe("Sunday review", () => {
   it("is announced on Sunday at the review time, until you've done it", () => {
     const d = seeded({}, MON);
-    const list = planNotifications(d, new Date(2026, 9, 9, 7, 0));
+    const list = planNotifications(d, new Date(2026, 9, 9, 7, 0), { budget: Infinity });
     const r = list.find((n) => n.key === "review:2026-10-11")!;
     expect([r.kind, hm(r.at)]).toEqual(["review", "21:00"]);
     const done = planNotifications({ ...d, settings: { ...d.settings, reviewWeek: "2026-10-05" } }, new Date(2026, 9, 9, 7, 0));

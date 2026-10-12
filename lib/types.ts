@@ -308,9 +308,16 @@ export interface Profile {
   calendarSync: boolean;
   /** Weekend time of the morning "How are you feeling?" (weekdays use `morningCheckIn`). */
   morningWeekend: string;
-  /** A quote notification every N days; 0 = off. */
+  /** A quote notification every N days (1 = every day); 0 = off. */
   quoteEvery: 0 | 1 | 2 | 3;
+  /** Old fixed time; the quote now arrives at a random moment between `quoteFrom` and `quoteTo`. */
   quoteTime: string;
+  quoteFrom: string;
+  quoteTo: string;
+  /** The morning brief: sent only if the app has not been opened yet that day. */
+  briefTime: string;
+  /** The evening check-in: "Tonight: X, Y. Anything from email to add?" */
+  checkinTime: string;
   notify: {
     morning: boolean;
     taskCheckIns: boolean;
@@ -326,6 +333,14 @@ export interface Profile {
     review: boolean;
     /** Friday "Week so far". */
     weekSoFar: boolean;
+    /** A quote at a random time in the afternoon. */
+    quote: boolean;
+    /** The evening check-in (20:00). */
+    tonight: boolean;
+    /** A nudge at the planned time, only for areas behind their weekly target. */
+    sessionNudges: boolean;
+    /** "All done for today" once the day's list is finished. */
+    dayDone: boolean;
   };
 }
 
@@ -571,6 +586,11 @@ export interface Settings {
   freed?: FreedOffer;
   /** Areas whose "2 of 4 fit this week" card was set aside for this week. */
   shortDismissed?: { week: ISODate; areas: string[] };
+  /** The day the app was first opened (the morning brief is not sent once it has been). */
+  openedDate?: ISODate;
+  /** The day the "All done for today" card + notification was shown / the day "Take it easy" was answered. */
+  dayDoneDate?: ISODate;
+  calmDate?: ISODate;
   /** The morning self-check: its last result, and the day its card was set aside. */
   lastCheck?: CheckResult;
   checkDismissed?: ISODate;

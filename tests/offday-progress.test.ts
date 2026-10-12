@@ -80,9 +80,12 @@ describe("an off day lightens the day and spreads the rest", () => {
     const list = planNotifications(d, MON);
     expect(list.some((n) => n.key.startsWith("rhythm:") && n.key.endsWith("2026-10-07"))).toBe(false);
     expect(list.some((n) => n.key.startsWith("rhythm:") && n.key.endsWith("2026-10-08"))).toBe(true); // other days unchanged
-    expect(list.find((n) => n.key === "morning:2026-10-07")!.title).toBe("Easy day, Sahil. How are you feeling?");
+    // The brief is gentle on an off day, and still comes at 09:30 only if the app has not been opened.
+    const brief = list.find((n) => n.key === "morning:2026-10-07")!;
+    expect(brief.title).toBe("Easy day, Sahil");
+    expect(brief.body).toMatch(/^Off day/);
     expect(computeNudges(d, new Date(2026, 9, 7, 20, 0))).toEqual([]);
-    expect(hm(list.find((n) => n.key === "morning:2026-10-07")!.at)).toBe("08:15");
+    expect(hm(brief.at)).toBe("09:30");
   });
 });
 

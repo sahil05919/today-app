@@ -41,17 +41,21 @@ export function pileUp(data: AppData, today: ISODate): PileUp {
   return { piling, overdue, behind, message: piling ? `This week is piling up: ${bits.join(" and ")}.` : "" };
 }
 
-/** Areas that are further behind than pace allows (by at least one session). */
-function behindAreas(data: AppData, today: ISODate): string[] {
+/** Areas that are further behind than pace allows (by at least one session), furthest behind first. */
+export function behindAreaRows(data: AppData, today: ISODate): Array<{ id: string; name: string; gap: number }> {
   const dow = (new Date(today + "T00:00:00").getDay() + 6) % 7; // Mon = 0
-  const rows = weekProgress(data, today);
-  return rows
-    .filter((r) => {
+  return weekProgress(data, today)
+    .map((r) => {
       const days = r.area.target!.weekends ? 7 : 5;
       const elapsed = Math.min(days, dow);
-      return r.target * (elapsed / days) - Math.min(r.done, r.target) >= 1;
+      return { id: r.area.id, name: r.area.name, gap: r.target * (elapsed / days) - Math.min(r.done, r.target) };
     })
-    .map((r) => r.area.name);
+    .filter((r) => r.gap >= 1)
+    .sort((a, b) => b.gap - a.gap);
+}
+
+function behindAreas(data: AppData, today: ISODate): string[] {
+  return behindAreaRows(data, today).map((r) => r.name);
 }
 
 export interface CatchUpPlan {

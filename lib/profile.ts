@@ -32,8 +32,12 @@ export function defaultProfile(): Profile {
     quietEnd: "07:30",
     morningCheckIn: "08:15",
     morningWeekend: "09:30",
-    quoteEvery: 2,
+    quoteEvery: 1,
     quoteTime: "13:30",
+    quoteFrom: "11:00",
+    quoteTo: "16:00",
+    briefTime: "09:30",
+    checkinTime: "20:00",
     taskCheckIn: "19:00",
     eveningWrap: "21:00",
     areas: DEFAULT_AREAS.map((a) => ({ ...a })),
@@ -51,7 +55,7 @@ export function defaultProfile(): Profile {
     wakeTime: "06:00",
     hideMic: false,
     calendarSync: true,
-    notify: { morning: true, taskCheckIns: true, wrap: true, reminders: true, slots: true, events: true, bills: true, nudges: true, review: true, weekSoFar: true },
+    notify: { morning: true, taskCheckIns: true, wrap: true, reminders: true, slots: true, events: true, bills: true, nudges: true, review: true, weekSoFar: true, quote: true, tonight: true, sessionNudges: true, dayDone: true },
   };
 }
 

@@ -384,8 +384,10 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
 
   // ---- 5. Tidy up ------------------------------------------------------------------------------------------
   items.sort((a, b) => Number(!!b.allDay) - Number(!!a.allDay) || a.start - b.start || Number(b.fixed) - Number(a.fixed) || a.end - b.end);
+  // "Late" is only for what was booked at a time (an event, a task with its own time). A flexible item's time is a suggestion:
+  // it stays on today's to-do list without a mark until the day ends.
   if (isToday) {
-    for (const it of items) if (!it.done && !it.skipped && !it.muted && !it.allDay && it.end <= nowMin && (it.fixed || it.kind === "session")) it.late = true;
+    for (const it of items) if (!it.done && !it.skipped && !it.muted && !it.allDay && it.end <= nowMin && it.fixed) it.late = true;
   }
 
   const live = items.filter((x) => x.fixed && !x.done && !x.skipped && !x.muted && !x.allDay);

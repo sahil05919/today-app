@@ -21,7 +21,10 @@ import { FreedCard } from "./FreedCard";
 import { openCount } from "./itemActions";
 import { NextDays } from "./NextDays";
 import { RescheduleSheet } from "./RescheduleSheet";
+import { friendlyNudge } from "@/lib/gentle";
 import { CheckCard, type CheckAction } from "./CheckCard";
+import { ProgressHeader } from "./ProgressHeader";
+import { ShareHint } from "./ShareHint";
 import { ShortfallCard, ShortfallSheet } from "./ShortfallCard";
 import type { RescheduleTarget } from "@/lib/reschedule";
 import { NextUpCard, TimelineList } from "./Timeline";
@@ -62,6 +65,8 @@ export function TodayView({
   onPrefill,
   onCalendar,
   request,
+  shareHint,
+  onHintDone,
 }: {
   data: AppData;
   ctx: ViewCtx;
@@ -73,6 +78,9 @@ export function TodayView({
   /** Opens the calendar, on a given day if one is tapped. */
   onCalendar: (day?: ISODate) => void;
   request?: OpenRequest | null;
+  /** The 20:00 check-in was tapped: show the "share it from Gmail" hint. */
+  shareHint?: boolean;
+  onHintDone?: () => void;
 }) {
   const [sheet, setSheet] = useState<Sheet>(null);
   const onCheckAction = (a: CheckAction) => {
@@ -167,42 +175,48 @@ export function TodayView({
     banner = <Nudge emoji="🗓️" title="Your week" body="Wins, what slipped, and a focus for next week." action="Review" onAction={() => openPanel("review")} />;
   } else if (sofarDue) {
     banner = <Nudge emoji="📊" title="Week so far" body="Where you stand, and a light weekend plan if you want one." action="See it" onAction={() => openPanel("sofar")} />;
-  } else if (conscience && data.profile?.notify.nudges !== false) {
-    banner = (
+  }
+
+  // Gentle nudges live BELOW the to-do list, one at a time, in a friendly voice (see lib/gentle.ts).
+  let gentle: React.ReactNode = null;
+  if (conscience && data.profile?.notify.nudges !== false) {
+    const f = friendlyNudge(conscience, ctx.today);
+    gentle = (
       <div className="rounded-2xl bg-accent-soft p-3.5">
-        <p className="text-[15px] font-semibold text-ink">{conscience.text}</p>
+        <p className="text-[15px] font-medium text-ink">{f.text}</p>
         <div className="mt-2.5 flex gap-2">
           <button
-            className={`${btn.primary} min-h-11`}
+            className={`${btn.soft} min-h-10`}
             onClick={() => {
               if (conscience.kind === "goals") openPanel("goals");
               else if (conscience.kind === "empty-day") onPrefill("");
               else setSheet({ k: "progress" });
             }}
           >
-            {conscience.kind === "goals" ? "Set them" : conscience.kind === "empty-day" ? "Add something" : "See my week"}
+            {f.button}
           </button>
-          <button className={`${btn.ghost} min-h-11`} onClick={() => actions.setEntry(nudgeKey(conscience.id, ctx.today), "skip")}>
+          <button className={`${btn.ghost} min-h-10`} onClick={() => actions.setEntry(nudgeKey(conscience.id, ctx.today), "skip")}>
             Not now
           </button>
         </div>
       </div>
     );
   } else if (balanceDue && balance) {
-    banner = (
-      <div className="rounded-2xl bg-warn-soft p-3.5">
-        <p className="text-[15px] font-semibold text-ink">⚖️ {balance.message}</p>
+    gentle = (
+      <div className="rounded-2xl bg-accent-soft p-3.5">
+        <p className="text-[15px] font-medium text-ink">⚖️ {balance.message}</p>
         <div className="mt-2.5 flex gap-2">
-          <button className={`${btn.primary} min-h-11`} onClick={() => onPrefill(`@${balance.missing[0]} `)}>
+          <button className={`${btn.soft} min-h-10`} onClick={() => onPrefill(`@${balance.missing[0]} `)}>
             Add one
           </button>
-          <button className={`${btn.ghost} min-h-11`} onClick={() => actions.settings({ balanceWeek: weekStart(ctx.today) })}>
+          <button className={`${btn.ghost} min-h-10`} onClick={() => actions.settings({ balanceWeek: weekStart(ctx.today) })}>
             Not now
           </button>
         </div>
       </div>
     );
   }
+  const empty = tl.summary.total === 0 && !(data.events ?? []).length;
 
   /** Opens whatever a row is: a task, an event, a routine block, a session / chore / bill, on any day. */
   const openAt = (it: TLItem, date: ISODate) => {
@@ -220,6 +234,7 @@ export function TodayView({
 
   return (
     <div className="space-y-4">
+      <ProgressHeader data={data} tl={tl} today={ctx.today} />
       <NextUpCard tl={tl} item={item} data={data} ctx={ctx} nowMin={nowMin} goal={goal} onOpen={open} onReschedule={reschedule} onGoals={() => openPanel("goals")} />
 
       {homeNote && (
@@ -232,7 +247,10 @@ export function TodayView({
       <CheckCard data={data} today={ctx.today} onAction={onCheckAction} />
       {banner}
 
-      <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} onReschedule={reschedule} />
+      <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} onReschedule={reschedule} openPanel={openPanel} />
+
+      {gentle}
+      {(shareHint || empty) && <ShareHint onDismiss={shareHint ? onHintDone : undefined} />}
 
       <NextDays data={data} today={ctx.today} onOpenDay={onCalendar} onOpenItem={openAt} />
 

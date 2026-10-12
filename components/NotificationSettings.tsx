@@ -13,27 +13,38 @@ import { getData } from "@/lib/store";
 import type { Profile } from "@/lib/types";
 import { btn, type ViewCtx } from "./ui";
 
-const TOGGLES: [keyof Profile["notify"], string, string][] = [
-  ["morning", "Morning check-in", "“3 things today” plus what's due soon"],
-  ["taskCheckIns", "Task check-ins", "“Due Friday, where are you?” with Done / On track / +1 hour"],
-  ["wrap", "Evening wrap-up", "A nudge to roll unfinished things forward"],
-  ["reminders", "Reminders", "At a task's scheduled time"],
+type TimeKey = "briefTime" | "checkinTime" | "eveningWrap" | "reviewTime" | "fridayReviewTime" | "nudgeTime" | "taskCheckIn";
+
+/** [switch, title, what it is, the time you can edit]. At most five a day that do not have a fixed time of their own. */
+const TOGGLES: [keyof Profile["notify"], string, string, TimeKey?][] = [
+  ["morning", "Morning brief", "Only if you haven't opened the app yet: today's must-dos and one focus", "briefTime"],
+  ["quote", "A quote for you", "Its own notification, once a day, at a random time"],
+  ["tonight", "Evening check-in", "What's left tonight, and anything from email to add", "checkinTime"],
+  ["sessionNudges", "Session nudges", "At the planned time, only for areas behind their weekly target"],
+  ["wrap", "End of day", "“Tick or move what's left”, only if something is open", "eveningWrap"],
+  ["dayDone", "All done for today", "A cheer when your list is finished, and a way to lighten the week"],
+  ["taskCheckIns", "Task check-ins", "“Due Friday, where are you?” with Done / On track / +1 hour", "taskCheckIn"],
+  ["reminders", "Reminders", "At a task's scheduled time (never counted in the daily five)"],
   ["slots", "Plan-my-day slots", "When a planned block starts"],
-  ["events", "Fixed events", "A heads-up before they start"],
-  ["bills", "Bills & chores", "Rent, card, clean room, grocery run"],
-  ["nudges", "Gentle nudges", "Empty day, neglected area, behind target"],
-  ["weekSoFar", "Friday “Week so far”", "Where you stand, and light weekend catch-ups only if you tap"],
-  ["review", "Sunday “Your week”", "Wins, what slipped, your own tasks and a focus for next week"],
+  ["events", "Fixed events", "A heads-up before they start (never counted)"],
+  ["bills", "Bills & chores", "Rent, card, clean room, grocery run (never counted)"],
+  ["nudges", "Gentle nudges", "Empty day, neglected area, behind target", "nudgeTime"],
+  ["weekSoFar", "Friday “Week so far”", "Where you stand, and light weekend catch-ups only if you tap", "fridayReviewTime"],
+  ["review", "Sunday “Your week”", "Wins, what slipped, your own tasks and a focus for next week", "reviewTime"],
 ];
 
 /** Android-only: notification permissions, exact alarms and battery optimisation, with plain-English help. */
 export function NotificationSettings({
   notify,
   onChange,
+  profile,
+  onProfile,
   ctx,
 }: {
   notify: Profile["notify"];
   onChange: (n: Profile["notify"]) => void;
+  profile: Profile;
+  onProfile: (patch: Partial<Profile>) => void;
   ctx: ViewCtx;
 }) {
   const [status, setStatus] = useState<NotifStatus | null>(null);
@@ -61,10 +72,11 @@ export function NotificationSettings({
 
   return (
     <div className="space-y-4">
+      <p className="text-xs text-muted">At most 5 a day, not counting reminders that have a time of their own (the vitamin, bills, events). When a day has more, the least useful are dropped first.</p>
       <ul className="space-y-1.5">
-        {TOGGLES.map(([key, title, hint]) => (
-          <li key={key}>
-            <label className="flex min-h-12 items-center gap-3 rounded-xl border border-line bg-bg px-3 py-2">
+        {TOGGLES.map(([key, title, hint, timeKey]) => (
+          <li key={key} className="rounded-xl border border-line bg-bg px-3 py-2">
+            <label className="flex min-h-10 items-center gap-3">
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-medium">{title}</span>
                 <span className="block text-xs text-muted">{hint}</span>
@@ -76,6 +88,25 @@ export function NotificationSettings({
                 className="h-5 w-5 accent-[var(--accent)]"
               />
             </label>
+            {notify[key] && timeKey && (
+              <label className="mt-1 flex items-center gap-2 text-xs text-muted">
+                At
+                <input type="time" value={profile[timeKey]} onChange={(e) => e.target.value && onProfile({ [timeKey]: e.target.value })} aria-label={`${title} time`} className="min-h-9 rounded-lg border border-line bg-surface px-2 text-sm text-ink" />
+              </label>
+            )}
+            {key === "quote" && notify.quote && (
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+                Between
+                <input type="time" value={profile.quoteFrom} onChange={(e) => e.target.value && onProfile({ quoteFrom: e.target.value })} aria-label="Quote earliest" className="min-h-9 rounded-lg border border-line bg-surface px-2 text-sm text-ink" />
+                and
+                <input type="time" value={profile.quoteTo} onChange={(e) => e.target.value && onProfile({ quoteTo: e.target.value })} aria-label="Quote latest" className="min-h-9 rounded-lg border border-line bg-surface px-2 text-sm text-ink" />
+                <select value={profile.quoteEvery || 1} onChange={(e) => onProfile({ quoteEvery: Number(e.target.value) as Profile["quoteEvery"] })} aria-label="How often" className="min-h-9 rounded-lg border border-line bg-surface px-2 text-sm text-ink">
+                  <option value={1}>every day</option>
+                  <option value={2}>every 2 days</option>
+                  <option value={3}>every 3 days</option>
+                </select>
+              </div>
+            )}
           </li>
         ))}
       </ul>

@@ -9,6 +9,7 @@ import { pendingSlotShifts } from "@/lib/capacity";
 import { ensureLetter } from "@/lib/coachRun";
 import { toMin, withDefaults } from "@/lib/profile";
 import { isQuoteDay, quoteStateOf } from "@/lib/quoteBag";
+import { quoteMinute } from "@/lib/brief";
 import { dateInKey, resolveTap } from "@/lib/tap";
 import { settleNote, settleOverflow } from "@/lib/settle";
 import { findTask } from "@/lib/series";
@@ -94,6 +95,7 @@ export default function App() {
   const [quoteDate, setQuoteDate] = useState<ISODate>(() => todayISO());
   const [pendingTap, setPendingTap] = useState<TapTarget | null>(null);
   const [request, setRequest] = useState<OpenRequest | null>(null);
+  const [shareHint, setShareHint] = useState(false);
   const [invite, setInvite] = useState<IcsEvent[] | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -136,6 +138,10 @@ export default function App() {
       setPanel(null);
       setPeek(true);
       setRequest(r.k === "item" ? { id, k: "item", it: r.it, date: r.date } : r.k === "event" ? { id, k: "event", e: r.e } : { id, k: "progress" });
+    } else if (r.k === "panel" && r.panel === "tonight") {
+      // The 20:00 check-in: land on Today with the share hint.
+      setPanel(null);
+      setShareHint(true);
     } else if (r.k === "panel") {
       if (r.panel === "quote") setQuoteDate(dateInKey(pendingTap.key) ?? todayISO());
       setPanel(r.panel as Panel);
@@ -211,6 +217,19 @@ export default function App() {
     if (loaded) actions.saveWeeks();
   }, [loaded, today, quarter]);
 
+  // Opening the app counts as the morning brief: note it, and today's 09:30 notification is cancelled by the next reschedule.
+  useEffect(() => {
+    if (!loaded) return;
+    const mark = () => {
+      const d = getData();
+      const t = todayISO();
+      if (d.settings.openedDate !== t && document.visibilityState === "visible") actions.settings({ openedDate: t });
+    };
+    mark();
+    document.addEventListener("visibilitychange", mark);
+    return () => document.removeEventListener("visibilitychange", mark);
+  }, [loaded, today]);
+
   // The morning self-check: on the first open each day, and on coming back if the last one is over 12 hours old.
   useEffect(() => {
     if (!loaded) return;
@@ -250,8 +269,8 @@ export default function App() {
     if (minuteKey * 60_000 < 0) return;
     const nowMin = new Date(minuteKey * 60_000);
     const st = quoteStateOf(data);
-    if (isQuoteDay(st, today, profile.quoteEvery) && st.assigned[today] === undefined && nowMin.getHours() * 60 + nowMin.getMinutes() >= toMin(profile.quoteTime)) actions.assignQuote(today);
-  }, [data, today, minuteKey, profile.quoteEvery, profile.quoteTime]);
+    if (isQuoteDay(st, today, profile.quoteEvery) && st.assigned[today] === undefined && nowMin.getHours() * 60 + nowMin.getMinutes() >= quoteMinute(data, today, profile.quoteFrom, profile.quoteTo)) actions.assignQuote(today);
+  }, [data, today, minuteKey, profile.quoteEvery, profile.quoteFrom, profile.quoteTo]);
 
   if (!data || !tl) {
     return <div className="mx-auto min-h-dvh max-w-md" aria-busy="true" />;
@@ -303,6 +322,8 @@ export default function App() {
               setPanel("calendar");
             }}
             request={request}
+            shareHint={shareHint}
+            onHintDone={() => setShareHint(false)}
           />
         )}
       </main>

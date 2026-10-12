@@ -507,6 +507,10 @@ function cleanProfile(p: any): Profile {
       morningWeekend: hhmm(p.morningWeekend),
       quoteEvery: [0, 1, 2, 3].includes(p.quoteEvery) ? p.quoteEvery : undefined,
       quoteTime: hhmm(p.quoteTime),
+      quoteFrom: hhmm(p.quoteFrom),
+      quoteTo: hhmm(p.quoteTo),
+      briefTime: hhmm(p.briefTime),
+      checkinTime: hhmm(p.checkinTime),
       taskCheckIn: hhmm(p.taskCheckIn),
       eveningWrap: hhmm(p.eveningWrap),
       areas: Array.isArray(p.areas)
@@ -576,6 +580,10 @@ function cleanProfile(p: any): Profile {
               nudges: bool(p.notify.nudges),
               review: bool(p.notify.review),
               weekSoFar: bool(p.notify.weekSoFar),
+              quote: bool(p.notify.quote),
+              tonight: bool(p.notify.tonight),
+              sessionNudges: bool(p.notify.sessionNudges),
+              dayDone: bool(p.notify.dayDone),
             }) as Profile["notify"])
           : undefined,
     }),
@@ -654,6 +662,9 @@ export function migrate(raw: unknown): AppData {
           ? (Object.fromEntries(Object.entries(s.snoozes).filter(([k, v]) => typeof v === "number" && v > 0 && k.length < 90).slice(0, 300)) as Record<string, number>)
           : undefined,
       exactAsked: s.exactAsked === true ? true : undefined,
+      openedDate: isISO(s.openedDate) ? s.openedDate : undefined,
+      dayDoneDate: isISO(s.dayDoneDate) ? s.dayDoneDate : undefined,
+      calmDate: isISO(s.calmDate) ? s.calmDate : undefined,
       lastCheck: cleanCheck(s.lastCheck),
       checkDismissed: isISO(s.checkDismissed) ? s.checkDismissed : undefined,
       shortDismissed: s.shortDismissed && isISO(s.shortDismissed.week) && Array.isArray(s.shortDismissed.areas) ? { week: s.shortDismissed.week, areas: s.shortDismissed.areas.filter((a: unknown) => typeof a === "string").slice(0, 20) } : undefined,

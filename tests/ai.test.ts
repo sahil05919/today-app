@@ -40,7 +40,7 @@ describe("what Gemini is told", () => {
   it("knows your rhythm, work hours, check-ins and bills", () => {
     expect(prompt).toContain("Mon,Tue,Wed,Thu,Fri 09:00-17:00");
     expect(prompt).toContain("evening=Evening 18:00-20:15");
-    expect(prompt).toContain("emails=Sort emails 20:00");
+    expect(prompt).toContain("midday=Midday check 13:00");
     expect(prompt).toContain("rent=Rent (cash) (Monthly, the 1st)");
     expect(prompt).toContain("mobile=Mobile bill (Monthly, the 1st, autopay)");
   });

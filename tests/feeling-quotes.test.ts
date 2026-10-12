@@ -121,18 +121,19 @@ describe("How are you feeling? · choose your day", () => {
   });
 });
 
-describe("the morning notification asks how he feels", () => {
-  it("is the new text, at 08:15 on weekdays and 09:30 on weekends, until it has been answered", () => {
-    const d = base();
-    const list = planNotifications(d, new Date(2026, 9, 6, 6, 0));
+describe("the morning notification is the brief (see notifications-budget.test.ts)", () => {
+  it("is at 09:30 every day, and not sent for a day on which the app has already been opened", () => {
+    const d = base([task({ title: "Pay rent", due: "2026-10-06", important: true })]);
+    const list = planNotifications(d, new Date(2026, 9, 6, 6, 0), { budget: Infinity });
     const wk = list.find((x) => x.key === "morning:2026-10-06")!;
-    expect(wk.title).toBe("Good morning, Sahil. How are you feeling today?");
-    expect(`${wk.at.getHours()}:${String(wk.at.getMinutes()).padStart(2, "0")}`).toBe("8:15");
+    expect(wk.title).toBe("Good morning, Sahil");
+    expect(`${wk.at.getHours()}:${String(wk.at.getMinutes()).padStart(2, "0")}`).toBe("9:30");
     const we = list.find((x) => x.key === "morning:2026-10-10")!;
     expect(`${we.at.getHours()}:${String(we.at.getMinutes()).padStart(2, "0")}`).toBe("9:30");
-    const answered: AppData = { ...d, checkins: [{ date: "2026-10-06", energy: "ok", ticked: 3, offered: 4, at: 1 }] };
-    expect(planNotifications(answered, new Date(2026, 9, 6, 6, 0)).some((x) => x.key === "morning:2026-10-06")).toBe(false);
-    expect(planNotifications(answered, new Date(2026, 9, 6, 6, 0)).some((x) => x.key === "morning:2026-10-07")).toBe(true);
+    // Opening the app IS the brief: nothing is sent for today, tomorrow's is untouched.
+    const opened: AppData = { ...d, settings: { ...d.settings, openedDate: "2026-10-06" } };
+    expect(planNotifications(opened, new Date(2026, 9, 6, 6, 0), { budget: Infinity }).some((x) => x.key === "morning:2026-10-06")).toBe(false);
+    expect(planNotifications(opened, new Date(2026, 9, 6, 6, 0), { budget: Infinity }).some((x) => x.key === "morning:2026-10-07")).toBe(true);
   });
 
   it("can be switched off", () => {
@@ -189,19 +190,20 @@ describe("the quote bag", () => {
     expect(assignDate(after, "2026-10-06")).toBe(after);
   });
 
-  it("goes out every N days, alternating languages, and not at all when off", () => {
+  it("goes out every day, at a different moment between 11:00 and 16:00, and not at all when off", () => {
     const d = base();
     const quotes = planNotifications(d, NOW).filter((x) => x.kind === "quote");
-    expect(quotes.length).toBeGreaterThanOrEqual(3);
+    expect(quotes.length).toBeGreaterThanOrEqual(10);
     const gaps = quotes.slice(1).map((q, i) => Math.round((q.at.getTime() - quotes[i].at.getTime()) / 86_400_000));
-    expect(gaps.every((g) => g === 2)).toBe(true);
-    expect(quotes[0].at.getHours()).toBe(13);
-    expect(quotes[0].at.getMinutes()).toBe(30);
+    expect(gaps.every((g) => g === 1)).toBe(true);
+    const minutes = quotes.map((q) => q.at.getHours() * 60 + q.at.getMinutes());
+    expect(minutes.every((m) => m >= 11 * 60 && m <= 16 * 60)).toBe(true);
+    expect(new Set(minutes).size).toBeGreaterThan(3);
     expect(quotes[0].title).toContain("Sahil");
     const off: AppData = { ...d, profile: { ...d.profile!, quoteEvery: 0 } };
     expect(planNotifications(off, NOW).some((x) => x.kind === "quote")).toBe(false);
-    const daily: AppData = { ...d, profile: { ...d.profile!, quoteEvery: 1 } };
-    expect(planNotifications(daily, NOW).filter((x) => x.kind === "quote").length).toBeGreaterThan(quotes.length);
+    const switched: AppData = { ...d, profile: { ...d.profile!, notify: { ...d.profile!.notify, quote: false } } };
+    expect(planNotifications(switched, NOW).some((x) => x.kind === "quote")).toBe(false);
   });
 
   it("never lands in quiet hours", () => {

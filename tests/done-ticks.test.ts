@@ -27,7 +27,8 @@ const base = (): AppData => seedIfNeeded({ version: 1, tasks: [], settings: { fi
 const logs = (areaId: string) => (getData().sessions ?? []).filter((l) => l.areaId === areaId);
 const pending = (areaId: string, now = WED) => planSessions(getData(), now).filter((s) => s.areaId === areaId && !s.done);
 /** Session reminders planned for THIS week (the next 7 days run into the next one, which has its own targets). */
-const sessionKeys = (now: Date) => planNotifications(getData(), now).filter((n) => n.kind === "session" && n.key.split(":")[2] <= "2026-10-11").map((n) => n.key);
+// (The daily budget is tested in notifications-budget.test.ts: here every session that has a nudge is wanted.)
+const sessionKeys = (now: Date) => planNotifications(getData(), now, { budget: Infinity }).filter((n) => n.kind === "session" && n.key.split(":")[2] <= "2026-10-11").map((n) => n.key);
 const progress = (areaId: string) => weekProgress(getData(), TODAY).find((r) => r.area.id === areaId)!;
 
 beforeEach(() => actions.replaceAll(base()));
@@ -209,6 +210,7 @@ describe("tick by typing", () => {
     const guitar: Area = { id: "guitar", name: "Guitar", emoji: "🎸", target: { perWeek: 3, minutes: 30, weekends: false, slots: ["before", "evening", "night"], remind: true } };
     const d = getData();
     actions.setProfile({ ...d.profile!, areas: [...d.profile!.areas, guitar] });
+    // A session nudge exists only while the area is behind its weekly pace (nothing done by Wednesday = behind).
     const guitarKeys = () => sessionKeys(WED).filter((k) => k.startsWith("session:guitar"));
     expect(guitarKeys().length).toBeGreaterThan(0);
 
@@ -216,7 +218,9 @@ describe("tick by typing", () => {
     expect(t1.applied!.item).toBe("session:guitar");
     expect(logs("guitar")).toHaveLength(1);
     actions.addSession("guitar", TUE, "manual", WED);
-    expect(guitarKeys().length).toBeGreaterThan(0);
+    // Two of three by Wednesday is on pace: the session is still planned, but it no longer nudges.
+    expect(pending("guitar")).toHaveLength(1);
+    expect(guitarKeys()).toHaveLength(0);
     actions.addSession("guitar", MON, "manual", WED);
     // Three of three: no more planned sessions, no reminders, no behind / neglected nudges.
     expect(progress("guitar").finished).toBe(true);
@@ -276,7 +280,8 @@ describe("target hit = freedom", () => {
     actions.addSession("meditation", TUE, "manual", WED);
     const planned = pending("meditation");
     expect(planned).toHaveLength(1);
-    expect(sessionKeys(WED).some((k) => k.startsWith("session:meditation"))).toBe(true);
+    // Two of three by Wednesday is on pace: planned, but silent (nudges are for areas that are behind).
+    expect(sessionKeys(WED).some((k) => k.startsWith("session:meditation"))).toBe(false);
 
     const r = actions.markDone({ kind: "session", areaId: "meditation", date: TODAY }, { when: "on-its-day", now: WED });
     expect(r.reached).toEqual(["meditation"]);

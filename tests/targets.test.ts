@@ -29,10 +29,10 @@ describe("1b. weekly targets are a hard rule", () => {
     const busy = seeded({ events: ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16"].map((d, i) => ev("e" + i, d, "18:30", "20:30")) });
     // Monday: all four. Later in the week the room is shared with the other areas, but it is never none, and the rest is reported.
     expect(weekTargets(busy, MON).rows.find((r) => r.areaId === "powerbi")!.plannedCount).toBe(4);
-    for (const now of [new Date(2026, 9, 13, 9, 0), new Date(2026, 9, 14, 12, 0), new Date(2026, 9, 15, 12, 0)]) {
+    for (const [now, atLeast] of [[new Date(2026, 9, 13, 9, 0), 2], [new Date(2026, 9, 14, 12, 0), 2], [new Date(2026, 9, 15, 12, 0), 1]] as const) {
       const t = weekTargets(busy, now);
       const pbi = t.rows.find((r) => r.areaId === "powerbi")!;
-      expect(pbi.fit, now.toString()).toBeGreaterThanOrEqual(2);
+      expect(pbi.fit, now.toString()).toBeGreaterThanOrEqual(atLeast);
       expect(t.short.some((s) => s.areaId === "powerbi") === pbi.fit < 4, now.toString()).toBe(true);
     }
   });

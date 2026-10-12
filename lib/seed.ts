@@ -69,5 +69,23 @@ export function seedIfNeeded(d: AppData, today = new Date()): AppData {
     if (p.morningCheckIn === "08:00") out = { ...out, profile: { ...p, morningCheckIn: "08:15" } };
   }
 
+  if (from < 5) {
+    // The assistant pass: one quote a day (it used to be every other day), and the 20:00 "Sort emails" ping is replaced by the
+    // evening check-in ("Tonight: X, Y. Anything from email to add?"). A rhythm item you changed is left alone.
+    const p = withDefaults(out.profile);
+    const email = p.rhythm.find((r) => r.id === "emails");
+    const untouched = !!email && email.time === "20:00" && email.kind === "chore" && /sorted your email/i.test(email.message);
+    out = {
+      ...out,
+      profile: {
+        ...p,
+        // "Off" used to be quoteEvery 0; it is now the Quote switch, and the frequency goes back to daily.
+        quoteEvery: p.quoteEvery === 2 || p.quoteEvery === 0 ? 1 : p.quoteEvery,
+        notify: { ...p.notify, quote: p.quoteEvery !== 0 },
+        rhythm: untouched ? p.rhythm.filter((r) => r.id !== "emails") : p.rhythm,
+      },
+    };
+  }
+
   return { ...out, settings: { ...out.settings, seeded: SEED_VERSION } };
 }

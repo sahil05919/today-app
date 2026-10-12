@@ -101,7 +101,9 @@ describe("notification tap → exact card", () => {
     expect(resolveTap(d, { kind: "wrap" }, TODAY, NOW)).toEqual({ k: "panel", panel: "evening" });
     expect(resolveTap(d, { kind: "review" }, TODAY, NOW)).toEqual({ k: "panel", panel: "review" });
     expect(resolveTap(d, { kind: "nudge" }, TODAY, NOW)).toEqual({ k: "panel", panel: "progress" });
-    expect(resolveTap(d, { kind: "morning" }, TODAY, NOW)).toEqual({ k: "panel", panel: "feeling" });
+    // The morning brief: opening the app IS the brief, so tapping it just lands on Today. The 20:00 check-in shows the share hint.
+    expect(resolveTap(d, { kind: "morning" }, TODAY, NOW)).toEqual({ k: "none" });
+    expect(resolveTap(d, { kind: "tonight" }, TODAY, NOW)).toEqual({ k: "panel", panel: "tonight" });
     expect(resolveTap(d, { kind: "quote" }, TODAY, NOW)).toEqual({ k: "panel", panel: "quote" });
   });
 });

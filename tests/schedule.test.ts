@@ -108,7 +108,8 @@ describe("weekly planner", () => {
     // Friday morning, nothing done yet: Friday, Saturday and Sunday are all that is left of the week.
     const w = planWeek(base(), new Date(2026, 9, 9, 7, 0));
     const pbi = w.sessions.filter((s) => s.areaId === "powerbi");
-    expect(pbi.length).toBeGreaterThanOrEqual(3);
+    // With every area short at once there is not room for everything: each area gets a share, and Power BI is never left with none.
+    expect(pbi.length).toBeGreaterThanOrEqual(2);
     expect(pbi.some((s) => ["2026-10-10", "2026-10-11"].includes(s.date))).toBe(true);
     // Never dropped silently: either all 4 are planned, or the shortfall says how many fit.
     const short = w.short.find((x) => x.areaId === "powerbi");

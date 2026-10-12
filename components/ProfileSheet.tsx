@@ -332,27 +332,8 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
             <p className="mt-2 text-xs text-muted">{"{name}"} becomes your name. Tracked check-ins get Done / +1 hour / Skip buttons.</p>
           </div>
 
+          <p className="text-xs text-muted">The morning brief, quote, check-ins and end of day have their times in Notifications below.</p>
           <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <Check checked={p.notify.morning} onChange={(v) => set("notify", { ...p.notify, morning: v })}>
-                Morning “How are you feeling?” check-in
-              </Check>
-            </div>
-            <Time label="Check-in time · weekdays" value={p.morningCheckIn} onChange={(v) => set("morningCheckIn", v)} />
-            <Time label="Check-in time · weekends" value={p.morningWeekend} onChange={(v) => set("morningWeekend", v)} />
-            <Field label="A quote for you">
-              <select value={p.quoteEvery} onChange={(e) => set("quoteEvery", Number(e.target.value) as Profile["quoteEvery"])} className={field}>
-                <option value={1}>Every day</option>
-                <option value={2}>Every 2 days</option>
-                <option value={3}>Every 3 days</option>
-                <option value={0}>Off</option>
-              </select>
-            </Field>
-            <Time label="Quote time" value={p.quoteTime} onChange={(v) => set("quoteTime", v)} />
-            <Time label="End-of-day check" value={p.eveningWrap} onChange={(v) => set("eveningWrap", v)} />
-            <Time label="Daily nudge" value={p.nudgeTime} onChange={(v) => set("nudgeTime", v)} />
-            <Time label="Friday “Week so far”" value={p.fridayReviewTime} onChange={(v) => set("fridayReviewTime", v)} />
-            <Time label="Sunday “Your week”" value={p.reviewTime} onChange={(v) => set("reviewTime", v)} />
             <Num label="Event heads-up (min before)" value={p.eventLeadMin} min={0} max={1440} onChange={(v) => set("eventLeadMin", v)} />
             <span />
             <Time label="Quiet from" value={p.quietStart} onChange={(v) => set("quietStart", v)} />
@@ -695,7 +676,7 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
         </Section>
 
         <Section title="Notifications" hint="Permissions, battery and what you want to hear about">
-          <NotificationSettings notify={p.notify} onChange={(n) => set("notify", n)} ctx={ctx} />
+          <NotificationSettings notify={p.notify} onChange={(n) => set("notify", n)} profile={p} onProfile={(patch) => setP((x) => ({ ...x, ...patch }))} ctx={ctx} />
         </Section>
 
         <div className="sticky bottom-0 -mx-5 flex gap-2 border-t border-line bg-surface px-5 py-3">

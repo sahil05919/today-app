@@ -57,7 +57,7 @@ describe("quiet hours and work hours", () => {
 });
 
 describe("planNotifications", () => {
-  it("morning check-in lists today's focus things and what's due soon", () => {
+  it("the morning brief is one line with today's must-dos, at 09:30, even on a work day", () => {
     const list = planNotifications(
       data([
         task({ title: "Pay rent", focus: true, due: "2026-10-06" }),
@@ -67,11 +67,12 @@ describe("planNotifications", () => {
       NOW,
     );
     const morning = list.find((n) => n.key === "morning:2026-10-06")!;
-    expect(morning.title).toBe("Good morning, Sahil. How are you feeling today?");
-    expect(morning.body).toContain("2 things today");
-    expect(morning.largeBody).toContain("• Pay rent");
-    expect(morning.largeBody).toContain("Due soon: Submit report (Thursday)");
-    expect(hm(morning.at)).toBe("08:15");
+    expect(morning.title).toBe("Good morning, Sahil");
+    expect(morning.body).toMatch(/^Today: .*Pay rent/);
+    expect(morning.body).toContain("Book dentist");
+    expect(morning.body).not.toContain("Submit report");
+    expect(hm(morning.at)).toBe("09:30");
+    expect(morning.exact).toBe(false);
   });
 
   it("a task check-in asks 'Due Friday, where are you?' the day before, with buttons", () => {
@@ -90,11 +91,17 @@ describe("planNotifications", () => {
     expect(earlier.some((n) => n.key === "checkin:" + earlier.find((x) => x.kind === "checkin")?.taskId + ":2026-10-08")).toBe(true);
   });
 
-  it("evening wrap-up fires at the chosen time", () => {
+  it("end of day fires at the chosen time and says what is still open", () => {
     const list = planNotifications(data([task({ title: "A", due: "2026-10-06" })], { eveningWrap: "20:30" }), NOW);
     const wrap = list.find((n) => n.key === "wrap:2026-10-06")!;
     expect(hm(wrap.at)).toBe("20:30");
-    expect(wrap.body).toContain("1 carry over");
+    expect(wrap.title).toBe("Tick or move what's left");
+    expect(wrap.body).toContain("A");
+    // Its tap opens a list (Done / Tomorrow / Not sure), so it carries no buttons that could tick everything at once.
+    expect(wrap.actions).toBe(false);
+    expect(wrap.ref).toBeUndefined();
+    // With nothing open it is not sent at all.
+    expect(planNotifications(data([], { rhythm: [] }), NOW).some((n) => n.key === "wrap:2026-10-06")).toBe(false);
   });
 
   it("reminder at the task's scheduled time, exact, with buttons", () => {
@@ -153,7 +160,7 @@ describe("planNotifications", () => {
     );
     expect(list.some((n) => n.kind === "reminder")).toBe(false);
     const off = planNotifications(
-      data([task({ due: "2026-10-06", dueTime: "20:00" })], { rhythm: [], quoteEvery: 0, notify: { morning: false, taskCheckIns: false, wrap: false, reminders: false, slots: false, events: false, bills: false, nudges: false, review: false, weekSoFar: false } }),
+      data([task({ due: "2026-10-06", dueTime: "20:00" })], { rhythm: [], quoteEvery: 0, notify: { morning: false, taskCheckIns: false, wrap: false, reminders: false, slots: false, events: false, bills: false, nudges: false, review: false, weekSoFar: false, quote: false, tonight: false, sessionNudges: false, dayDone: false } }),
       NOW,
     );
     expect(off).toHaveLength(0);
@@ -170,76 +177,105 @@ describe("planNotifications", () => {
 });
 
 describe("sessions and daily rhythm", () => {
-  // Tuesday 6 Oct 2026, 07:00, with your areas and rhythm seeded.
-  const seeded = (over: Partial<AppData> = {}): AppData =>
-    seedIfNeeded({ version: 1, tasks: [], settings: { firstRunAt: 1 }, ...over });
+  // Your areas and rhythm seeded. Session nudges only exist for an area that is BEHIND its weekly target, which from
+  // Wednesday on is true for everything (nothing done yet), so the examples use Wednesday.
+  const WED = new Date(2026, 9, 7, 7, 0);
   const MON = new Date(2026, 9, 5, 7, 0);
+  const EMAILS = { id: "emails", label: "Sort emails", time: "20:00", days: [0, 1, 2, 3, 4, 5, 6], enabled: true, kind: "chore" as const, message: "Have you sorted your email, {name}?" };
+  const seeded = (over: Partial<AppData> = {}): AppData => {
+    const s = seedIfNeeded({ version: 1, tasks: [], settings: { firstRunAt: 1 }, ...over });
+    // "Sort emails" is no longer a default (the evening check-in replaced it), but a tracked check-in still works like this one.
+    return { ...s, profile: { ...s.profile!, rhythm: [...s.profile!.rhythm, EMAILS] } };
+  };
+  const all = { budget: Infinity };
 
-  it("reminds you when each planned session starts, with the counter in the title", () => {
-    const list = planNotifications(seeded(), MON);
+  it("nudges when a session starts, with the counter in the title, but only for an area that is behind", () => {
+    const list = planNotifications(seeded(), WED, all);
     const s = list.filter((n) => n.kind === "session");
-    expect(s.length).toBeGreaterThan(10);
+    expect(s.length).toBeGreaterThan(5);
     const pbi = s.find((n) => n.title === "Power BI session 1")!;
     expect(pbi.ref).toMatch(/^session:powerbi:/);
     expect(pbi.actions).toBe(true);
     expect(hm(pbi.at)).toBe("18:00");
+    // Monday morning nothing is behind yet: the sessions are in the list, but silent.
+    expect(planNotifications(seeded(), MON, all).some((n) => n.kind === "session" && n.key.endsWith("2026-10-05"))).toBe(false);
+    // On pace (two of three meditation sessions by Wednesday): silent.
+    const sessions = [0, 1].map((i) => ({ id: "m" + i, areaId: "meditation", date: `2026-10-0${5 + i}`, minutes: 15, n: i + 1, at: 1, source: "manual" as const }));
+    expect(planNotifications(seeded({ sessions }), WED, all).some((n) => n.kind === "session" && n.key.startsWith("session:meditation"))).toBe(false);
+    // Switched off in Settings.
+    const off = seeded();
+    const quiet = { ...off, profile: { ...off.profile!, notify: { ...off.profile!.notify, sessionNudges: false } } };
+    expect(planNotifications(quiet, WED, all).some((n) => n.kind === "session")).toBe(false);
   });
 
-  it("asks 'Have you sorted your email, Sahil?' at 20:00 with buttons, until it's done", () => {
-    const list = planNotifications(seeded(), MON);
+  it("asks 'Have you sorted your email, Sahil?' at 20:00 with buttons, until it's done (a tracked check-in)", () => {
+    const list = planNotifications(seeded(), MON, all);
     const mail = list.find((n) => n.key === "rhythm:emails:2026-10-05")!;
     expect(mail.body).toBe("Have you sorted your email, Sahil?");
     expect(hm(mail.at)).toBe("20:00");
     expect(mail.actions).toBe(true);
-    const done = planNotifications(seeded({ log: [{ key: "chore:emails:2026-10-05", status: "done", at: 1 }] }), MON);
+    const done = planNotifications(seeded({ log: [{ key: "chore:emails:2026-10-05", status: "done", at: 1 }] }), MON, all);
     expect(done.some((n) => n.key === "rhythm:emails:2026-10-05")).toBe(false);
     expect(done.some((n) => n.key === "rhythm:emails:2026-10-06")).toBe(true);
   });
 
+  it("the seeded defaults no longer have the separate 20:00 email ping: the evening check-in does it", () => {
+    const s = seedIfNeeded({ version: 1, tasks: [], settings: { firstRunAt: 1 } });
+    expect(s.profile!.rhythm.some((r) => r.id === "emails")).toBe(false);
+    const list = planNotifications(s, MON, all);
+    const tonight = list.find((n) => n.key === "tonight:2026-10-05")!;
+    expect(hm(tonight.at)).toBe("20:00");
+    expect(tonight.body).toMatch(/Anything from email to add\?$/);
+    expect(tonight.title).toBe("Tonight");
+    // A rhythm item you changed yourself is not removed.
+    const mine = seedIfNeeded({ version: 1, tasks: [], settings: { firstRunAt: 1 }, profile: { ...defaultProfile(), rhythm: [{ ...EMAILS, time: "21:15" }] } });
+    expect(mine.profile!.rhythm.some((r) => r.id === "emails")).toBe(true);
+  });
+
   it("a snoozed check-in comes back when you asked", () => {
     const until = new Date(2026, 9, 5, 20, 30).getTime();
-    const list = planNotifications(seeded({ log: [{ key: "chore:emails:2026-10-05", status: "snooze", at: 1, until }] }), MON);
+    const list = planNotifications(seeded({ log: [{ key: "chore:emails:2026-10-05", status: "snooze", at: 1, until }] }), MON, all);
     expect(hm(list.find((n) => n.key === "rhythm:emails:2026-10-05")!.at)).toBe("20:30");
   });
 
   it("a skipped session is not reminded again", () => {
-    const list = planNotifications(seeded({ log: [{ key: "session:walking:2026-10-05", status: "skip", at: 1 }] }), MON);
-    expect(list.some((n) => n.key === "session:walking:2026-10-05")).toBe(false);
+    const list = planNotifications(seeded({ log: [{ key: "session:walking:2026-10-07", status: "skip", at: 1 }] }), WED, all);
+    expect(list.some((n) => n.key === "session:walking:2026-10-07")).toBe(false);
   });
 
   it("a finished session stops reminding", () => {
-    const sessions = [{ id: "a", areaId: "powerbi", date: "2026-10-05", minutes: 60, n: 1, at: 1, source: "checkin" as const }];
-    const list = planNotifications(seeded({ sessions }), MON);
-    expect(list.some((n) => n.key === "session:powerbi:2026-10-05")).toBe(false);
+    const sessions = [{ id: "a", areaId: "powerbi", date: "2026-10-07", minutes: 60, n: 1, at: 1, source: "checkin" as const }];
+    const list = planNotifications(seeded({ sessions }), WED, all);
+    expect(list.some((n) => n.key === "session:powerbi:2026-10-07")).toBe(false);
   });
 
   it("midday nudge is weekdays only and has no buttons", () => {
-    const list = planNotifications(seeded(), MON);
+    const list = planNotifications(seeded(), MON, all);
     const sat = list.find((n) => n.key === "rhythm:midday:2026-10-10");
     expect(sat).toBeUndefined();
     const mon = list.find((n) => n.key === "rhythm:midday:2026-10-05")!;
     expect([hm(mon.at), mon.actions]).toEqual(["13:00", false]);
   });
 
-  it("22:00 sums up the day and lists what's still open, with Done to count it all", () => {
-    const list = planNotifications(seeded(), MON);
+  it("22:00 is 'Tick or move what's left', only while something is open, and it names what", () => {
+    const list = planNotifications(seeded(), MON, all);
     const wrap = list.find((n) => n.key === "wrap:2026-10-05")!;
     expect(hm(wrap.at)).toBe("22:00");
-    // The evening notification says how the day went (and what carries over by itself).
-    expect(wrap.title).toMatch(/^Today/);
-    expect(wrap.title).toContain("Sahil");
-    // Monday is an office day, so its evening is lighter (no Power BI): meditation, the walk, job prep and reading remain.
-    expect(wrap.body).toContain("Meditation");
-    expect(wrap.body).toContain("Walking");
-    expect(wrap.ref).toBe("wrap:2026-10-05");
-    expect(wrap.actions).toBe(true);
+    expect(wrap.title).toBe("Tick or move what's left");
+    // Monday is an office day: meditation, the walk, job prep and reading are what is planned.
+    expect(wrap.body).toMatch(/Meditation|Walking|Job|English/);
+    expect(wrap.actions).toBe(false);
+    expect(wrap.ref).toBeUndefined();
   });
 
-  it("the morning ping becomes a briefing of the day's sessions", () => {
-    const list = planNotifications(seeded(), MON);
-    const m = list.find((n) => n.key === "morning:2026-10-05")!;
-    expect(m.title).toBe("Good morning, Sahil. How are you feeling today?");
-    expect(m.largeBody).toContain("Meditation session 1");
-    expect(m.largeBody).toContain("Walking session 1");
+  it("the brief is silent when there is nothing to say, and names a focus when an area is behind", () => {
+    // Monday morning: nothing due, nothing behind yet.
+    expect(planNotifications(seeded(), MON, all).some((n) => n.key === "morning:2026-10-05")).toBe(false);
+    // Wednesday: everything is behind, so the brief carries one focus.
+    const m = planNotifications(seeded(), WED, all).find((n) => n.key === "morning:2026-10-08")!;
+    expect(m.body).toMatch(/Focus: .* is behind/);
+    // With a task due too, the must-do comes first.
+    const withTask = planNotifications(seeded({ tasks: [task({ title: "Call the bank", due: "2026-10-08" })] }), WED, all).find((n) => n.key === "morning:2026-10-08")!;
+    expect(withTask.body).toMatch(/^Today: Call the bank\. Focus: /);
   });
 });

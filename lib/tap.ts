@@ -21,7 +21,7 @@ export type TapResolution =
   | { k: "checkin"; taskId: string }
   | { k: "item"; it: TLItem; date: ISODate }
   | { k: "event"; e: FixedEvent }
-  | { k: "panel"; panel: "review" | "sofar" | "evening" | "feeling" | "quote" | "progress" }
+  | { k: "panel"; panel: "review" | "sofar" | "evening" | "feeling" | "quote" | "progress" | "tonight" }
   | { k: "gone"; message: string }
   | { k: "none" };
 
@@ -58,7 +58,10 @@ export function resolveTap(data: AppData, t: TapInfo, today: ISODate, now: Date 
   if (t.kind === "wrap") return { k: "panel", panel: "evening" };
   if (t.kind === "review") return { k: "panel", panel: "review" };
   if (t.kind === "sofar") return { k: "panel", panel: "sofar" };
-  if (t.kind === "morning") return { k: "panel", panel: "feeling" };
+  // The morning brief: opening the app IS the brief, so a tap just lands on Today.
+  if (t.kind === "morning") return { k: "none" };
+  // The 20:00 check-in lands on Today with the "share it from Gmail" hint.
+  if (t.kind === "tonight") return { k: "panel", panel: "tonight" };
   if (t.kind === "quote") return { k: "panel", panel: "quote" };
   if (t.kind === "nudge") return { k: "panel", panel: "progress" };
 

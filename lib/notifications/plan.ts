@@ -8,11 +8,12 @@ import { eventsOn } from "../fixed";
 import { computeNudges } from "../nudges";
 import { isOffDay } from "../offday";
 import { eveningLine } from "../cheer";
-import { pileUp } from "../pileup";
+import { behindAreaRows } from "../pileup";
+import { briefFor, quoteMinute, tonightBody } from "../brief";
+import { applyBudget } from "./budget";
 import { plannedForDay } from "../schedule";
-import { answerFor } from "../feeling";
 import { isQuoteDay, quoteForDate, quoteLine, quoteStateOf } from "../quoteBag";
-import { buildTimeline } from "../timeline";
+import { actionable, buildTimeline } from "../timeline";
 import { LOOKBACK_DAYS, withOccurrences } from "../series";
 import { weekStart } from "../stats";
 import { timerEndsAt } from "../timer";
@@ -23,7 +24,8 @@ import type { AppData, ISODate, Profile, Task } from "../types";
  * Works out every notification the app should have scheduled, as plain data.
  * Pure and offline, so it's easy to test; `native.ts` turns the result into real Android notifications.
  */
-export type NotifKind = "morning" | "checkin" | "wrap" | "reminder" | "slot" | "session" | "chore" | "nudge" | "event" | "bill" | "review" | "sofar" | "timer" | "quote";
+/** "morning" is the brief, "tonight" the 20:00 check-in, "wrap" the end of day, "life" a life-admin item still open at 19:00, "eventprep" the lead-up to a shift or booking. */
+export type NotifKind = "morning" | "checkin" | "wrap" | "reminder" | "slot" | "session" | "chore" | "nudge" | "event" | "bill" | "review" | "sofar" | "timer" | "quote" | "tonight" | "life" | "eventprep";
 
 export interface PlannedNotification {
   /** Stable key, e.g. "morning:2026-10-07". Same key = same notification across reschedules. */
@@ -48,6 +50,8 @@ export interface PlannedNotification {
   alarm?: boolean;
   /** The running timer reached its goal: buttons are Done / +5 min. */
   timer?: boolean;
+  /** How much it is worth when a day is over its notification budget (see ./budget): higher stays. */
+  value?: number;
 }
 
 /** The rolling window: recomputed on start, on resume and after any change. */
@@ -135,7 +139,7 @@ const friendlyWhen = (due: ISODate, today: ISODate) => {
   return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][d.getDay()];
 };
 
-export function planNotifications(raw: AppData, now: Date = new Date()): PlannedNotification[] {
+export function planNotifications(raw: AppData, now: Date = new Date(), opts: { budget?: number } = {}): PlannedNotification[] {
   const today = toISO(now);
   // Repeats of the window come from getOccurrences, so the Vitamin has a 11:00 reminder on EVERY coming day.
   const data = withOccurrences(raw, addDays(today, -LOOKBACK_DAYS), addDays(today, DAYS_AHEAD + 7), today);
@@ -176,13 +180,15 @@ export function planNotifications(raw: AppData, now: Date = new Date()): Planned
     return tl;
   };
 
-  // --- Session reminders: "Power BI session 14" at the planned start --------
-  for (let i = 0; i < DAYS_AHEAD; i++) {
+  // --- Session nudges: "Power BI session 14" at the planned start, ONLY for an area that is behind its weekly target ---------
+  // The others stay silent: they are in the list, and a nudge for something that is on track is noise.
+  const behind = new Map(behindAreaRows(data, today).map((r) => [r.id, r.gap]));
+  for (let i = 0; i < DAYS_AHEAD && p.notify.sessionNudges !== false; i++) {
     const day = addDays(today, i);
     for (const it of timelineOf(day).items) {
       if (it.kind !== "session" || it.done || it.skipped || !it.sessionKey) continue;
       const area = p.areas.find((a) => a.id === it.areaId);
-      if (!area?.target?.remind) continue;
+      if (!area?.target?.remind || !it.areaId || !behind.has(it.areaId)) continue;
       const when = resolve(it.sessionKey, at(day, toHHMM(it.start)));
       if (!when) continue;
       push({
@@ -194,6 +200,8 @@ export function planNotifications(raw: AppData, now: Date = new Date()): Planned
         ref: it.sessionKey,
         actions: true,
         exact: true,
+        // When a day has room for only one, the area furthest behind keeps it.
+        value: 70 + Math.min(4, Math.round(behind.get(it.areaId) ?? 0)),
       });
     }
   }
@@ -251,10 +259,12 @@ export function planNotifications(raw: AppData, now: Date = new Date()): Planned
       }
     }
 
-    // --- A quote that makes him feel good: every N days, alternating English and Hinglish, never in quiet hours ---
-    if (p.quoteEvery && isQuoteDay(quotes, day, p.quoteEvery)) {
+    // --- A quote that makes him feel good: its own notification, daily, at a random moment between 11:00 and 16:00 ---
+    // (English and Hinglish alternate, nothing repeats until the whole pool has been used, never in quiet hours.)
+    if (p.notify.quote !== false && p.quoteEvery && isQuoteDay(quotes, day, p.quoteEvery)) {
       const q = quoteForDate(quotes, day, p.quoteEvery, today);
-      push({ key: `quote:${day}`, at: at(day, p.quoteTime), kind: "quote", title: `A thought for you, ${name} 💛`, body: q.text, largeBody: quoteLine(q), actions: false, exact: false, work: true });
+      const m = quoteMinute(data, day, p.quoteFrom, p.quoteTo);
+      push({ key: `quote:${day}`, at: at(day, toHHMM(m)), kind: "quote", title: `A thought for you, ${name} 💛`, body: q.text, largeBody: quoteLine(q), actions: false, exact: true, exactTime: true });
     }
 
     // --- Sunday review: what got done, what slipped, plan next week ---------------------
@@ -303,62 +313,17 @@ export function planNotifications(raw: AppData, now: Date = new Date()): Planned
       });
     }
 
-    // --- Morning check-in: "3 things today" + what's due soon ---------------
-    // Once it has been answered today, it doesn't ask again.
-    if (p.notify.morning && !(i === 0 && answerFor(data, day))) {
-      const dueThatDay = open.filter((t) => t.due === day || (i === 0 && t.due != null && t.due < day));
-      const picks =
-        i === 0
-          ? [...open.filter((t) => t.focus), ...dueThatDay.filter((t) => !t.focus)]
-          : dueThatDay.sort((a, b) => priorityScore(b, day) - priorityScore(a, day));
-      const top = picks.slice(0, 3);
-      const soon = open
-        .filter((t) => t.due && diffDays(t.due, day) >= 1 && diffDays(t.due, day) <= 2 && !top.includes(t))
-        .slice(0, 2);
-      const todays = dayPlan.filter((x) => !x.done);
-      const dayEvents = eventsOn(data, day);
-      const dayBills = p.notify.bills ? billReminders(data, day, day) : [];
-      {
-        const lines = top.map((t) => `• ${t.title}`);
-        const soonLine = soon.length ? `Due soon: ${soon.map((t) => `${t.title} (${friendlyWhen(t.due!, day)})`).join(", ")}` : "";
-        const sessionLines = [
-          ...dayEvents.map((e) => `📌 ${e.start ?? "All day"}  ${e.title}`),
-          ...todays.map((x) => `• ${toHHMM(x.start)}  ${x.title}`),
-          ...dayBills.map((r) => `• ${reminderText(r.bill, r.offset)}`),
-        ];
-        let title = top.length ? `${top.length} ${top.length === 1 ? "thing" : "things"} today` : "Nothing due today";
-        let body = top.length ? top.map((t) => t.title).join(" · ") : soonLine;
-        if (todays.length || dayEvents.length || dayBills.length) {
-          // With sessions, events or bills in the day the morning ping becomes a short briefing.
-          const bits = [
-            todays.length ? `${todays.length} ${todays.length === 1 ? "session" : "sessions"}` : "",
-            dayEvents.length ? `${dayEvents.length} ${dayEvents.length === 1 ? "event" : "events"}` : "",
-            top.length ? `${top.length} ${top.length === 1 ? "task" : "tasks"}` : "",
-            dayBills.length ? `${dayBills.length} ${dayBills.length === 1 ? "reminder" : "reminders"}` : "",
-          ];
-          title = off ? `Easy day, ${name}` : `Good morning, ${name}`;
-          body = off ? `Off day: ${[bits[0] ? bits[0].replace("sessions", "short session") : "", ...bits.slice(1)].filter(Boolean).join(" · ") || "just rest"}` : bits.filter(Boolean).join(" · ");
-        }
-        // A week that's piling up is said plainly, with the way out one tap away.
-        const pile = i === 0 ? pileUp(data, day) : null;
-        if (pile?.piling) {
-          body = `${pile.message} Open Today for a one-tap catch-up plan.`;
-          title = off ? title : `Good morning, ${name}`;
-        }
-        // The ping asks how he feels; the briefing rides along as its body. Tapping it opens the check-in.
-        const ask = off ? `Easy day, ${name}. How are you feeling?` : `Good morning, ${name}. How are you feeling today?`;
-        const brief = !pile?.piling && top.length && !(todays.length || dayEvents.length || dayBills.length) ? `${title}: ${body}` : body;
-        push({
-          key: `morning:${day}`,
-          at: at(day, [0, 6].includes(dow) ? p.morningWeekend : p.morningCheckIn),
-          kind: "morning",
-          title: ask,
-          body: brief || "Tell me, and we'll shape today around it.",
-          largeBody: [...sessionLines, ...lines, soonLine].filter(Boolean).join("\n"),
-          actions: false,
-          exact: false,
-        });
-      }
+    // --- Morning brief 09:30: ONLY if the app has not been opened yet today (opening it IS the brief) -----------------
+    // One line: today's must-dos and one focus. Nothing to say, nothing sent.
+    if (p.notify.morning && !(day === today && data.settings.openedDate === today)) {
+      const brief = briefFor(data, day, timelineOf(day), name, off);
+      // work: true, so the 09:30 brief is not held until the end of the work shift like an ordinary ping.
+      if (brief) push({ key: `morning:${day}`, at: at(day, p.briefTime), kind: "morning", title: brief.title, body: brief.body, actions: false, exact: false, work: true });
+    }
+
+    // --- Evening check-in 20:00: what is left tonight, and a nudge to share anything from email ------------------------
+    if (p.notify.tonight !== false) {
+      push({ key: `tonight:${day}`, at: at(day, p.checkinTime), kind: "tonight", title: "Tonight", body: tonightBody(timelineOf(day)), actions: false, exact: false });
     }
 
     // --- Task check-ins: "Due Friday, where are you?" -----------------------
@@ -389,24 +354,18 @@ export function planNotifications(raw: AppData, now: Date = new Date()): Planned
       });
     }
 
-    // --- Evening wrap-up ----------------------------------------------------
-    const undone = dayPlan.filter((x) => !x.done);
-    if (p.notify.wrap && (open.length || undone.length)) {
-      const left = i === 0 ? open.filter((t) => (t.due != null && t.due <= day) || t.focus).length : 0;
-      const when = resolve(wrapKey(day), at(day, p.eveningWrap));
-      if (when) {
-        const names = undone.map((x) => x.title.replace(/ · session \d+$| session \d+$/, "")).join(" · ");
-        push({
-          key: `wrap:${day}`,
-          at: when,
-          kind: "wrap",
-          // "Today: 5 of 6 done. Nice work, Sahil." Anything left carries over by itself; Done counts every session still planned.
-          title: i === 0 ? eveningLine(name, timelineOf(day).summary.done, timelineOf(day).summary.total) : "How did today go?",
-          body: undone.length ? `Still open: ${names}. Done counts them all.` : left ? `${left} carry over to tomorrow, first in line.` : "Rest well. Tomorrow starts fresh.",
-          ref: undone.length ? wrapKey(day) : undefined,
-          actions: undone.length > 0,
-          exact: false,
-        });
+    // --- End of day 22:00: only if something is still open. Tapping it opens a quick list: Done / Tomorrow / Not sure ---
+    if (p.notify.wrap) {
+      const tl = timelineOf(day);
+      const openItems = [
+        ...tl.items.filter((x) => actionable(x) && !x.done && !x.skipped && !x.fixed && ["task", "session", "chore"].includes(x.kind)),
+        ...tl.overflow.map((o) => ({ title: o.task.title })),
+      ];
+      // A future day is judged by what is planned for it (it will be judged for real on the night).
+      const has = day === today ? openItems.length > 0 : dayPlan.some((x) => !x.done) || open.some((t) => t.due === day && !t.dueTime);
+      if (has) {
+        const names = [...new Set(openItems.map((x) => x.title.replace(/ · session \d+$| session \d+$/, "")))].slice(0, 3).join(", ");
+        push({ key: `wrap:${day}`, at: at(day, p.eveningWrap), kind: "wrap", title: "Tick or move what's left", body: names ? `Still open: ${names}.` : "A few things are still open.", actions: false, exact: false });
       }
     }
   }
@@ -492,7 +451,10 @@ export function planNotifications(raw: AppData, now: Date = new Date()): Planned
     });
   }
 
-  return out.sort((a, b) => a.at.getTime() - b.at.getTime()).slice(0, MAX_NOTIFICATIONS);
+  // Few but worth it: at most five a day that do not have a fixed time of their own (see ./budget).
+  return applyBudget(out, opts.budget)
+    .sort((a, b) => a.at.getTime() - b.at.getTime())
+    .slice(0, MAX_NOTIFICATIONS);
 }
 
 /** A short signature, so we only touch Android's alarms when something actually changed. */

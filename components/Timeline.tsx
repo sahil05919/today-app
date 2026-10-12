@@ -51,7 +51,7 @@ export function NextUpCard({
   let state = "Next up";
   if (item) {
     if (item.start <= nowMin && nowMin < item.end) state = "Now";
-    else if (item.end <= nowMin) state = "Still to do";
+    else if (item.end <= nowMin) state = item.fixed ? "Earlier" : "To do today";
     else state = `Next up · ${inMinutes(item.start - nowMin)}`;
   }
 
@@ -176,7 +176,7 @@ function Row({ it, ctx, tl, nowMin, onOpen, onReschedule }: { it: TLItem; ctx: V
   return (
     <li>
     <div className="flex items-stretch">
-      <span className={`w-11 shrink-0 pt-3.5 text-xs tabular-nums ${current ? "font-semibold text-accent" : "text-muted"}`}>{it.allDay ? "all day" : toHHMM(it.start)}</span>
+      <span className={`w-11 shrink-0 pt-3.5 text-xs tabular-nums ${current ? "font-semibold text-accent" : "text-muted"}`}>{it.allDay ? "all day" : `${it.fixed || isEvent ? "" : "~"}${toHHMM(it.start)}`}</span>
       {isEvent ? (
         <button
           onClick={() => {
@@ -273,7 +273,7 @@ export function TimelineList({ tl, ctx, nowMin, onOpen, onReschedule, openPanel 
   return (
     <section aria-label="Today's plan">
       <div className="flex items-center justify-between gap-2 px-1 pb-1">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">Today</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">To-do today</h2>
         {r.work ? (
           <button
             onClick={() => onOpen({ key: "block:work", kind: "break", title: "Work hours", start: r.work![0], end: r.work![1], fixed: true, done: false, skipped: false, muted: true, blockId: "work" })}

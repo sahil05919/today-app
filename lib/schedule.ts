@@ -304,7 +304,7 @@ export function planWeek(raw: AppData, now: Date = new Date(), busyOverride?: Bu
   // Your own priority order first (the lower `order`), then the area furthest from its target, so what matters most gets the free time.
   const gap = (a: Area) => (a.target!.perWeek - have(a)) / a.target!.perWeek;
   const byGap = [...areas].sort((x, y) => (x.target!.order ?? 5) - (y.target!.order ?? 5) || gap(y) - gap(x));
-  const passes: Array<["A" | "B", number]> = [["A", 1], ["B", 1], ["B", RELAXED_PER_DAY]];
+  const passes = [1, RELAXED_PER_DAY];
   /** One more session of this area, if any day can take it. */
   const placeOne = (a: Area, level: "A" | "B", perDay: number): boolean => {
     const days = week.filter((d) => mayUse(a, d) && countOf(a, d) < perDay).sort((x, y) => minutesOn(x) - minutesOn(y) || x.localeCompare(y));
@@ -318,13 +318,14 @@ export function planWeek(raw: AppData, now: Date = new Date(), busyOverride?: Bu
     return false;
   };
   // Round-robin, one session per area per round: a crowded week is shared out instead of one area taking all the free time.
-  for (const [level, perDay] of passes) {
+  // In its turn an area tries its own slots first, then any free time (so an area with no slot on a weekend still gets one).
+  for (const perDay of passes) {
     for (let moved = true; moved; ) {
       moved = false;
       for (const a of byGap) {
         // A daily habit (6+ a week) is never doubled up to catch up: it is reported instead.
         if (perDay > 1 && a.target!.perWeek > 5) continue;
-        if (have(a) < a.target!.perWeek && placeOne(a, level, perDay)) moved = true;
+        if (have(a) < a.target!.perWeek && (placeOne(a, "A", perDay) || placeOne(a, "B", perDay))) moved = true;
       }
     }
   }

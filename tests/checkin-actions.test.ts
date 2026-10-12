@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { applyCheckInAction } from "../lib/notifications/native";
 import { getData, actions } from "../lib/store";
+import { withDefaults } from "../lib/profile";
 import { toISO } from "../lib/dates";
 
 // These run against the real store (in memory), exactly what the notification buttons call.
 const today = toISO(new Date());
 const logsFor = (areaId: string) => (getData().sessions ?? []).filter((l) => l.areaId === areaId);
+
+// "Sort emails" is no longer one of the default rhythm items (the evening check-in replaced it), so this test adds a tracked
+// check-in of its own: the buttons work the same for any chore.
+actions.setProfile({
+  ...withDefaults(getData().profile),
+  rhythm: [...withDefaults(getData().profile).rhythm, { id: "emails", label: "Sort emails", time: "20:00", days: [0, 1, 2, 3, 4, 5, 6], enabled: true, kind: "chore", message: "Have you sorted your email, {name}?" }],
+});
 
 describe("notification buttons: Done / +1 hour / Skip", () => {
   it("starts with your areas seeded", () => {

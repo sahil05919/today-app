@@ -20,6 +20,12 @@ export interface Nudge {
   kind: "behind" | "neglect" | "empty-day" | "goals";
   text: string;
   areaId?: string;
+  /** For the friendly wording (lib/gentle.ts). */
+  areaName?: string;
+  days?: number;
+  done?: number;
+  target?: number;
+  fit?: number;
 }
 
 export const nudgeKey = (id: string, date: ISODate) => `nudge:${id}:${date}`;
@@ -54,6 +60,10 @@ export function computeNudges(data: AppData, now: Date = new Date()): Nudge[] {
       id: `behind:${r.area.id}`,
       kind: "behind",
       areaId: r.area.id,
+      areaName: r.area.name,
+      done: r.done,
+      target: r.target,
+      fit,
       text:
         fit === 0
           ? `${r.area.name} is behind: ${r.done} of ${r.target} so far, and nothing more fits this week. Worth moving something?`
@@ -84,6 +94,8 @@ export function computeNudges(data: AppData, now: Date = new Date()): Nudge[] {
       id: `neglect:${r.area.id}`,
       kind: "neglect",
       areaId: r.area.id,
+      areaName: r.area.name,
+      days: r.last ? days : undefined,
       text: r.last ? `No ${r.area.name.toLowerCase()} in ${days} days.` : `No ${r.area.name.toLowerCase()} session yet.`,
     });
   }
