@@ -1,8 +1,9 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { aiEnabled, chooseAmong, interpret } from "@/lib/ai";
 import { diffDays, friendlyDate, toISO } from "@/lib/dates";
-import { isLightenIntent } from "@/lib/intentPhrases";
+import { appNoteText } from "@/lib/appNotes";
+import { intentOf } from "@/lib/intentPhrases";
 import { correctTick, tickFromText, type TickResult } from "@/lib/doneRun";
 import { matchDone } from "@/lib/doneText";
 import type { ParsedCapture } from "@/lib/parse";
@@ -63,8 +64,16 @@ export function Capture({
 
   // Live preview: the same pipeline that runs on Enter (rules, your learned fixes, a sensible time).
   // Commands are recognised first, offline, before any task capture (so they can never be saved as a task).
-  const intent = isLightenIntent(text);
-  const parsed = useMemo(() => (text.trim() && !isLightenIntent(text) ? understand(text, data, new Date()) : null), [text, data]);
+  // The preview is parsed from a deferred copy of the text, so typing itself never waits for the parser.
+  const intent = intentOf(text);
+  const typed = useDeferredValue(text);
+  const parsed = useMemo(() => (typed.trim() && !intentOf(typed) ? understand(typed, data, new Date()) : null), [typed, data]);
+
+  /** "app: …" is a note to the app, never a task: it goes to Settings → App notes. */
+  const saveAppNote = (value: string) => {
+    const note = actions.addAppNote(value);
+    ctx.notify("Saved to App notes", () => actions.removeAppNote(note.id));
+  };
 
   // The mic only exists where voice can work (and only if you haven't hidden it in Settings).
   const hideMic = ctx.profile.hideMic;
@@ -181,7 +190,9 @@ export function Capture({
   };
 
   const save = async (value: string) => {
-    if (isLightenIntent(value)) {
+    const kind = intentOf(value);
+    if (kind === "app") return saveAppNote(value);
+    if (kind === "lighten") {
       onLighten?.();
       return;
     }
@@ -251,7 +262,7 @@ export function Capture({
       )}
       {intent && !voiceOpen && (
         <p className="mb-2 rounded-xl bg-accent-soft px-3 py-2 text-sm font-medium" role="status">
-          ✨ That's a request, not a task: Enter opens Lighten my week.
+          {intent === "app" ? `✨ That's a request, not a task: Enter saves it to App notes (“${appNoteText(text).slice(0, 60)}”).` : "✨ That's a request, not a task: Enter opens Lighten my week."}
         </p>
       )}
       {parsed && !voiceOpen && (
@@ -262,12 +273,18 @@ export function Capture({
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (intent === "app") {
+            const value = text;
+            setText("");
+            saveAppNote(value);
+            return;
+          }
           if (intent) {
             setText("");
             onLighten?.();
             return;
           }
-          if (!parsed) return;
+          if (!text.trim()) return;
           const value = text;
           setText("");
           void save(value);

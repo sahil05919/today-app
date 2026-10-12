@@ -627,6 +627,12 @@ export function migrate(raw: unknown): AppData {
     occurrences: cleanOccurrences(r.occurrences),
     history: cleanHistory(r.history),
     sideWork: cleanSideWork(r.sideWork),
+    notes: Array.isArray(r.notes)
+      ? r.notes
+          .filter((n: any) => n && typeof n.text === "string" && n.text.trim() && isISO(n.date))
+          .slice(-300)
+          .map((n: any) => ({ id: str(n.id, 64) || crypto.randomUUID(), at: num(n.at) ?? Date.now(), date: n.date, text: n.text.slice(0, 1000) }))
+      : undefined,
     blocks: cleanBlocks(r.blocks),
     eventMarks: cleanEventMarks(r.eventMarks),
     weeks: cleanWeeks(r.weeks),

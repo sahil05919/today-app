@@ -672,6 +672,8 @@ export interface AppData {
   occurrences?: Occurrence[];
   /** Everything that was done / skipped / missed / rescheduled, append-only. */
   history?: HistoryEvent[];
+  /** Notes about the app, from "app: …" in Capture. */
+  notes?: AppNote[];
   /** Side work: the Monday check (see lib/sideWork.ts). */
   sideWork?: SideWorkState;
   /** "Just today" tweaks to routine blocks, keyed "<blockId>@<date>". */
@@ -682,6 +684,14 @@ export interface AppData {
   weeks?: WeekSnapshot[];
   /** Runtime only, never saved: the window in which repeat occurrences were added to `tasks` (see withOccurrences). */
   expanded?: { from: ISODate; to: ISODate };
+}
+
+/** A note about the app itself, typed in Capture as "app: …" (Settings → App notes). */
+export interface AppNote {
+  id: string;
+  at: number;
+  date: ISODate;
+  text: string;
 }
 
 export const MAX_FOCUS = 3;

@@ -11,6 +11,7 @@ import { NotificationSettings } from "./NotificationSettings";
 import { RepeatingTasks } from "./RepeatingTasks";
 import { BackupSettings } from "./BackupSettings";
 import { HealthSettings } from "./HealthSettings";
+import { AppNotes } from "./AppNotes";
 import { LifeAdminSettings } from "./LifeAdminSettings";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
 
@@ -351,7 +352,11 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
           <LifeAdminSettings data={data} />
         </Section>
 
-        <Section title="Health" hint="The morning self-check">
+        <Section title="App notes" hint={`${(data.notes ?? []).length} about the app`}>
+          <AppNotes data={data} ctx={ctx} />
+        </Section>
+
+        <Section title="Health" hint="Self-check, recent errors">
           <HealthSettings data={data} ctx={ctx} />
         </Section>
 

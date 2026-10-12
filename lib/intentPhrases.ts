@@ -3,6 +3,8 @@
  * They are recognised offline before any task capture, so they can never be saved as a task (and a stray one that was saved
  * by an older build is cleaned up by lib/cleanup.ts).
  */
+import { isAppNote } from "./appNotes";
+
 const norm = (t: string) =>
   t
     .toLowerCase()
@@ -34,4 +36,11 @@ export function isLightenIntent(text: string): boolean {
 }
 
 /** A title that is really a command (so a task with this title is a leftover, never something to plan). */
-export const isCommandTitle = isLightenIntent;
+export const isCommandTitle = (text: string) => isLightenIntent(text) || isAppNote(text);
+
+/** What a typed line means when it is not a task: "lighten" (work done, I'm free…), "app" (a note for the app: "app: …"). */
+export type Intent = "lighten" | "app";
+export function intentOf(text: string): Intent | null {
+  if (isAppNote(text)) return "app";
+  return isLightenIntent(text) ? "lighten" : null;
+}

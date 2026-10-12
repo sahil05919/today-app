@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import { backupKeysFor, emptyData, migrate, needsUpgrade } from "./backup";
 import { addDays, toISO, todayISO } from "./dates";
 import { logError } from "./debugLog";
+import { makeNote, MAX_NOTES } from "./appNotes";
 import { record } from "./devTiming";
 import { safely } from "./nativeGuard";
 import { isNative } from "./platform";
@@ -49,7 +50,7 @@ import { withLetter } from "./letters";
 import { applyPull, lighterLine, type PullCandidate } from "./lighten";
 import { ensureLifeSeries } from "./lifeAdmin";
 import { addCustomSource, setTick, toggleHidden, toggleWeekly } from "./sideWork";
-import type { AppData, Bill, BoredIdea, CheckResult, EventMark, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
+import type { AppData, AppNote, Bill, BoredIdea, CheckResult, EventMark, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
 /**
@@ -1084,6 +1085,19 @@ export const actions = {
     const d = ensure();
     const q = quoteStateOf(d);
     commit({ ...d, quotes: { ...q, saved: q.saved.includes(id) ? q.saved.filter((x) => x !== id) : [...q.saved, id] } });
+  },
+
+  /** "app: …" in Capture: saved to Settings → App notes, never a task. Returns the note (for Undo). */
+  addAppNote(text: string, now: Date = new Date()): AppNote {
+    const d = ensure();
+    const note = makeNote(text, now);
+    commit({ ...d, notes: [...(d.notes ?? []), note].slice(-MAX_NOTES) });
+    return note;
+  },
+
+  removeAppNote(id: string) {
+    const d = ensure();
+    commit({ ...d, notes: (d.notes ?? []).filter((n) => n.id !== id) });
   },
 
   replaceAll(data: AppData) {
