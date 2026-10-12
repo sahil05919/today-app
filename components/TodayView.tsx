@@ -24,6 +24,7 @@ import { RescheduleSheet } from "./RescheduleSheet";
 import { friendlyNudge } from "@/lib/gentle";
 import { CheckCard, type CheckAction } from "./CheckCard";
 import { DayDoneCard } from "./DayDoneCard";
+import { DigestCard, RemindClashCard } from "./InboxCards";
 import { ProgressHeader } from "./ProgressHeader";
 import { ShareHint } from "./ShareHint";
 import { ShortfallCard, ShortfallSheet } from "./ShortfallCard";
@@ -249,6 +250,8 @@ export function TodayView({
       <FreedCard data={data} ctx={ctx} now={now} />
       <ShortfallCard data={data} ctx={ctx} now={now} />
       <CheckCard data={data} today={ctx.today} onAction={onCheckAction} />
+      <RemindClashCard data={data} ctx={ctx} />
+      <DigestCard data={data} now={now} />
       {banner}
 
       <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} onReschedule={reschedule} openPanel={openPanel} />

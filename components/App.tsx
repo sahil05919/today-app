@@ -15,6 +15,7 @@ import { looksLikeBooking, parseShared, type ParsedShare } from "@/lib/sharePars
 import { readWithGemini } from "@/lib/shareAi";
 import { dateInKey, resolveTap } from "@/lib/tap";
 import { markOpen, timed } from "@/lib/devTiming";
+import { addedLine } from "@/lib/inbox";
 import { closeAllSheets } from "@/lib/sheetStack";
 import { settleNote, settleOverflow } from "@/lib/settle";
 import { findTask, seriesOf } from "@/lib/series";
@@ -222,6 +223,14 @@ export default function App() {
   const minuteKey = Math.floor(now.getTime() / 60_000);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const tl = useMemo(() => (data ? timed("planner: buildTimeline(today)", () => buildTimeline(data, today, new Date(minuteKey * 60_000))) : null), [data, today, minuteKey]);
+
+  // Tasks the Gmail add-on sent (lib/inboxRun.ts): say so once, then forget it.
+  const addedFromGmail = data?.settings.inboxAdded;
+  useEffect(() => {
+    if (!addedFromGmail) return;
+    notify(addedLine(addedFromGmail.n));
+    actions.bookkeeping({ inboxAdded: undefined });
+  }, [addedFromGmail, notify]);
 
   // The first render that has data is "Today is usable": the dev timing log notes how long the page took to get here.
   useEffect(() => {

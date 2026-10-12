@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getStatus, initNotifications, listenForActions, markActivated, openExactAlarmSettings, type TapTarget } from "@/lib/notifications/native";
 import { installCalendarWriter } from "@/lib/calendarWrite";
+import { todayISO } from "@/lib/dates";
 import { isNative } from "@/lib/platform";
 import { safely } from "@/lib/nativeGuard";
 import { closeTopSheet } from "@/lib/sheetStack";
@@ -96,7 +97,13 @@ export function NativeShell({ data, onTap }: { data: AppData; onTap: (t: TapTarg
   // The widget (and a day that rolls over while the app stays open) is refreshed every few minutes.
   useEffect(() => {
     if (!isNative()) return;
-    const id = setInterval(() => requestSync("tick"), 5 * 60_000);
+    let day = todayISO();
+    const id = setInterval(() => {
+      // A new day while the app stays open: the daily jobs (Plan calendar, Inbox, backup check) run too.
+      const now = todayISO();
+      requestSync(now === day ? "tick" : "daily");
+      day = now;
+    }, 5 * 60_000);
     return () => clearInterval(id);
   }, []);
 

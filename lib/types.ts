@@ -169,6 +169,8 @@ export interface FixedEvent {
   status?: string;
   /** A shift or booking made from an email: it gets lead-up reminders (2 days before 19:00, the evening before 21:00). */
   shift?: boolean;
+  /** A calendar event whose notes carry #today-remind: it gets the lead-up reminders and the work-clash check, like a shared shift. */
+  remind?: boolean;
   /** The id of the same event in the phone's calendar (written by Today), so an edit or a delete updates it and a re-read never duplicates it. */
   calEventId?: string;
 }
@@ -624,6 +626,13 @@ export interface Settings {
   compactedDate?: ISODate;
   compactFailedAt?: number;
   /** The "Today – Plan" mirror: when it last ran and how it went (shown in Settings and the Health check). */
+  /** Gmail add-on (lib/inbox.ts): TASK: events already imported (never twice), today's DIGEST, whether its card was dismissed, tasks added since the toast. */
+  inboxSeen?: string[];
+  digest?: { date: ISODate; title: string; items: string[] };
+  digestDismissed?: ISODate;
+  inboxAdded?: { n: number; at: number };
+  /** Event ids whose "clashes with work" card was answered. */
+  clashDismissed?: string[];
   mirror?: { at: number; status: "ok" | "off" | "no-calendar" | "not-google" | "no-permission" | "error" | "unsupported"; calendar?: string; written?: number };
 }
 

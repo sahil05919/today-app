@@ -1,5 +1,6 @@
 import { addDays, toISO } from "./dates";
 import { isNative } from "./platform";
+import { REMIND_TAG } from "./calendarNames";
 import type { FixedEvent, ISODate } from "./types";
 
 /**
@@ -30,6 +31,9 @@ const utcDate = (ms: number): ISODate => {
 };
 const MAX_SPAN_DAYS = 14;
 
+/** The add-on marks the events it wants reminders for with #today-remind in their notes. */
+const tagged = (e: RawCalendarEvent): true | undefined => (e.description?.toLowerCase().includes(REMIND_TAG) ? true : undefined);
+
 /** Android's events → one FixedEvent per day they touch (a long event is clipped to each day). */
 export function convertCalendarEvents(raw: RawCalendarEvent[], now = Date.now()): FixedEvent[] {
   const out: FixedEvent[] = [];
@@ -40,7 +44,7 @@ export function convertCalendarEvents(raw: RawCalendarEvent[], now = Date.now())
       const first = utcDate(e.begin);
       const last = utcDate(Math.max(e.begin, e.end - 1));
       for (let d = first, i = 0; d <= last && i < MAX_SPAN_DAYS; d = addDays(d, 1), i++) {
-        out.push({ id: `cal:${e.id}:${d}`, calId: e.id, title, date: d, createdAt: now, source: "calendar" });
+        out.push({ id: `cal:${e.id}:${d}`, calId: e.id, title, date: d, createdAt: now, source: "calendar", remind: tagged(e) });
       }
       continue;
     }
@@ -63,6 +67,7 @@ export function convertCalendarEvents(raw: RawCalendarEvent[], now = Date.now())
           end: f.getTime() >= dayEnd.getTime() ? "23:59" : hhmm(f),
           createdAt: now,
           source: "calendar",
+          remind: tagged(e),
         });
       }
       if (end.getTime() <= dayEnd.getTime()) break;

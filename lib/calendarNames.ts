@@ -52,5 +52,8 @@ export function todayCalendarIds(list: WritableCalendar[] | null | undefined): n
   return (list ?? []).filter((c) => is(c, PLAN_NAME) || is(c, INBOX_NAME)).map((c) => c.id);
 }
 
+/** The add-on tags events in your MAIN calendar (shifts, bookings) with this in their notes to get reminders and the clash check. */
+export const REMIND_TAG = "#today-remind";
+
 /** The line every mirror event ends with. */
 export const MIRROR_NOTE = "Managed by the Today app — edits here are overwritten";

@@ -374,6 +374,7 @@ function cleanEvents(v: any): FixedEvent[] | undefined {
       area: str(e.area, 40),
       status: str(e.status, 40),
       shift: e.shift === true ? true : undefined,
+      remind: e.remind === true ? true : undefined,
       calEventId: str(e.calEventId, 80),
     }));
 }
@@ -691,6 +692,14 @@ export function migrate(raw: unknown): AppData {
       calmDate: isISO(s.calmDate) ? s.calmDate : undefined,
       lastCheck: cleanCheck(s.lastCheck),
       checkDismissed: isISO(s.checkDismissed) ? s.checkDismissed : undefined,
+      inboxSeen: Array.isArray(s.inboxSeen) ? s.inboxSeen.filter((x: unknown) => typeof x === "string" && x.length < 40).slice(-300) : undefined,
+      digest:
+        s.digest && isISO(s.digest.date) && Array.isArray(s.digest.items)
+          ? { date: s.digest.date, title: String(s.digest.title ?? "").slice(0, 120), items: s.digest.items.filter((x: unknown) => typeof x === "string").slice(0, 30).map((x: string) => x.slice(0, 300)) }
+          : undefined,
+      digestDismissed: isISO(s.digestDismissed) ? s.digestDismissed : undefined,
+      inboxAdded: s.inboxAdded && Number.isFinite(s.inboxAdded.n) && Number.isFinite(s.inboxAdded.at) ? { n: Math.min(99, Math.max(1, Math.round(s.inboxAdded.n))), at: s.inboxAdded.at } : undefined,
+      clashDismissed: Array.isArray(s.clashDismissed) ? s.clashDismissed.filter((x: unknown) => typeof x === "string" && x.length < 120).slice(-100) : undefined,
       compactedDate: isISO(s.compactedDate) ? s.compactedDate : undefined,
       compactFailedAt: num(s.compactFailedAt),
       mirror:

@@ -11,7 +11,7 @@ import type { FixedEvent } from "./types";
 export type SyncResult = "ok" | "off" | "no-permission" | "error" | "unsupported";
 
 /** What matters for "did anything change": the events without bookkeeping fields. */
-const sig = (list: FixedEvent[] | undefined) => (list ?? []).map((e) => `${e.id}|${e.title}|${e.date}|${e.start ?? ""}|${e.end ?? ""}`).join("\n");
+const sig = (list: FixedEvent[] | undefined) => (list ?? []).map((e) => `${e.id}|${e.title}|${e.date}|${e.start ?? ""}|${e.end ?? ""}|${e.remind ? 1 : 0}`).join("\n");
 
 /**
  * Today's own calendars must never be read back as events (the Plan mirror would duplicate the whole schedule, and the Inbox holds

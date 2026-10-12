@@ -44,11 +44,13 @@ export function briefFor(data: AppData, day: ISODate, tl: Timeline, name: string
 }
 
 /** "Tonight: Job Prep, English Reading. Anything from email to add?" */
-export function tonightBody(tl: Timeline): string {
+export function tonightBody(tl: Timeline, digest?: string | null): string {
   const left = tl.items
     .filter((x) => actionable(x) && !x.done && !x.skipped && x.kind !== "calendar" && x.kind !== "event" && x.end > 17 * 60)
     .map((x) => x.title.replace(/ · session \d+$| session \d+$/, ""));
   const names = [...new Set(left)].slice(0, 2);
+  // The Gmail add-on's digest ("3 emails need you") replaces the generic nudge to share something from email.
+  if (digest) return names.length ? `Tonight: ${names.join(", ")}. ${digest}.` : `A free evening. ${digest}.`;
   return names.length ? `Tonight: ${names.join(", ")}. Anything from email to add?` : "A free evening. Anything from email to add?";
 }
 

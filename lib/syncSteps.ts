@@ -3,6 +3,7 @@ import { syncPhoneCalendar } from "./calendarSync";
 import { runCompaction } from "./compactRun";
 import { toISO } from "./dates";
 import { pushWidgetSnapshot, takeWidgetActions } from "./nativeBridge";
+import { importInbox } from "./inboxRun";
 import { mirrorStep } from "./mirrorRun";
 import { rescheduleAll } from "./notifications/native";
 import { isNative } from "./platform";
@@ -51,6 +52,14 @@ export function syncSteps(): SyncStep[] {
       reasons: ["open", "resume", "daily", "manual"],
       // Android's permission dialog is shown once, when the app opens (calendarAsked() remembers it was).
       run: ({ reasons }) => syncPhoneCalendar({ ask: reasons.has("open") }),
+    },
+    {
+      // "Today – Inbox": TASK: events become tasks (once), today's DIGEST: is picked up.
+      name: "inbox",
+      reasons: ["open", "resume", "daily", "manual"],
+      async run() {
+        await importInbox();
+      },
     },
     {
       name: "notifications",

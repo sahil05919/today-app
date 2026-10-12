@@ -4,7 +4,8 @@ import { stepProgress } from "../estimate";
 import { toMin, toHHMM, withDefaults } from "../profile";
 import { backupDue } from "../backup";
 import { billReminders, reminderText } from "../bills";
-import { eventsOn } from "../fixed";
+import { eventsOn, isEventDone, markOf } from "../fixed";
+import { digestLine } from "../inbox";
 import { computeNudges } from "../nudges";
 import { isOffDay } from "../offday";
 import { eveningLine } from "../cheer";
@@ -146,6 +147,15 @@ const friendlyWhen = (due: ISODate, today: ISODate) => {
   return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][d.getDay()];
 };
 
+/**
+ * The events that get reminders: the ones made in Today, plus the add-on's events in the phone calendar whose notes carry
+ * #today-remind (unless ticked off or hidden). Other phone-calendar events keep their old behaviour: no reminder from Today.
+ */
+function remindable(data: AppData) {
+  const tagged = (data.calendarEvents ?? []).filter((e) => e.remind && !isEventDone(data, e) && !markOf(data, e)?.hidden);
+  return [...(data.events ?? []), ...tagged];
+}
+
 export function planNotifications(raw: AppData, now: Date = new Date(), opts: { budget?: number } = {}): PlannedNotification[] {
   const today = toISO(now);
   // Repeats of the window come from getOccurrences, so the Vitamin has a 11:00 reminder on EVERY coming day.
@@ -216,7 +226,7 @@ export function planNotifications(raw: AppData, now: Date = new Date(), opts: { 
   // --- Fixed events: a heads-up before they start --------------------------------
   const horizonDay = addDays(today, DAYS_AHEAD);
   if (p.notify.events) {
-    for (const e of data.events ?? []) {
+    for (const e of remindable(data)) {
       if (!e.start || e.date < today || e.date > horizonDay) continue;
       push({
         key: `event:${e.id}`,
@@ -232,8 +242,8 @@ export function planNotifications(raw: AppData, now: Date = new Date(), opts: { 
   }
 
   // --- Shifts and bookings from an email: the lead-up. The 1-hour heads-up is the event reminder above. -----------------------
-  for (const e of data.events ?? []) {
-    if (!e.shift || !e.start || e.date < today || e.date > horizonDay) continue;
+  for (const e of remindable(data)) {
+    if ((!e.shift && !e.remind) || !e.start || e.date < today || e.date > horizonDay) continue;
     const morning = toMin(e.start) < 12 * 60;
     const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][fromISO(e.date).getDay()];
     const short = shortShift(e.title);
@@ -340,7 +350,7 @@ export function planNotifications(raw: AppData, now: Date = new Date(), opts: { 
 
     // --- Evening check-in 20:00: what is left tonight, and a nudge to share anything from email ------------------------
     if (p.notify.tonight !== false) {
-      push({ key: `tonight:${day}`, at: at(day, p.checkinTime), kind: "tonight", title: "Tonight", body: tonightBody(timelineOf(day)), actions: false, exact: false });
+      push({ key: `tonight:${day}`, at: at(day, p.checkinTime), kind: "tonight", title: "Tonight", body: tonightBody(timelineOf(day), digestLine(data, day)), actions: false, exact: false });
     }
 
     // --- Task check-ins: "Due Friday, where are you?" -----------------------
