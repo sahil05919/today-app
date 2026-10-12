@@ -10,6 +10,9 @@ import { ensureLetter } from "@/lib/coachRun";
 import { toMin, withDefaults } from "@/lib/profile";
 import { isQuoteDay, quoteStateOf } from "@/lib/quoteBag";
 import { quoteMinute } from "@/lib/brief";
+import { aiEnabled } from "@/lib/ai";
+import { looksLikeBooking, parseShared, type ParsedShare } from "@/lib/shareParse";
+import { readWithGemini } from "@/lib/shareAi";
 import { dateInKey, resolveTap } from "@/lib/tap";
 import { settleNote, settleOverflow } from "@/lib/settle";
 import { findTask, seriesOf } from "@/lib/series";
@@ -30,6 +33,7 @@ import { CheckIn } from "./CheckIn";
 import { EveningWrap } from "./EveningWrap";
 import { IdeasSheet } from "./IdeasSheet";
 import { LightenSheet } from "./LightenSheet";
+import { ShareEventSheet } from "./ShareEventSheet";
 import { SideWorkSheet } from "./SideWorkSheet";
 import { ImportSheet } from "./ImportSheet";
 import { BillsSheet, GoalsSheet, ShoppingSheet } from "./ListSheets";
@@ -100,6 +104,7 @@ export default function App() {
   const [pendingTap, setPendingTap] = useState<TapTarget | null>(null);
   const [request, setRequest] = useState<OpenRequest | null>(null);
   const [shareHint, setShareHint] = useState(false);
+  const [share, setShare] = useState<ParsedShare | null>(null);
   const [invite, setInvite] = useState<IcsEvent[] | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -110,6 +115,25 @@ export default function App() {
   }, []);
 
   const profile = useMemo(() => withDefaults(data?.profile), [data?.profile]);
+
+  // Text shared from Gmail (or anywhere): read on the phone first. Gemini is asked ONLY if the phone found no date and a key is set,
+  // and then the confirm sheet says so. A short note or a link is simply captured as before. Nothing is saved without the sheet.
+  const onShared = useCallback(
+    (text: string) => {
+      const prefill = () => setCommand({ kind: "prefill", text: text.replace(/\s+/g, " ").trim(), nonce: Date.now() });
+      const local = parseShared(text, new Date());
+      if (local) return setShare(local);
+      if (aiEnabled() && looksLikeBooking(text)) {
+        notify("Reading it with Gemini…");
+        void readWithGemini(text, new Date()).then((g) => (g ? setShare(g) : prefill()));
+        return;
+      }
+      prefill();
+    },
+    [notify],
+  );
+  const onSharedRef = useRef(onShared);
+  onSharedRef.current = onShared;
 
   const ctx: ViewCtx = useMemo(
     () => ({ today, profile, open: setOpenId, notify, when: (id, mode) => setWhen({ id, mode }) }),
@@ -161,7 +185,7 @@ export default function App() {
     if (shared.length) {
       // Many apps repeat the link in both text and url; keep each distinct piece once.
       const parts = shared.filter((p, i) => !shared.some((o, j) => j !== i && o.includes(p) && (o.length > p.length || j < i)));
-      setCommand({ kind: "prefill", text: parts.join(" ").trim(), nonce });
+      onSharedRef.current(parts.join("\n").trim());
     } else if (q.get("voice")) setCommand({ kind: "voice", nonce });
     else if (q.get("new")) setCommand({ kind: "new", nonce });
     else return;
@@ -176,7 +200,7 @@ export default function App() {
         if (i.kind === "share") {
           const parts = [i.title, i.text].filter((v): v is string => !!v?.trim());
           const dedup = parts.filter((p, k) => !parts.some((o, j) => j !== k && o.includes(p) && (o.length > p.length || j < k)));
-          setCommand({ kind: "prefill", text: dedup.join(" ").trim(), nonce });
+          onSharedRef.current(dedup.join("\n").trim());
         } else if (i.kind === "ics") {
           // "Open with Today" on a calendar invite: show what's in it before adding.
           setInvite(parseICS(i.text ?? ""));
@@ -388,6 +412,7 @@ export default function App() {
       {panel === "lighten" && <LightenSheet data={data} ctx={ctx} now={new Date()} onClose={closePanel} />}
       {when && when.mode === "reschedule" && !!findTask(data, when.id) && <RescheduleSheet target={{ kind: "task", taskId: when.id }} ctx={ctx} onClose={() => setWhen(null)} />}
       {when && when.mode === "schedule" && findTask(data, when.id) && <WhenSheet task={findTask(data, when.id)!} mode="schedule" ctx={ctx} onClose={() => setWhen(null)} />}
+      {share && <ShareEventSheet key={share.date + share.title} share={share} data={data} ctx={ctx} onClose={() => setShare(null)} />}
       {invite && <ImportSheet events={invite} ctx={ctx} onClose={() => setInvite(null)} />}
       {checkIn && <CheckIn tasks={checkIn} today={today} onFinish={() => setCheckIn(null)} />}
     </div>

@@ -778,6 +778,14 @@ export const actions = {
     return event;
   },
 
+  /** Adds an event you have confirmed (from an email, say). Sessions and tasks re-plan around it on their own. */
+  addFixedEvent(e: Omit<FixedEvent, "id" | "createdAt">): FixedEvent {
+    const d = ensure();
+    const event: FixedEvent = { ...e, id: uid(), createdAt: Date.now() };
+    commit({ ...d, events: [...(d.events ?? []), event] });
+    return event;
+  },
+
   updateEvent(id: string, patch: Partial<FixedEvent>) {
     const d = ensure();
     commit({ ...d, events: (d.events ?? []).map((e) => (e.id === id ? { ...e, ...patch } : e)) });

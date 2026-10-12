@@ -371,6 +371,10 @@ function cleanEvents(v: any): FixedEvent[] | undefined {
       createdAt: num(e.createdAt) ?? Date.now(),
       source: e.source === "calendar" || e.source === "ics" ? e.source : undefined,
       calId: str(e.calId, 80),
+      area: str(e.area, 40),
+      status: str(e.status, 40),
+      shift: e.shift === true ? true : undefined,
+      calEventId: str(e.calEventId, 80),
     }));
 }
 

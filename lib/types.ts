@@ -163,6 +163,14 @@ export interface FixedEvent {
   source?: "calendar" | "ics";
   /** Calendar events only: the phone's own id, so a re-sync replaces rather than duplicates. */
   calId?: string;
+  /** An area id for an event made from an email ("sidework"). */
+  area?: string;
+  /** What the email said it was: "Approved", "Standby"… */
+  status?: string;
+  /** A shift or booking made from an email: it gets lead-up reminders (2 days before 19:00, the evening before 21:00). */
+  shift?: boolean;
+  /** The id of the same event in the phone's calendar (written by Today), so an edit or a delete updates it and a re-read never duplicates it. */
+  calEventId?: string;
 }
 
 /** A word you taught the dictionary: "pehchaan karna" → Admin. Used offline, before the built-in words. */

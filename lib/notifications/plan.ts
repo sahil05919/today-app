@@ -130,6 +130,13 @@ function groceryLine(data: AppData): string {
   return `Buy: ${items.slice(0, 8).join(", ")}${items.length > 8 ? ` +${items.length - 8} more` : ""}.`;
 }
 
+/** "WTM Exhibition shift (Pinnacle) — Standby" → "WTM shift". */
+export function shortShift(title: string): string {
+  const head = title.split(" — ")[0].replace(/\s*\(.*?\)\s*/g, " ").trim();
+  const m = /^(.*?)\s+shift$/i.exec(head);
+  return m ? `${m[1].split(/\s+/)[0]} shift` : head;
+}
+
 const friendlyWhen = (due: ISODate, today: ISODate) => {
   const diff = diffDays(due, today);
   if (diff < 0) return "overdue";
@@ -222,6 +229,16 @@ export function planNotifications(raw: AppData, now: Date = new Date(), opts: { 
         exactTime: true,
       });
     }
+  }
+
+  // --- Shifts and bookings from an email: the lead-up. The 1-hour heads-up is the event reminder above. -----------------------
+  for (const e of data.events ?? []) {
+    if (!e.shift || !e.start || e.date < today || e.date > horizonDay) continue;
+    const morning = toMin(e.start) < 12 * 60;
+    const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][fromISO(e.date).getDay()];
+    const short = shortShift(e.title);
+    push({ key: `prep2:${e.id}`, at: at(addDays(e.date, -2), "19:00"), kind: "eventprep", title: "Coming up", body: `${wd} ${e.start}: ${short}. ${morning ? "Plan your morning" : "Plan your day"}`, actions: false, exact: true, exactTime: true });
+    push({ key: `prep1:${e.id}`, at: at(addDays(e.date, -1), "21:00"), kind: "eventprep", title: "Tomorrow", body: `Tomorrow ${e.start} shift: ${morning ? "set an alarm" : "all set?"}`, actions: false, exact: true, exactTime: true });
   }
 
   // --- Bills and chores: "N days before", never for autopay ---------------------------
