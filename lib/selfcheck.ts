@@ -1,5 +1,5 @@
 import { addDays, toISO } from "./dates";
-import { PLAN_HELP } from "./calendarNames";
+import { PICK_PLAN, PLAN_HELP } from "./calendarNames";
 import { withDefaults } from "./profile";
 import { dedupeSeriesReport, removeStrayTasks, strayTasks } from "./cleanup";
 import { planNotifications } from "./notifications/plan";
@@ -140,6 +140,7 @@ export function runSelfCheck(input: AppData, now: Date = new Date(), opts: Check
   const mirror = data.settings.mirror;
   if (mirror && withDefaults(data.profile).planMirror) {
     if (mirror.status === "no-calendar" || mirror.status === "not-google") issues.push({ id: "mirror", kind: "mirror", text: PLAN_HELP });
+    else if (mirror.status === "pick-calendar") issues.push({ id: "mirror", kind: "mirror", text: PICK_PLAN });
     else if (mirror.status === "no-permission") issues.push({ id: "mirror", kind: "mirror", text: "Allow Today to add to your calendar (Settings → Calendar) to turn on your safety copy." });
     else if (mirror.status === "error") issues.push({ id: "mirror", kind: "mirror", text: "The safety copy in Google Calendar could not be updated. See Settings → Health → Recent errors." });
   }

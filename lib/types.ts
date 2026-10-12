@@ -633,7 +633,7 @@ export interface Settings {
   inboxAdded?: { n: number; at: number };
   /** Event ids whose "clashes with work" card was answered. */
   clashDismissed?: string[];
-  mirror?: { at: number; status: "ok" | "off" | "no-calendar" | "not-google" | "no-permission" | "error" | "unsupported"; calendar?: string; written?: number };
+  mirror?: { at: number; status: "ok" | "off" | "no-calendar" | "not-google" | "pick-calendar" | "no-permission" | "error" | "unsupported"; calendar?: string; written?: number };
 }
 
 export interface AppData {

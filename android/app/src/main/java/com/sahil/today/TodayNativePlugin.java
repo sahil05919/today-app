@@ -85,6 +85,36 @@ public class TodayNativePlugin extends Plugin {
         }
     }
 
+    /**
+     * A whole number from the page. Capacitor's call.getLong() only accepts a java Long, but org.json parses a small number (a
+     * calendar id such as 3, an event id) as an Integer, so getLong() silently returned null and the call failed with
+     * "... is required". This accepts any number, and a numeric string.
+     */
+    private static Long longOf(PluginCall call, String name) {
+        Object v = call.getData().opt(name);
+        if (v instanceof Number) return ((Number) v).longValue();
+        if (v instanceof String) {
+            try {
+                return Long.parseLong(((String) v).trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** An array from the page: a real array, or the same array sent as a JSON string. */
+    private static JSArray arrayOf(PluginCall call, String name) {
+        Object v = call.getData().opt(name);
+        try {
+            if (v instanceof org.json.JSONArray) return new JSArray(v.toString());
+            if (v instanceof String) return new JSArray((String) v);
+        } catch (Exception e) {
+            return null;
+        }
+        return null;
+    }
+
     private String readText(Uri uri) {
         if (uri == null) return null;
         try (InputStream in = getContext().getContentResolver().openInputStream(uri)) {
@@ -247,8 +277,8 @@ public class TodayNativePlugin extends Plugin {
             call.reject("Calendar permission is not granted");
             return;
         }
-        Long from = call.getLong("from");
-        Long to = call.getLong("to");
+        Long from = longOf(call, "from");
+        Long to = longOf(call, "to");
         if (from == null || to == null || to <= from) {
             call.reject("from and to are required");
             return;
@@ -274,8 +304,8 @@ public class TodayNativePlugin extends Plugin {
             ContentResolver cr = getContext().getContentResolver();
             // Calendars to leave out (Today's own "Today - Plan" / "Today - Inbox") or to read exclusively. Numbers only: safe to inline.
             String selection = null;
-            JSArray exclude = call.getArray("excludeCalendarIds");
-            JSArray only = call.getArray("calendarIds");
+            JSArray exclude = arrayOf(call, "excludeCalendarIds");
+            JSArray only = arrayOf(call, "calendarIds");
             if (only != null && only.length() > 0) selection = CalendarContract.Instances.CALENDAR_ID + " IN (" + joinIds(only) + ")";
             else if (exclude != null && exclude.length() > 0) selection = CalendarContract.Instances.CALENDAR_ID + " NOT IN (" + joinIds(exclude) + ")";
             c = cr.query(builder.build(), projection, selection, null, CalendarContract.Instances.BEGIN + " ASC");
@@ -343,14 +373,18 @@ public class TodayNativePlugin extends Plugin {
             call.reject("Calendar permission is not granted");
             return;
         }
-        Long calendarId = call.getLong("calendarId");
-        JSArray ops = call.getArray("ops");
-        if (calendarId == null || ops == null) {
-            call.reject("calendarId and ops are required");
+        Long calendarId = longOf(call, "calendarId");
+        JSArray ops = arrayOf(call, "ops");
+        if (calendarId == null) {
+            call.reject("calendarId is missing or not a number (got: " + call.getData().opt("calendarId") + ")");
+            return;
+        }
+        if (ops == null) {
+            call.reject("ops is missing or not an array");
             return;
         }
         try {
-            call.resolve(new JSObject(MirrorStore.apply(getContext(), calendarId, ops, call.getArray("plan")).toString()));
+            call.resolve(new JSObject(MirrorStore.apply(getContext(), calendarId, ops, arrayOf(call, "plan")).toString()));
         } catch (SecurityException se) {
             call.reject("Calendar permission is not granted");
         } catch (Exception e) {
@@ -448,9 +482,9 @@ public class TodayNativePlugin extends Plugin {
             call.reject("Calendar permission is not granted");
             return;
         }
-        Long calendarId = call.getLong("calendarId");
-        Long start = call.getLong("start");
-        Long end = call.getLong("end");
+        Long calendarId = longOf(call, "calendarId");
+        Long start = longOf(call, "start");
+        Long end = longOf(call, "end");
         String title = call.getString("title");
         if (calendarId == null || start == null || end == null || title == null) {
             call.reject("calendarId, title, start and end are required");
@@ -470,7 +504,7 @@ public class TodayNativePlugin extends Plugin {
             if (description != null) v.put(CalendarContract.Events.DESCRIPTION, description);
             if (location != null) v.put(CalendarContract.Events.EVENT_LOCATION, location);
             ContentResolver cr = getContext().getContentResolver();
-            Long eventId = call.getLong("eventId");
+            Long eventId = longOf(call, "eventId");
             if (eventId != null) {
                 int n = cr.update(ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId), v, null, null);
                 if (n > 0) {
@@ -503,7 +537,7 @@ public class TodayNativePlugin extends Plugin {
             call.reject("Calendar permission is not granted");
             return;
         }
-        Long eventId = call.getLong("eventId");
+        Long eventId = longOf(call, "eventId");
         if (eventId == null) {
             call.reject("eventId is required");
             return;

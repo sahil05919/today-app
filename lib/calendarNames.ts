@@ -9,6 +9,7 @@ import type { WritableCalendar } from "./nativeBridge";
 export const PLAN_NAME = "Today – Plan";
 export const INBOX_NAME = "Today – Inbox";
 
+export const PICK_PLAN = "Pick 'Today – Plan' in Settings → Calendar";
 export const PLAN_HELP = "Create a calendar named 'Today – Plan' in Google Calendar (web) to turn on your safety copy.";
 export const INBOX_HELP = "Create a calendar named 'Today – Inbox' in Google Calendar (web) so the Gmail add-on can send you tasks.";
 

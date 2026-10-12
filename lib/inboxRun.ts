@@ -1,4 +1,5 @@
 import { findTodayCalendar } from "./calendarNames";
+import { rememberCalendar } from "./calendarPick";
 import type { CalendarAccess, RawCalendarEvent } from "./calendar";
 import { toISO } from "./dates";
 import { logError } from "./debugLog";
@@ -43,6 +44,7 @@ export async function importInbox(now: Date = new Date(), bridge: InboxBridge = 
   const list = await bridge.calendars();
   const found = findTodayCalendar(list, "inbox", withDefaults(getData().profile).inboxCalendarId);
   if (!found.cal) return { added: 0, digest: false, status: "no-calendar" };
+  rememberCalendar("inbox", found.cal);
 
   const today = toISO(now);
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();

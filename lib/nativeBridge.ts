@@ -1,5 +1,6 @@
 import { registerPlugin } from "@capacitor/core";
 import type { CalendarAccess, RawCalendarEvent } from "./calendar";
+import { logError } from "./debugLog";
 import { safely, withTimeout } from "./nativeGuard";
 import { isNative } from "./platform";
 import type { WidgetAction } from "./widget";
@@ -226,6 +227,11 @@ export async function mirrorState(): Promise<MirrorState | null> {
 /** Applies a batch of inserts / updates / deletes to the Plan calendar in one native call, and remembers the plan for the 06:00 alarm. */
 export async function mirrorApply(calendarId: number, ops: MirrorOp[], plan: MirrorEntry[]): Promise<MirrorResult | null> {
   if (!isNative()) return null;
+  // Android needs a real number and a real array. Without a usable calendar id nothing is sent at all.
+  if (!Number.isSafeInteger(calendarId) || calendarId < 1 || !Array.isArray(ops)) {
+    logError("native:mirrorApply", `not sent: calendarId=${String(calendarId)}`);
+    return null;
+  }
   return safely<MirrorResult | null>("mirrorApply", () => TodayNative.mirrorApply({ calendarId, ops, plan }), null, 20_000);
 }
 

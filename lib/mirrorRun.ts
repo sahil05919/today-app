@@ -1,4 +1,5 @@
-import { findTodayCalendar, MIRROR_NOTE } from "./calendarNames";
+import { findTodayCalendar, MIRROR_NOTE, PICK_PLAN } from "./calendarNames";
+import { rememberCalendar } from "./calendarPick";
 import { addDays, toISO } from "./dates";
 import { logError } from "./debugLog";
 import { buildMirrorEntries, diffMirror, oldestOpenDay, PLAN_DAYS } from "./mirror";
@@ -22,7 +23,7 @@ import { withDefaults } from "./profile";
 import { actions, getData } from "./store";
 import type { AppData } from "./types";
 
-export type MirrorStatus = "ok" | "off" | "no-calendar" | "not-google" | "no-permission" | "error" | "unsupported";
+export type MirrorStatus = "ok" | "off" | "no-calendar" | "not-google" | "pick-calendar" | "no-permission" | "error" | "unsupported";
 
 export interface MirrorBridge {
   access(): Promise<CalendarAccess>;
@@ -66,6 +67,12 @@ export async function runMirror(now: Date = new Date(), bridge: MirrorBridge = n
   const found = findTodayCalendar(list, "plan", p.planCalendarId);
   if (!found.cal) return { status: found.why === "not-google" ? "not-google" : "no-calendar", written: 0 };
   const cal = found.cal;
+  // The phone's calendar id must be a real number before anything is sent to Android; never call the native apply without one.
+  const calendarId = typeof cal.id === "number" ? cal.id : typeof cal.id === "string" && /^\d{1,12}$/.test(cal.id) ? Number(cal.id) : NaN;
+  if (!Number.isSafeInteger(calendarId) || calendarId < 1) {
+    logError("mirror", `${PICK_PLAN} (the calendar "${cal.name}" has no usable id: ${String(cal.id)})`);
+    return { status: "pick-calendar", written: 0, calendar: cal };
+  }
 
   const st = await bridge.state();
   if (!st) return { status: "error", written: 0, calendar: cal };
@@ -80,7 +87,7 @@ export async function runMirror(now: Date = new Date(), bridge: MirrorBridge = n
   const diff = diffMirror(desired, map, today);
   const planSig = `${cal.id}|${desired.map((e) => e.key + e.sig).join(",")}`;
   if (diff.ops.length || planSig !== lastPlanSig) {
-    const r = await bridge.apply(cal.id, diff.ops, desired);
+    const r = await bridge.apply(calendarId, diff.ops, desired);
     if (!r) return { status: "error", written, calendar: cal };
     if (r.failed) logError("mirror", `${r.failed} calendar write${r.failed === 1 ? "" : "s"} failed`);
     lastPlanSig = planSig;
@@ -93,6 +100,8 @@ export async function runMirror(now: Date = new Date(), bridge: MirrorBridge = n
 /** The pipeline step: runs the mirror and records the status for Settings and the Health check (without starting another sync). */
 export async function mirrorStep(now: Date = new Date()): Promise<MirrorOutcome> {
   const out = await runMirror(now);
+  // Found by name: save its id, so Settings shows it and the app finds it on its own next time.
+  if (out.calendar && out.status !== "pick-calendar") rememberCalendar("plan", out.calendar);
   const prev = getData().settings.mirror;
   const next = { at: now.getTime(), status: out.status, calendar: out.calendar?.name };
   if (!prev || prev.status !== next.status || prev.calendar !== next.calendar || out.written > 0) actions.bookkeeping({ mirror: { ...next, written: out.written || undefined } });

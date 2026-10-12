@@ -4,7 +4,7 @@ import { parseICS, type CalendarAccess, type IcsEvent } from "@/lib/calendar";
 import { syncPhoneCalendar } from "@/lib/calendarSync";
 import { askCalendarAccess, askCalendarWriteAccess, calendarAccess, calendarWriteAccess, listWritableCalendars, type WritableCalendar } from "@/lib/nativeBridge";
 import { pickDefaultCalendar } from "@/lib/calendarWrite";
-import { findTodayCalendar, INBOX_HELP, INBOX_NAME, PLAN_HELP, PLAN_NAME } from "@/lib/calendarNames";
+import { findTodayCalendar, INBOX_HELP, INBOX_NAME, PICK_PLAN, PLAN_HELP, PLAN_NAME } from "@/lib/calendarNames";
 import { useData } from "@/lib/store";
 import { isNative } from "@/lib/platform";
 import type { Profile } from "@/lib/types";
@@ -31,7 +31,9 @@ export function CalendarSettings({ p, set, syncedAt, ctx }: { p: Profile; set: <
       ? "Needs permission to add to your calendar"
       : !planFound.cal
         ? PLAN_HELP
-        : mirror?.status === "ok"
+        : mirror?.status === "pick-calendar"
+          ? PICK_PLAN
+          : mirror?.status === "ok"
           ? `On · ${planFound.cal.name} · updated ${new Date(mirror.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`
           : mirror?.status === "error"
             ? "Couldn't update it. See Health → Recent errors"
@@ -166,7 +168,7 @@ export function CalendarSettings({ p, set, syncedAt, ctx }: { p: Profile; set: <
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-muted">Plan calendar</span>
                 <select value={p.planCalendarId ?? ""} onChange={(e) => set("planCalendarId", e.target.value || undefined)} className={field}>
-                  <option value="">Find “{PLAN_NAME}” by name</option>
+                  <option value="">Automatic: find “{PLAN_NAME}” by name</option>
                   {calendars.map((c) => (
                     <option key={c.id} value={String(c.id)}>
                       {c.name}{c.account && c.account !== c.name ? ` (${c.account})` : ""}
@@ -177,7 +179,7 @@ export function CalendarSettings({ p, set, syncedAt, ctx }: { p: Profile; set: <
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-muted">Inbox calendar (the Gmail add-on writes tasks here)</span>
                 <select value={p.inboxCalendarId ?? ""} onChange={(e) => set("inboxCalendarId", e.target.value || undefined)} className={field}>
-                  <option value="">Find “{INBOX_NAME}” by name</option>
+                  <option value="">Automatic: find “{INBOX_NAME}” by name</option>
                   {calendars.map((c) => (
                     <option key={c.id} value={String(c.id)}>
                       {c.name}{c.account && c.account !== c.name ? ` (${c.account})` : ""}

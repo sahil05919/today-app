@@ -709,7 +709,7 @@ export function migrate(raw: unknown): AppData {
       compactedDate: isISO(s.compactedDate) ? s.compactedDate : undefined,
       compactFailedAt: num(s.compactFailedAt),
       mirror:
-        s.mirror && Number.isFinite(s.mirror.at) && ["ok", "off", "no-calendar", "not-google", "no-permission", "error", "unsupported"].includes(s.mirror.status)
+        s.mirror && Number.isFinite(s.mirror.at) && ["ok", "off", "no-calendar", "not-google", "pick-calendar", "no-permission", "error", "unsupported"].includes(s.mirror.status)
           ? { at: s.mirror.at, status: s.mirror.status, calendar: str(s.mirror.calendar, 80), written: num(s.mirror.written) }
           : undefined,
       shortDismissed: s.shortDismissed && isISO(s.shortDismissed.week) && Array.isArray(s.shortDismissed.areas) ? { week: s.shortDismissed.week, areas: s.shortDismissed.areas.filter((a: unknown) => typeof a === "string").slice(0, 20) } : undefined,
