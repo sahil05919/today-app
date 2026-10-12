@@ -8,6 +8,7 @@ import { withDefaults } from "./profile";
 import { overdueTasks } from "./pileup";
 import { weekProgress } from "./sessions";
 import { letterFor } from "./letters";
+import { withRepeats } from "./series";
 import { weekStart } from "./stats";
 import type { AppData, CoachLetter, ISODate } from "./types";
 
@@ -40,7 +41,8 @@ export interface WeekSummary {
 
 const DAY_NAME = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-export function buildWeekSummary(data: AppData, today: ISODate): WeekSummary {
+export function buildWeekSummary(raw: AppData, today: ISODate): WeekSummary {
+  const data = withRepeats(raw, today);
   const p = withDefaults(data.profile);
   const start = weekStart(today);
   const end = addDays(start, 6);

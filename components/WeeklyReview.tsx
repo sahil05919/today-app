@@ -1,6 +1,7 @@
 "use client";
 import { useMemo } from "react";
 import { addDays, dayOfMonth, formatMinutes, friendlyDate, weekdayShort } from "@/lib/dates";
+import { withRepeats } from "@/lib/series";
 import { actions } from "@/lib/store";
 import { bestDay, buildDurationModel, completionRate, estimateAccuracy, weekStart, weekSummary } from "@/lib/stats";
 import { billReminders } from "@/lib/bills";
@@ -17,7 +18,7 @@ import { btn, Chip, Sheet, type ViewCtx } from "./ui";
  * or let it go). "All set" unlocks once nothing is left undecided. My patterns lives at the bottom.
  */
 export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewCtx; onClose: () => void }) {
-  const tasks = data.tasks;
+  const tasks = useMemo(() => withRepeats(data, ctx.today).tasks, [data, ctx.today]);
   const sum = useMemo(() => weekSummary(tasks, ctx.today), [tasks, ctx.today]);
   const nextMonday = addDays(weekStart(ctx.today), 7);
   const nextDays = Array.from({ length: 7 }, (_, i) => addDays(nextMonday, i));
@@ -227,7 +228,7 @@ export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewC
             </span>
           </summary>
           <div className="border-t border-line p-3">
-            <PatternsBody tasks={data.tasks} ctx={ctx} />
+            <PatternsBody tasks={tasks} ctx={ctx} />
           </div>
         </details>
       </div>

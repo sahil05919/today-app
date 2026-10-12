@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { cheerLine } from "@/lib/cheer";
 import { buzz } from "@/lib/haptics";
 import { rescheduleAll } from "@/lib/notifications/native";
+import { findTask } from "@/lib/series";
 import { actions, getData } from "@/lib/store";
 import { timerPhase } from "@/lib/timer";
 import { completeTimer, extendTimer } from "@/lib/timerRun";
@@ -48,7 +49,7 @@ export function TimerWatcher({ data, ctx }: { data: AppData; ctx: ViewCtx }) {
       const ph = timerPhase(timer, Date.now());
       const name = ctxRef.current.profile.name;
       if (ph.phase === "finished") {
-        const task = timer.taskId ? dataRef.current.tasks.find((t) => t.id === timer.taskId) : undefined;
+        const task = timer.taskId ? findTask(dataRef.current, timer.taskId) : undefined;
         const title = task?.title ?? timer.label ?? "Timer";
         ring();
         if (task) {
@@ -66,7 +67,7 @@ export function TimerWatcher({ data, ctx }: { data: AppData; ctx: ViewCtx }) {
       } else if (ph.phase === "still-going" && asked.current !== timer.startedAt) {
         asked.current = timer.startedAt;
         ring();
-        setAsk({ kind: "still-going", title: (timer.taskId ? dataRef.current.tasks.find((t) => t.id === timer.taskId)?.title : timer.label) ?? "Timer" });
+        setAsk({ kind: "still-going", title: (timer.taskId ? findTask(dataRef.current, timer.taskId)?.title : timer.label) ?? "Timer" });
       }
     };
     check();
@@ -98,7 +99,7 @@ export function TimerWatcher({ data, ctx }: { data: AppData; ctx: ViewCtx }) {
               <button
                 className={`${btn.primary} min-h-12 w-full text-base`}
                 onClick={() => {
-                  const t = getData().tasks.find((x) => x.id === ask.taskId);
+                  const t = findTask(getData(), ask.taskId);
                   if (t && t.status === "open") {
                     actions.toggleDone(t.id);
                     ctx.notify(cheerLine(name, 1), () => actions.toggleDone(t.id));

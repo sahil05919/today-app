@@ -1,3 +1,4 @@
+import { findTask } from "./series";
 import { actions, getData } from "./store";
 import { finishRef } from "./timerRun";
 import type { WidgetAction } from "./widget";
@@ -10,7 +11,7 @@ import type { WidgetAction } from "./widget";
 export function applyWidgetAction(a: WidgetAction): boolean {
   if (a.type !== "done") return false;
   if (a.kind === "task") {
-    const t = a.taskId ? getData().tasks.find((x) => x.id === a.taskId) : undefined;
+    const t = a.taskId ? findTask(getData(), a.taskId) : undefined;
     if (!t || t.status !== "open") return false;
     if (getData().settings.timer?.taskId === t.id) actions.stopTimer();
     actions.toggleDone(t.id);

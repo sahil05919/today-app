@@ -1,4 +1,5 @@
-import { fromISO } from "./dates";
+import { fromISO, toISO } from "./dates";
+import { withOccurrences } from "./series";
 import type { AppData, Task } from "./types";
 
 /**
@@ -30,12 +31,17 @@ export function ringTime(t: Task): number | undefined {
   return t.remindAt && t.remindAt > base ? t.remindAt : base;
 }
 
-const live = (data: AppData) => (data.profile?.notify?.reminders === false ? [] : data.tasks.filter((t) => t.status === "open"));
+const live = (data: AppData, now: number) => {
+  if (data.profile?.notify?.reminders === false) return [];
+  // Today's repeats ring like any other timed task.
+  const today = toISO(new Date(now));
+  return withOccurrences(data, today, today, today).tasks.filter((t) => t.status === "open");
+};
 
 /** Alarms whose time has come, that you haven't answered, oldest first. */
 export function dueAlarms(data: AppData, now = Date.now()): DueAlarm[] {
   const out: DueAlarm[] = [];
-  for (const t of live(data)) {
+  for (const t of live(data, now)) {
     const at = ringTime(t);
     if (at == null || at > now || now - at > RING_WINDOW_MS) continue;
     if ((t.alarmAck ?? 0) >= at) continue;
@@ -47,7 +53,7 @@ export function dueAlarms(data: AppData, now = Date.now()): DueAlarm[] {
 /** The next alarm still in the future (epoch ms), so the ringer knows how long it can sleep. */
 export function nextAlarmAt(data: AppData, now = Date.now()): number | undefined {
   let best: number | undefined;
-  for (const t of live(data)) {
+  for (const t of live(data, now)) {
     const at = ringTime(t);
     if (at != null && at > now && (best == null || at < best)) best = at;
   }

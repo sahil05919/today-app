@@ -7,6 +7,7 @@ import { matchLearnedItem, STOP } from "./learn";
 import { withDefaults } from "./profile";
 import { planSessions, plannedForDay, type PlannedSession } from "./schedule";
 import { choreKey, entryFor } from "./sessions";
+import { withOccurrences } from "./series";
 import type { AppData, ISODate } from "./types";
 
 /**
@@ -267,12 +268,23 @@ function buildEntities(text: string, data: AppData, now: Date, boost: string | n
   }
 
   // Open tasks.
+  // (A repeating task is one entity with an occurrence per day.)
+  const byTitle = new Map<string, Entity>();
   for (const t of data.tasks) {
     if (t.status !== "open") continue;
+    const item = `task:${t.title.toLowerCase()}`;
+    const have = byTitle.get(item);
+    if (have) {
+      have.occs.push({ date: t.due ?? today, target: { kind: "task", id: t.id } });
+      continue;
+    }
     const score = nameScore(t.title, all, compact);
-    if (score <= 0 && `task:${t.title.toLowerCase()}` !== boost) continue;
-    out.push({ item: `task:${t.title.toLowerCase()}`, label: t.title, score, rank: 3, occs: [{ date: t.due ?? today, target: { kind: "task", id: t.id } }] });
+    if (score <= 0 && item !== boost) continue;
+    const e: Entity = { item, label: t.title, score, rank: 3, occs: [{ date: t.due ?? today, target: { kind: "task", id: t.id } }] };
+    byTitle.set(item, e);
+    out.push(e);
   }
+  for (const e of byTitle.values()) e.occs.sort((a, b) => a.date.localeCompare(b.date));
   return out;
 }
 
@@ -332,6 +344,8 @@ function openNow(data: AppData, now: Date): DoneCandidate[] {
  */
 export function matchDone(text: string, data: AppData, now: Date, opts: { force?: string; fallback?: boolean } = {}): DoneMatch | null {
   const today = toISO(now);
+  // Repeats are added as ordinary open tasks for the days around today.
+  data = withOccurrences(data, addDays(today, -7), addDays(today, 7), today);
   if (!opts.force && !looksTicked(text)) return null;
   if (opts.force && (NEGATED.test(text) || FUTURE.test(text))) return null;
   const hint = hintOf(text, today);

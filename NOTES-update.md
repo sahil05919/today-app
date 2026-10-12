@@ -1,0 +1,12 @@
+# Update map (A repeats · B reschedule · C editable · D weekly review)
+
+Recon of the existing app (`lib/` = pure logic, `components/` = UI, `tests/` = vitest):
+
+- **Data + storage**: `lib/types.ts` (AppData v1), `lib/store.ts` (`actions`, `commit`, Capacitor Preferences key `today:v1`, web `localStorage`), `lib/backup.ts` `migrate()` = the load-time *cleaner* (unknown fields are stripped, so every new field must be added there).
+- **Planner**: `lib/schedule.ts` (`planSessions`, `plannedForDay`: weekly sessions into slots), `lib/busy.ts` (`dayRules`, `planningBusy`: commute/lunch/tea/work + events + timed tasks), `lib/timeline.ts` (`buildTimeline`: ONE day = fixed items + flexible placed in gaps, `late`/`carried` flags, overflow), `lib/settle.ts` + `lib/pileup.ts` (reshuffle overflow / catch-up to next free day, `firstDayWithRoom`).
+- **Done rules**: `lib/done.ts` (`applyDone`, `completeTaskIn` - the old "finish spawns the next copy" repeat model lives here), `lib/sessions.ts` (session logs, `data.log` keys `session:/chore:/bill:`).
+- **Notifications**: `lib/notifications/plan.ts` (pure `planNotifications`, 7-day window, `hashId(key)` stable ids), `native.ts` (Capacitor LocalNotifications: cancel-all + schedule, taps -> `TapTarget`, action buttons), `lib/tap.ts` (`resolveTap`), `components/NativeShell.tsx` (reschedule after each change / resume).
+- **UI**: `components/App.tsx` (state, toast, sheets), `TodayView` + `Timeline` (Next up, rows), `TodayPlan` (`ItemSheet` Done/Start/Snooze/Skip, `EventSheet`), `TaskSheet` (Date/Time/Repeat/Steps), `SnoozeSheet`/`WhenSheet`, `CalendarSheet` (week/month, built from `buildTimeline` per day), `NextDays` + `lib/upcoming.ts` ("Coming up"), `WeeklyReview` + `lib/coach.ts` (Sunday letter), `ProfileSheet` (Settings), `NotificationSettings`.
+- **Plan**: every reader that wants tasks goes through `lib/series.ts` `getOccurrences()` (series + small occurrence records; virtual tasks have id `seriesId@YYYY-MM-DD`); `withOccurrences(data, from, to)` feeds the existing timeline/notification code unchanged. Writes to an occurrence id are routed in `store.ts` to occurrence records.
+- **Data safety**: schema `version: 2`; before the first v2 save the raw v1 JSON is copied to `today:v1:backup-pre-v2` (never overwritten); migration is idempotent.
+- **Test timezone**: `vitest.config.ts` pins `TZ=Europe/London` (DST test around Sun 25 Oct 2026).

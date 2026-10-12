@@ -1,6 +1,7 @@
 import { isISO, toISO } from "./dates";
 import { downloadText } from "./ics";
 import { withDefaults } from "./profile";
+import { upgradeRecurring } from "./series";
 import type {
   AppData,
   AreaTarget,
@@ -15,12 +16,15 @@ import type {
   LearnedRule,
   UserWord,
   MonthGoals,
+  Occurrence,
   Profile,
   QuoteState,
   Recurrence,
+  Series,
   SessionLog,
   Step,
   Task,
+  TaskOrigin,
   TemplateId,
 } from "./types";
 
@@ -28,7 +32,7 @@ export const BACKUP_EVERY_DAYS = 14;
 const DAY = 86_400_000;
 
 export function emptyData(now = Date.now()): AppData {
-  return { version: 1, tasks: [], settings: { firstRunAt: now } };
+  return { version: 2, tasks: [], settings: { firstRunAt: now } };
 }
 
 export function backupDue(data: AppData, now = Date.now()): boolean {
@@ -110,7 +114,95 @@ function cleanTask(v: any): Task | null {
     lastCheckIn: lc && isISO(lc.date) && STATUSES.includes(lc.status) ? { date: lc.date, status: lc.status } : undefined,
     countsFor: str(v.countsFor, 40),
     sessionLogId: str(v.sessionLogId, 64),
+    generated: v.generated === true ? true : undefined,
+    origin: cleanOrigin(v.origin),
   };
+}
+
+function cleanOrigin(v: any): TaskOrigin | undefined {
+  if (!v || typeof v !== "object" || !["session", "chore", "bill"].includes(v.kind) || typeof v.key !== "string" || !isISO(v.date)) return undefined;
+  return {
+    kind: v.kind,
+    key: v.key.slice(0, 100),
+    date: v.date,
+    areaId: str(v.areaId, 40),
+    choreId: str(v.choreId, 40),
+    billId: str(v.billId, 40),
+    due: isISO(v.due) ? v.due : undefined,
+    carried: v.carried === true ? true : undefined,
+  };
+}
+
+function cleanSeries(v: any): Series[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: Series[] = [];
+  for (const x of v.slice(0, 500)) {
+    const rule = cleanRecur(x?.rule);
+    if (!x || typeof x.id !== "string" || !str(x.title) || !rule || !isISO(x.startDate)) continue;
+    out.push({
+      id: x.id.slice(0, 64),
+      title: x.title.slice(0, 300),
+      notes: str(x.notes, 5000),
+      time: hhmmOf(x.time),
+      estimateMin: num(x.estimateMin),
+      area: str(x.area, 40),
+      tags: Array.isArray(x.tags) ? x.tags.filter((t: unknown) => typeof t === "string").slice(0, 20) : [],
+      important: !!x.important,
+      steps: Array.isArray(x.steps) ? x.steps.map(cleanStep).filter((t: Step | null): t is Step => !!t) : [],
+      template: TEMPLATES.includes(x.template) ? x.template : undefined,
+      countsFor: str(x.countsFor, 40),
+      rule,
+      startDate: x.startDate,
+      anchor: isISO(x.anchor) ? x.anchor : undefined,
+      until: isISO(x.until) ? x.until : undefined,
+      createdAt: num(x.createdAt) ?? Date.now(),
+    });
+  }
+  return out;
+}
+
+function cleanOccurrences(v: any): Occurrence[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: Occurrence[] = [];
+  const seen = new Set<string>();
+  for (const r of v.slice(-20000)) {
+    if (!r || typeof r.seriesId !== "string" || !isISO(r.date)) continue;
+    const key = `${r.seriesId.slice(0, 64)}@${r.date}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const o = r.over && typeof r.over === "object" ? r.over : undefined;
+    out.push({
+      key,
+      seriesId: r.seriesId.slice(0, 64),
+      date: r.date,
+      status: ["done", "skipped", "missed"].includes(r.status) ? r.status : undefined,
+      doneAt: num(r.doneAt),
+      movedTo: r.movedTo && isISO(r.movedTo.date) ? { date: r.movedTo.date, time: hhmmOf(r.movedTo.time) } : undefined,
+      time: typeof r.time === "string" && (r.time === "" || /^d{2}:d{2}$/.test(r.time)) ? r.time : undefined,
+      extra: r.extra === true ? true : undefined,
+      over: o
+        ? {
+            title: str(o.title, 300),
+            notes: str(o.notes, 5000),
+            estimateMin: num(o.estimateMin),
+            area: str(o.area, 40),
+            tags: Array.isArray(o.tags) ? o.tags.filter((t: unknown) => typeof t === "string").slice(0, 20) : undefined,
+            important: typeof o.important === "boolean" ? o.important : undefined,
+            steps: Array.isArray(o.steps) ? o.steps.map(cleanStep).filter((t: Step | null): t is Step => !!t) : undefined,
+          }
+        : undefined,
+      stepsDone: Array.isArray(r.stepsDone) ? r.stepsDone.filter((x: unknown) => typeof x === "string").slice(0, 100) : undefined,
+      sessions: Array.isArray(r.sessions) ? r.sessions.filter((s: any) => s && typeof s.at === "number" && typeof s.min === "number" && s.min > 0).map((s: any) => ({ at: s.at, min: Math.min(s.min, 1440) })) : undefined,
+      sessionLogId: str(r.sessionLogId, 64),
+      remindAt: num(r.remindAt),
+      alarmAck: num(r.alarmAck),
+      snoozeCount: Number.isInteger(r.snoozeCount) && r.snoozeCount > 0 ? r.snoozeCount : undefined,
+      hideUntil: isISO(r.hideUntil) ? r.hideUntil : undefined,
+      focus: r.focus === true ? true : undefined,
+      lastCheckIn: r.lastCheckIn && isISO(r.lastCheckIn.date) && STATUSES.includes(r.lastCheckIn.status) ? { date: r.lastCheckIn.date, status: r.lastCheckIn.status } : undefined,
+    });
+  }
+  return out;
 }
 
 function cleanTarget(t: any): AreaTarget | undefined {
@@ -153,7 +245,7 @@ function cleanSessions(v: any): SessionLog[] | undefined {
 function cleanLog(v: any): DayEntry[] | undefined {
   if (!Array.isArray(v)) return undefined;
   return v
-    .filter((e: any) => e && typeof e.key === "string" && ["done", "skip", "snooze", "early"].includes(e.status))
+    .filter((e: any) => e && typeof e.key === "string" && ["done", "skip", "snooze", "early", "moved"].includes(e.status))
     .slice(-1000)
     .map((e: any) => ({ key: e.key.slice(0, 80), status: e.status, at: num(e.at) ?? Date.now(), until: num(e.until) }));
 }
@@ -405,8 +497,10 @@ export function migrate(raw: unknown): AppData {
   }
   const r = raw as any;
   const s = r.settings ?? {};
-  return {
-    version: 1,
+  const out: AppData = {
+    version: 2,
+    series: cleanSeries(r.series),
+    occurrences: cleanOccurrences(r.occurrences),
     profile: r.profile && typeof r.profile === "object" ? cleanProfile(r.profile) : undefined,
     sessions: cleanSessions(r.sessions),
     log: cleanLog(r.log),
@@ -463,6 +557,7 @@ export function migrate(raw: unknown): AppData {
         s.snoozes && typeof s.snoozes === "object"
           ? (Object.fromEntries(Object.entries(s.snoozes).filter(([k, v]) => typeof v === "number" && v > 0 && k.length < 90).slice(0, 300)) as Record<string, number>)
           : undefined,
+      exactAsked: s.exactAsked === true ? true : undefined,
       planDate: isISO(s.planDate) ? s.planDate : undefined,
       wrapDate: isISO(s.wrapDate) ? s.wrapDate : undefined,
       reviewWeek: isISO(s.reviewWeek) ? s.reviewWeek : undefined,
@@ -471,6 +566,13 @@ export function migrate(raw: unknown): AppData {
       hiddenEvents: Array.isArray(s.hiddenEvents) ? s.hiddenEvents.filter((x: unknown) => typeof x === "string").slice(0, 200) : undefined,
     },
   };
+  // Repeats used to be "finishing one creates the next". They are series now (lossless, and a no-op once converted).
+  return upgradeRecurring(out);
+}
+
+/** True for data saved by an older build (before repeats became series): the raw copy must be backed up first. */
+export function needsUpgrade(raw: unknown): boolean {
+  return !!raw && typeof raw === "object" && Array.isArray((raw as any).tasks) && ((raw as any).version ?? 1) < 2;
 }
 
 export async function readBackupFile(file: File): Promise<AppData> {

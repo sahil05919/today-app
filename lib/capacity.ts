@@ -1,5 +1,6 @@
 import { addDays, fromISO, isISO, toISO } from "./dates";
 import { toMin, withDefaults } from "./profile";
+import { withOccurrences } from "./series";
 import { weekStart } from "./stats";
 import type { AppData, Energy, ISODate, Slot } from "./types";
 
@@ -59,7 +60,8 @@ export interface Capacity {
 const dateOfKey = (key: string): ISODate | undefined => key.split(":").find((p) => isISO(p));
 
 /** How many flexible things were finished and skipped on each day in [from, to]. */
-export function dayCounts(data: AppData, from: ISODate, to: ISODate): Map<ISODate, { finished: number; skipped: number }> {
+export function dayCounts(raw: AppData, from: ISODate, to: ISODate): Map<ISODate, { finished: number; skipped: number }> {
+  const data = withOccurrences(raw, from, to, addDays(to, 1));
   const out = new Map<ISODate, { finished: number; skipped: number }>();
   const bump = (d: ISODate | undefined, k: "finished" | "skipped") => {
     if (!d || d < from || d > to) return;
@@ -96,7 +98,7 @@ let last: { refs: unknown[]; today: ISODate; value: Capacity } | null = null;
 
 /** Everything learned from the 8 weeks before `today` (today itself is still being lived). Memoised per data object. */
 export function capacityOf(data: AppData, today: ISODate): Capacity {
-  const refs = [data.tasks, data.sessions, data.log, data.checkins, data.profile];
+  const refs = [data.tasks, data.series, data.occurrences, data.sessions, data.log, data.checkins, data.profile];
   if (last && last.today === today && last.refs.every((r, i) => r === refs[i])) return last.value;
 
   const p = withDefaults(data.profile);

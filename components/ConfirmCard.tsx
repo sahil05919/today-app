@@ -6,6 +6,7 @@ import { toHHMM, toMin } from "@/lib/profile";
 import type { Teach } from "@/lib/teach";
 import { buildTimeline } from "@/lib/timeline";
 import { whenDate } from "@/lib/snooze";
+import { findTask } from "@/lib/series";
 import { actions } from "@/lib/store";
 import type { AppData, ISODate } from "@/lib/types";
 import { Chip, type ViewCtx } from "./ui";
@@ -58,7 +59,7 @@ export function ConfirmCard({ result, data, ctx, onClose }: { result: CaptureRes
     return () => clearTimeout(timer.current);
   }, [result.id, picker, fixed, taught, result.teach, onClose]);
 
-  const task = result.taskId ? data.tasks.find((t) => t.id === result.taskId) : undefined;
+  const task = result.taskId ? findTask(data, result.taskId) : undefined;
   const area = task?.area ? ctx.profile.areas.find((a) => a.id === task.area) : undefined;
   const p = ctx.profile;
   const afterWork = toHHMM(toMin(p.workEnd) + 15);

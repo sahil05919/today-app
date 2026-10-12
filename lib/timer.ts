@@ -1,4 +1,5 @@
 import { withDefaults } from "./profile";
+import { findTask } from "./series";
 import type { TLItem } from "./timeline";
 import type { AppData, Settings, Task } from "./types";
 
@@ -29,7 +30,7 @@ export function timerGoal(data: AppData, it: Pick<TLItem, "kind" | "areaId" | "t
     return area?.target?.minutes ?? (block > 0 ? block : undefined);
   }
   if (it.kind === "task") {
-    const t = data.tasks.find((x) => x.id === it.taskId);
+    const t = it.taskId ? findTask(data, it.taskId) : undefined;
     return t ? taskGoal(t) : undefined;
   }
   return block > 0 ? block : undefined;

@@ -10,6 +10,7 @@ import { planNotifications } from "../lib/notifications/plan";
 import { countLabel, streak } from "../lib/progress";
 import { planSessions, plannedForDay } from "../lib/schedule";
 import { seedIfNeeded } from "../lib/seed";
+import { getOccurrences } from "../lib/series";
 import { weekProgress } from "../lib/sessions";
 import { actions, getData } from "../lib/store";
 import { buildTimeline } from "../lib/timeline";
@@ -125,14 +126,16 @@ describe("tick it anywhere", () => {
     expect(has()).toBe(true);
   });
 
-  it("completing a repeating task early moves it on; undo puts it back", () => {
+  it("completing a repeating task early ticks only that day; undo puts it back", () => {
     const t = actions.addTask({ title: "Water plants", important: false, tags: [], due: "2026-10-09", recur: { freq: "weekly", interval: 1 } });
     const r = actions.markDone({ kind: "task", id: t.id }, { when: "today", now: WED });
     expect(r.early).toBe(true);
-    const open = () => getData().tasks.filter((x) => x.status === "open" && x.title === "Water plants").map((x) => x.due);
-    expect(open()).toEqual(["2026-10-16"]);
+    // Nothing is generated: the other Fridays are still just computed, and no copy exists in the task list.
+    const open = () => getOccurrences(getData(), "2026-10-09", "2026-10-31", TODAY).filter((o) => o.status === "open").map((o) => o.date);
+    expect(open()).toEqual(["2026-10-16", "2026-10-23", "2026-10-30"]);
+    expect(getData().tasks).toHaveLength(0);
     actions.undoDone(r.receipt, WED);
-    expect(open()).toEqual(["2026-10-09"]);
+    expect(open()).toEqual(["2026-10-09", "2026-10-16", "2026-10-23", "2026-10-30"]);
   });
 
   it("an undo only takes back the tick, not what changed since", () => {

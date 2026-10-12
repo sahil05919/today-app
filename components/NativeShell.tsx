@@ -1,13 +1,14 @@
 "use client";
-import { useEffect, useRef } from "react";
-import { initNotifications, listenForActions, markActivated, rescheduleAll, type TapTarget } from "@/lib/notifications/native";
+import { useEffect, useRef, useState } from "react";
+import { getStatus, initNotifications, listenForActions, markActivated, openExactAlarmSettings, rescheduleAll, type TapTarget } from "@/lib/notifications/native";
 import { syncPhoneCalendar } from "@/lib/calendarSync";
 import { isNative } from "@/lib/platform";
 import { pushWidgetSnapshot, takeWidgetActions } from "@/lib/nativeBridge";
-import { getData, reloadFromStorage, whenLoaded } from "@/lib/store";
+import { actions, getData, reloadFromStorage, whenLoaded } from "@/lib/store";
 import { buildWidgetSnapshot, snapshotSignature } from "@/lib/widget";
 import { applyWidgetActions } from "@/lib/widgetRun";
 import type { AppData } from "@/lib/types";
+import { btn, Sheet } from "./ui";
 
 /**
  * Android-only plumbing (does nothing on the web):
@@ -39,6 +40,22 @@ function syncWidget(force = false) {
 export function NativeShell({ data, onTap }: { data: AppData; onTap: (t: TapTarget) => void }) {
   const tapRef = useRef(onTap);
   tapRef.current = onTap;
+  const [needExact, setNeedExact] = useState(false);
+
+  // Android 12+ keeps exact alarms off until you allow them: say so ONCE, with a button to the right settings screen.
+  useEffect(() => {
+    if (!isNative()) return;
+    let gone = false;
+    (async () => {
+      await whenLoaded();
+      await initNotifications();
+      const st = await getStatus();
+      if (!gone && st.supported && st.permission === "granted" && st.exact != null && st.exact !== "granted" && !getData().settings.exactAsked) setNeedExact(true);
+    })();
+    return () => {
+      gone = true;
+    };
+  }, []);
 
   // App-level listeners, set up once.
   useEffect(() => {
@@ -112,5 +129,32 @@ export function NativeShell({ data, onTap }: { data: AppData; onTap: (t: TapTarg
     return () => clearInterval(id);
   }, []);
 
-  return null;
+  const answered = () => {
+    actions.settings({ exactAsked: true });
+    setNeedExact(false);
+  };
+  if (!needExact) return null;
+  return (
+    <Sheet title="Allow exact reminders" onClose={answered}>
+      <p className="-mt-1 mb-4 text-[15px] leading-relaxed">
+        Without this, Android can hold back a reminder by several minutes, so your daily 11:00 vitamin might arrive at 11:07. One switch fixes it: <b>Allow setting alarms and reminders</b> for Today.
+      </p>
+      <div className="space-y-2">
+        <button
+          className={`${btn.primary} min-h-12 w-full`}
+          onClick={async () => {
+            answered();
+            await openExactAlarmSettings();
+            void rescheduleAll(getData(), { force: true });
+          }}
+        >
+          Open the setting
+        </button>
+        <button className={`${btn.ghost} min-h-12 w-full`} onClick={answered}>
+          Not now
+        </button>
+      </div>
+      <p className="mt-3 text-xs text-muted">You can change this later in Menu → Settings → Notifications.</p>
+    </Sheet>
+  );
 }

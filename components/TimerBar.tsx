@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { cheerLine } from "@/lib/cheer";
 import { buzz } from "@/lib/haptics";
+import { findTask } from "@/lib/series";
 import { actions } from "@/lib/store";
 import { clock, timerPhase } from "@/lib/timer";
 import { completeTimer } from "@/lib/timerRun";
@@ -34,7 +35,7 @@ export function TimerBar({ data, ctx }: { data: AppData; ctx: ViewCtx }) {
     return () => clearInterval(id);
   }, [timer]);
 
-  const task = timer?.taskId ? data.tasks.find((t) => t.id === timer.taskId) : undefined;
+  const task = timer?.taskId ? findTask(data, timer.taskId) : undefined;
   const orphaned = !!timer && !!timer.taskId && !task;
 
   // The task was deleted while timing: clear the timer.

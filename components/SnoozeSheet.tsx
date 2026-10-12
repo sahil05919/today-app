@@ -3,6 +3,7 @@ import { useState } from "react";
 import { addDays } from "@/lib/dates";
 import { buzz } from "@/lib/haptics";
 import { toHHMM } from "@/lib/profile";
+import { findTask } from "@/lib/series";
 import { actions, DO_NOW_MIN, getData, MAX_SNOOZES } from "@/lib/store";
 import type { TLItem } from "@/lib/timeline";
 import type { ISODate } from "@/lib/types";
@@ -14,7 +15,7 @@ export type SnoozeTarget = { kind: "task"; taskId: string } | { kind: "item"; it
 
 const snoozedCount = (t: SnoozeTarget, today: ISODate) => {
   const d = getData();
-  if (t.kind === "task") return d.tasks.find((x) => x.id === t.taskId)?.snoozeCount ?? 0;
+  if (t.kind === "task") return findTask(d, t.taskId)?.snoozeCount ?? 0;
   return d.settings.snoozes?.[`${t.item.key}@${t.date}`] ?? 0;
 };
 
@@ -24,7 +25,7 @@ const snoozedCount = (t: SnoozeTarget, today: ISODate) => {
  */
 export function SnoozeSheet({ target, ctx, onClose }: { target: SnoozeTarget; ctx: ViewCtx; onClose: () => void }) {
   const [decide, setDecide] = useState(() => snoozedCount(target, ctx.today) >= MAX_SNOOZES);
-  const title = target.kind === "task" ? getData().tasks.find((t) => t.id === target.taskId)?.title ?? "" : target.item.title;
+  const title = target.kind === "task" ? findTask(getData(), target.taskId)?.title ?? "" : target.item.title;
   const left = MAX_SNOOZES - snoozedCount(target, ctx.today);
 
   if (decide) return <DecisionSheet target={target} ctx={ctx} onClose={onClose} />;
@@ -83,7 +84,7 @@ export function DecisionSheet({ target, ctx, onClose }: { target: SnoozeTarget; 
   const [mode, setMode] = useState<Mode>("choose");
   const [date, setDate] = useState<ISODate>(addDays(ctx.today, 1));
   const [time, setTime] = useState("18:30");
-  const task = target.kind === "task" ? getData().tasks.find((t) => t.id === target.taskId) : undefined;
+  const task = target.kind === "task" ? findTask(getData(), target.taskId) : undefined;
   const title = task?.title ?? (target.kind === "item" ? target.item.title : "");
 
   const finish = (msg: string, undo?: () => void) => {

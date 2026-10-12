@@ -2,38 +2,55 @@
 import { useState } from "react";
 import { formatMinutes, fromISO } from "@/lib/dates";
 import { recurLabel } from "@/lib/recur";
-import type { Recurrence } from "@/lib/types";
+import type { SeriesPatch } from "@/lib/series";
 import { remainingMinutes, stepProgress } from "@/lib/estimate";
 import { actualMinutes } from "@/lib/stats";
 import { downloadICS, googleCalendarUrl } from "@/lib/ics";
 import { extractEstimate } from "@/lib/parse";
 import { actions } from "@/lib/store";
-import { TEMPLATE_LIST } from "@/lib/templates";
+import { TEMPLATES, TEMPLATE_LIST } from "@/lib/templates";
 import type { Task } from "@/lib/types";
 import { CheckIcon, CloseIcon, TrashIcon } from "./icons";
+import { RepeatEditor } from "./RepeatEditor";
 import { completeWithToast } from "./TaskCard";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
 
-function recurKey(r?: Recurrence): string {
-  if (!r) return "none";
-  const wd = r.weekdays ?? [];
-  if (r.interval !== 1) return "custom";
-  if (r.freq === "daily") return "daily";
-  if (r.freq === "monthly") return "monthly";
-  if (wd.length === 5 && [1, 2, 3, 4, 5].every((d) => wd.includes(d))) return "weekdays";
-  return wd.length > 1 ? "custom" : "weekly";
+/** The unsaved edits of a repeating task, shown on top of the stored occurrence. */
+function patchToTask(p: SeriesPatch): Partial<Task> {
+  const out: Partial<Task> = {};
+  if (p.title !== undefined) out.title = p.title;
+  if (p.notes !== undefined) out.notes = p.notes || undefined;
+  if (p.time !== undefined) out.dueTime = p.time ?? undefined;
+  if (p.estimateMin !== undefined) out.estimateMin = p.estimateMin || undefined;
+  if (p.area !== undefined) out.area = p.area || undefined;
+  if (p.tags !== undefined) out.tags = p.tags;
+  if (p.important !== undefined) out.important = p.important;
+  if (p.steps !== undefined) out.steps = p.steps;
+  if (p.rule !== undefined) out.recur = p.rule ?? undefined;
+  return out;
 }
 
-function buildRecur(key: string, anchor: string): Recurrence | undefined {
-  const d = fromISO(anchor);
-  if (key === "daily") return { freq: "daily", interval: 1 };
-  if (key === "weekdays") return { freq: "weekly", interval: 1, weekdays: [1, 2, 3, 4, 5] };
-  if (key === "weekly") return { freq: "weekly", interval: 1, weekdays: [d.getDay()] };
-  if (key === "monthly") return { freq: "monthly", interval: 1, monthDay: d.getDate() };
-  return undefined;
+/** A change to the task view, as a change to the series. */
+function taskToPatch(p: Partial<Task>): SeriesPatch {
+  const out: SeriesPatch = {};
+  if ("title" in p) out.title = p.title ?? "";
+  if ("notes" in p) out.notes = p.notes ?? "";
+  if ("dueTime" in p) out.time = p.dueTime ?? null;
+  if ("estimateMin" in p) out.estimateMin = p.estimateMin ?? 0;
+  if ("area" in p) out.area = p.area ?? "";
+  if ("tags" in p) out.tags = p.tags;
+  if ("important" in p) out.important = p.important;
+  if ("steps" in p) out.steps = p.steps;
+  return out;
 }
 
-export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task; ctx: ViewCtx; onClose: () => void; timerOn?: boolean }) {
+export function TaskSheet({ task: live, ctx, onClose, timerOn = false }: { task: Task; ctx: ViewCtx; onClose: () => void; timerOn?: boolean }) {
+  const isSeries = !!live.seriesId;
+  /** Repeats: edits wait here until you say whether they are for this one only or this and future. */
+  const [draft, setDraft] = useState<SeriesPatch>({});
+  const dirty = Object.keys(draft).length > 0;
+  const task: Task = isSeries ? { ...live, ...patchToTask(draft) } : live;
+  const edit = (p: Partial<Task>) => (isSeries ? setDraft((d) => ({ ...d, ...taskToPatch(p) })) : actions.update(live.id, p));
   const [stepText, setStepText] = useState("");
   const [tagsText, setTagsText] = useState(task.tags.map((t) => `#${t}`).join(" "));
   const prog = stepProgress(task);
@@ -43,14 +60,22 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
     const { text, estimateMin } = extractEstimate(` ${stepText} `);
     const title = text.trim();
     if (!title) return;
-    actions.addStep(task.id, title, estimateMin);
+    if (isSeries) edit({ steps: [...task.steps, { id: crypto.randomUUID(), title, done: false, estimateMin }] });
+    else actions.addStep(task.id, title, estimateMin);
     setStepText("");
   };
 
   const commitTags = () => {
     const tags = [...new Set(tagsText.split(/[\s,]+/).map((t) => t.replace(/^#/, "").toLowerCase()).filter(Boolean))];
-    actions.update(task.id, { tags });
+    edit({ tags });
     setTagsText(tags.map((t) => `#${t}`).join(" "));
+  };
+
+  const save = (scope: "this" | "future") => {
+    const id = actions.editRepeating(live.id, draft, scope);
+    setDraft({});
+    ctx.notify(draft.rule === null ? "Stopped repeating from this day" : scope === "future" ? "Updated this and every later one" : "Updated this one only");
+    if (id !== live.id) ctx.open(id);
   };
 
   const label = "mb-1 block text-xs font-medium text-muted";
@@ -60,15 +85,22 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
       <div className="space-y-5">
         <input
           value={task.title}
-          onChange={(e) => actions.update(task.id, { title: e.target.value })}
+          onChange={(e) => edit({ title: e.target.value })}
           aria-label="Title"
           className={`${field} text-lg font-semibold`}
         />
 
+        {isSeries && task.recur && (
+          <p className="-mt-3 text-sm text-muted">
+            ↻ {recurLabel(task.recur)}
+            {task.dueTime ? ` · ${task.dueTime}` : ""}
+          </p>
+        )}
+
         <div className="flex gap-2">
           <button
             onClick={() => {
-              completeWithToast(task, ctx);
+              completeWithToast(live, ctx);
               onClose();
             }}
             className={`${task.status === "done" ? btn.ghost : btn.primary} flex flex-1 items-center justify-center gap-1.5`}
@@ -132,7 +164,7 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
               id="due"
               type="date"
               value={task.due ?? ""}
-              onChange={(e) => actions.setDue(task.id, e.target.value || undefined, task.dueTime)}
+              onChange={(e) => actions.setDue(live.id, e.target.value || undefined, live.dueTime)}
               className={field}
             />
           </div>
@@ -145,7 +177,7 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
               type="time"
               disabled={!task.due}
               value={task.dueTime ?? ""}
-              onChange={(e) => actions.update(task.id, { dueTime: e.target.value || undefined })}
+              onChange={(e) => edit({ dueTime: e.target.value || undefined })}
               className={`${field} disabled:opacity-40`}
             />
           </div>
@@ -160,7 +192,7 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
               inputMode="numeric"
               placeholder={task.steps.length ? "from steps" : "auto"}
               value={task.estimateMin ?? ""}
-              onChange={(e) => actions.update(task.id, { estimateMin: e.target.value ? Math.max(0, parseInt(e.target.value, 10)) : undefined })}
+              onChange={(e) => edit({ estimateMin: e.target.value ? Math.max(0, parseInt(e.target.value, 10)) : undefined })}
               className={field}
             />
           </div>
@@ -186,7 +218,7 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
           <select
             id="area"
             value={task.area && ctx.profile.areas.some((a) => a.id === task.area) ? task.area : ""}
-            onChange={(e) => actions.update(task.id, { area: e.target.value || undefined })}
+            onChange={(e) => edit({ area: e.target.value || undefined })}
             className={field}
           >
             <option value="">No area</option>
@@ -202,20 +234,21 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
           <label className={label} htmlFor="repeat">
             Repeat
           </label>
-          <select
-            id="repeat"
-            value={recurKey(task.recur)}
-            onChange={(e) => actions.update(task.id, { recur: buildRecur(e.target.value, task.due ?? ctx.today) ?? (e.target.value === "custom" ? task.recur : undefined) })}
-            className={field}
-          >
-            <option value="none">Doesn't repeat</option>
-            <option value="daily">Every day</option>
-            <option value="weekdays">Weekdays (Mon–Fri)</option>
-            <option value="weekly">Every week</option>
-            <option value="monthly">Every month</option>
-            {task.recur && recurKey(task.recur) === "custom" && <option value="custom">{recurLabel(task.recur)}</option>}
-          </select>
-          {task.recur && <p className="mt-1 text-xs text-muted">Finishing it creates the next one automatically.</p>}
+          <RepeatEditor
+            rule={task.recur}
+            anchor={live.occDate ?? live.due ?? ctx.today}
+            onChange={(r) => {
+              if (isSeries) setDraft((d) => ({ ...d, rule: r }));
+              else if (r) {
+                const id = actions.makeRepeating(live.id, r);
+                if (id) {
+                  ctx.open(id);
+                  ctx.notify("Now it repeats");
+                }
+              }
+            }}
+          />
+          {isSeries && !dirty && <p className="mt-1 text-xs text-muted">Each day is its own: ticking one never touches the others.</p>}
         </div>
 
         <label className="flex items-center justify-between rounded-xl border border-line bg-bg px-3 py-2.5 text-sm">
@@ -223,7 +256,7 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
           <input
             type="checkbox"
             checked={task.important}
-            onChange={(e) => actions.update(task.id, { important: e.target.checked })}
+            onChange={(e) => edit({ important: e.target.checked })}
             className="h-5 w-5 accent-[var(--accent)]"
           />
         </label>
@@ -245,7 +278,7 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
             {task.steps.map((s) => (
               <li key={s.id} className="flex items-center gap-2.5 rounded-xl px-1 py-1.5">
                 <button
-                  onClick={() => actions.toggleStep(task.id, s.id)}
+                  onClick={() => (draft.steps ? edit({ steps: task.steps.map((x) => (x.id === s.id ? { ...x, done: !x.done } : x)) }) : actions.toggleStep(live.id, s.id))}
                   aria-label={s.done ? "Mark step not done" : "Mark step done"}
                   className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
                     s.done ? "border-accent bg-accent text-accent-ink" : "border-muted/40 text-transparent"
@@ -255,7 +288,7 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
                 </button>
                 <span className={`flex-1 text-[15px] ${s.done ? "text-muted line-through" : ""}`}>{s.title}</span>
                 {s.estimateMin != null && <span className="text-xs text-muted">{formatMinutes(s.estimateMin)}</span>}
-                <button onClick={() => actions.removeStep(task.id, s.id)} aria-label="Remove step" className="rounded-full p-1 text-muted/60 hover:text-ink">
+                <button onClick={() => (isSeries ? edit({ steps: task.steps.filter((x) => x.id !== s.id) }) : actions.removeStep(live.id, s.id))} aria-label="Remove step" className="rounded-full p-1 text-muted/60 hover:text-ink">
                   <CloseIcon width={14} height={14} />
                 </button>
               </li>
@@ -280,7 +313,10 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
               <button
                 key={t.id}
                 onClick={() => {
-                  actions.applyTemplate(task.id, t.id);
+                  if (isSeries) {
+                    const have = new Set(task.steps.map((x) => x.title));
+                    edit({ steps: [...task.steps, ...TEMPLATES[t.id].steps.filter((x) => !have.has(x.title)).map((x) => ({ id: crypto.randomUUID(), title: x.title, done: false, estimateMin: x.estimateMin }))] });
+                  } else actions.applyTemplate(task.id, t.id);
                   ctx.notify(`Added ${t.label.toLowerCase()} steps`);
                 }}
                 className="rounded-full border border-line bg-bg px-3 py-1.5 text-xs font-medium text-ink"
@@ -299,7 +335,7 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
             id="notes"
             rows={3}
             value={task.notes ?? ""}
-            onChange={(e) => actions.update(task.id, { notes: e.target.value || undefined })}
+            onChange={(e) => edit({ notes: e.target.value || undefined })}
             className={field}
           />
         </div>
@@ -320,17 +356,63 @@ export function TaskSheet({ task, ctx, onClose, timerOn = false }: { task: Task;
           )}
         </section>
 
-        <button
-          onClick={() => {
-            if (confirm(`Delete “${task.title}”? This can't be undone.`)) {
-              actions.remove(task.id);
-              onClose();
-            }
-          }}
-          className="flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-medium text-warn"
-        >
-          <TrashIcon width={16} height={16} /> Delete task
-        </button>
+        {isSeries ? (
+          <div className="space-y-1">
+            <button
+              onClick={() => {
+                actions.skipOccurrence(live.id);
+                ctx.notify("Skipped this one", () => actions.skipOccurrence(live.id, false));
+                onClose();
+              }}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-medium text-muted"
+            >
+              Skip just this one
+            </button>
+            <button
+              onClick={() => {
+                if (confirm(`Stop “${task.title}” repeating from this day on? Days already done stay in your history.`)) {
+                  const snap = actions.endRepeating(live.id);
+                  ctx.notify("Stopped repeating", () => actions.restoreRepeating(snap));
+                  onClose();
+                }
+              }}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-medium text-warn"
+            >
+              <TrashIcon width={16} height={16} /> Delete this and future
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => {
+              if (confirm(`Delete “${task.title}”? This can't be undone.`)) {
+                actions.remove(task.id);
+                onClose();
+              }
+            }}
+            className="flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-medium text-warn"
+          >
+            <TrashIcon width={16} height={16} /> Delete task
+          </button>
+        )}
+
+        {dirty && (
+          <div className="sticky bottom-0 -mx-5 space-y-2 border-t border-line bg-surface px-5 pb-1 pt-3" role="group" aria-label="Save changes to a repeating task">
+            <p className="text-sm font-medium">{draft.rule !== undefined ? "Change how it repeats from this day on?" : "Apply these changes to…"}</p>
+            <div className="flex gap-2">
+              {draft.rule === undefined && (
+                <button className={`${btn.ghost} min-h-12 flex-1`} onClick={() => save("this")}>
+                  This one only
+                </button>
+              )}
+              <button className={`${btn.primary} min-h-12 flex-1`} onClick={() => save("future")}>
+                This and future
+              </button>
+            </div>
+            <button className={btn.link} onClick={() => setDraft({})}>
+              Discard changes
+            </button>
+          </div>
+        )}
       </div>
     </Sheet>
   );

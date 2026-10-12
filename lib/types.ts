@@ -133,7 +133,7 @@ export interface DayEntry {
   /** "session:<areaId>:<date>", "chore:<id>:<date>" or "wrap:<date>" */
   key: string;
   /** "early" = this planned occurrence was done ahead of time on another day, so it is gone: no slot, no reminder. */
-  status: "done" | "skip" | "snooze" | "early";
+  status: "done" | "skip" | "snooze" | "early" | "moved";
   at: number;
   /** For snooze: when to ask again (epoch ms). */
   until?: number;
@@ -362,6 +362,133 @@ export interface Task {
   countsFor?: string;
   /** The session log made when it was completed (removed again if you reopen it). */
   sessionLogId?: string;
+  /** Made by the app (a rescheduled session, a freed-slot extra), not typed by you. */
+  generated?: boolean;
+  /** Where a rescheduled session / chore / bill came from, so finishing this task finishes the original. */
+  origin?: TaskOrigin;
+  /** Occurrence view of a repeating series (never stored in `tasks`): the series and the day it belongs to. */
+  seriesId?: string;
+  occDate?: ISODate;
+}
+
+/** A session, chore or bill that was rescheduled into a one-off task. */
+export interface TaskOrigin {
+  kind: "session" | "chore" | "bill";
+  /** The `data.log` key of the original ("session:powerbi:2026-10-07"); marked "moved" while this task is open. */
+  key: string;
+  date: ISODate;
+  areaId?: string;
+  choreId?: string;
+  billId?: string;
+  /** Bill: the due date it was for. */
+  due?: ISODate;
+  /** Made by the end-of-day sweep (it was missed), not by you choosing Reschedule. */
+  carried?: boolean;
+}
+
+/**
+ * A repeating task. Occurrences are COMPUTED from the rule (lib/series.ts `getOccurrences`), nothing is generated
+ * ahead of time and finishing one never creates the next. Every occurrence inherits `time`.
+ */
+export interface Series {
+  id: string;
+  title: string;
+  notes?: string;
+  /** "HH:mm": every occurrence has this time. Omitted = no fixed time. */
+  time?: string;
+  estimateMin?: number;
+  area?: string;
+  tags: string[];
+  important: boolean;
+  /** The steps every occurrence starts with (not done). */
+  steps: Step[];
+  template?: TemplateId;
+  countsFor?: string;
+  rule: Recurrence;
+  /** First day it can happen. */
+  startDate: ISODate;
+  /** Counting for "every N days / weeks / months" starts here. Defaults to `startDate`. */
+  anchor?: ISODate;
+  /** Last day it can happen (inclusive): set when you turn repeat off or change "this and future". */
+  until?: ISODate;
+  createdAt: number;
+}
+
+/**
+ * The small record kept only when one occurrence differs from its series: done, skipped, missed, moved to another
+ * time, or edited "this one only". Key = seriesId + the ORIGINAL day.
+ */
+export interface Occurrence {
+  key: string;
+  seriesId: string;
+  date: ISODate;
+  status?: "done" | "skipped" | "missed";
+  doneAt?: number;
+  /** Rescheduled: where it went. */
+  movedTo?: { date: ISODate; time?: string };
+  /** Time override for this occurrence (HH:mm). */
+  time?: string;
+  /** This occurrence exists although the rule wouldn't produce it (a migrated or hand-moved copy). */
+  extra?: boolean;
+  /** Edited "this one only". */
+  over?: Partial<Pick<Task, "title" | "notes" | "estimateMin" | "area" | "tags" | "important" | "steps">>;
+  /** Ids of the series steps ticked on this occurrence. */
+  stepsDone?: string[];
+  sessions?: { at: number; min: number }[];
+  sessionLogId?: string;
+  remindAt?: number;
+  alarmAck?: number;
+  snoozeCount?: number;
+  /** "Adjust my day" parked it until this day. */
+  hideUntil?: ISODate;
+  focus?: boolean;
+  lastCheckIn?: { date: ISODate; status: CheckInStatus };
+}
+
+/** One thing that happened, forever (append-only). The weekly review is computed from these. */
+export interface HistoryEvent {
+  id: string;
+  /** When it happened (epoch ms). */
+  at: number;
+  /** The day the item belonged to. */
+  date: ISODate;
+  kind: "done" | "skipped" | "missed" | "rescheduled" | "reopened";
+  type: "session" | "task" | "event" | "bill" | "routine";
+  /** The item's identity ("session:powerbi:2026-10-07", "occ:<series>@<date>", "task:<id>", "event:<id>:<date>"). */
+  key: string;
+  title: string;
+  area?: string;
+  /** You captured it (task, event) rather than the app generating it (session, routine, bill reminder). */
+  createdByMe: boolean;
+  /** Rescheduled: the new day and time. */
+  to?: { date: ISODate; time?: string };
+}
+
+/** A tweak to one routine block on one day ("Commute is 120 min today"). */
+export interface BlockOverride {
+  start?: number;
+  min?: number;
+  skip?: boolean;
+}
+
+/** Your local marks on an event from the phone's calendar (never written to the calendar itself). */
+export interface EventMark {
+  done?: number;
+  hidden?: boolean;
+  start?: string;
+  end?: string;
+}
+
+/** The numbers behind one finished week (saved so past weeks can be listed and compared). */
+export interface WeekSnapshot {
+  week: ISODate;
+  at: number;
+  kind: "week-so-far" | "your-week";
+  areas: Array<{ id: string; name: string; emoji: string; done: number; target: number }>;
+  own: { added: number; finished: number; names: string[] };
+  events: { handled: number; names: string[] };
+  focus: string[];
+  text: string;
 }
 
 export interface Settings {
@@ -402,6 +529,8 @@ export interface Settings {
   overloadSkipDate?: ISODate;
   /** Learned slot shifts already mentioned: areaId → slotId. */
   slotShifts?: Record<string, string>;
+  /** The one-time "allow exact reminders" prompt has been shown. */
+  exactAsked?: boolean;
   /** Weekly targets already celebrated ("<Monday>:<areaId>"), so it happens once. */
   celebrated?: string[];
   /** The latest "target reached" card on Today, until it is answered. */
@@ -409,8 +538,8 @@ export interface Settings {
 }
 
 export interface AppData {
-  /** Bump when the shape changes and add a step in lib/backup.ts `migrate`. */
-  version: 1;
+  /** Bump when the shape changes and add a step in lib/backup.ts `migrate`. 2 = repeats are series + occurrences. */
+  version: 1 | 2;
   tasks: Task[];
   settings: Settings;
   /** "Me": routines, areas and shortcuts. Missing = defaults (see lib/profile.ts). */
@@ -438,6 +567,20 @@ export interface AppData {
   quotes?: QuoteState;
   /** Sunday coach letters, newest last (last 12 kept). */
   letters?: CoachLetter[];
+  /** Repeating tasks (see Series). */
+  series?: Series[];
+  /** Records for occurrences that differ from their series. */
+  occurrences?: Occurrence[];
+  /** Everything that was done / skipped / missed / rescheduled, append-only. */
+  history?: HistoryEvent[];
+  /** "Just today" tweaks to routine blocks, keyed "<blockId>@<date>". */
+  blocks?: Record<string, BlockOverride>;
+  /** Marks on phone-calendar events, keyed "<calId or id>@<date>". */
+  eventMarks?: Record<string, EventMark>;
+  /** One snapshot per Friday / Sunday review (last 26 kept). */
+  weeks?: WeekSnapshot[];
+  /** Runtime only, never saved: the window in which repeat occurrences were added to `tasks` (see withOccurrences). */
+  expanded?: { from: ISODate; to: ISODate };
 }
 
 export const MAX_FOCUS = 3;

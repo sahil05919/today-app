@@ -1,3 +1,4 @@
+import { findTask } from "./series";
 import { actions, getData } from "./store";
 import { extendedGoal } from "./timer";
 
@@ -21,7 +22,7 @@ export function completeTimer(): boolean {
   if (timer.taskId) {
     const id = timer.taskId;
     actions.stopTimer();
-    const t = getData().tasks.find((x) => x.id === id);
+    const t = findTask(getData(), id);
     if (t && t.status === "open") actions.toggleDone(id);
   } else {
     actions.stopTimer();

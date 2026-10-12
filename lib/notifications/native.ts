@@ -1,6 +1,7 @@
 import { LocalNotifications, type ActionPerformed } from "@capacitor/local-notifications";
 import { createAlarmChannel } from "../nativeBridge";
 import { isNative } from "../platform";
+import { findTask, parseOccKey } from "../series";
 import { actions, getData, whenLoaded } from "../store";
 import { applyTimerAction } from "../timerRun";
 import { planNotifications, signature, type NotifKind, type PlannedNotification } from "./plan";
@@ -153,6 +154,11 @@ export async function initNotifications() {
   }
 }
 
+const occOf = (taskId?: string) => {
+  const o = taskId ? parseOccKey(taskId) : null;
+  return o ? { id: o.seriesId, date: o.date } : undefined;
+};
+
 const toSchema = (n: PlannedNotification, exactAllowed: boolean) => ({
   id: n.id,
   title: n.title,
@@ -163,7 +169,8 @@ const toSchema = (n: PlannedNotification, exactAllowed: boolean) => ({
   actionTypeId: n.actions ? (n.timer ? TIMER_ACTIONS : n.alarm ? ALARM_ACTIONS : n.ref ? CHECKIN_ACTIONS : TASK_ACTIONS) : undefined,
   smallIcon: "ic_stat_today",
   autoCancel: true,
-  extra: { taskId: n.taskId, kind: n.kind, key: n.key, ref: n.ref, at: n.at.getTime() },
+  // A repeat's notification says exactly which day it is for: { id: seriesId, date }, so a tap opens THAT occurrence.
+  extra: { taskId: n.taskId, kind: n.kind, key: n.key, ref: n.ref, at: n.at.getTime(), occ: occOf(n.taskId) },
   // Only ask for a precise alarm when it's already allowed, so rescheduling never throws up a settings screen.
   isExactNotification: n.exact && exactAllowed,
   isExactMandatory: false,
@@ -234,7 +241,7 @@ export async function sendTest(): Promise<boolean> {
  */
 export function applyAlarmAction(actionId: string, taskId: string, firedAt = Date.now(), now = Date.now()): boolean {
   if (!["done", "snooze10", "snooze60", "ack"].includes(actionId)) return false;
-  const task = getData().tasks.find((t) => t.id === taskId);
+  const task = findTask(getData(), taskId);
   if (!task || task.status !== "open") return true; // already finished or deleted: nothing to do
   const ack = Math.max(firedAt, now);
   if (actionId === "done") actions.toggleDone(taskId);
@@ -249,6 +256,8 @@ export interface TapTarget {
   /** The notification's own key and its Done / Snooze reference: together they say exactly which card to open. */
   key?: string;
   ref?: string;
+  /** A repeating task: which series and which day. */
+  occ?: { id: string; date: string };
   /** Opened from the widget's Start button: start that item's timer, not just show it. */
   start?: boolean;
 }
@@ -266,7 +275,7 @@ export const markActivated = () => {
 export async function listenForActions(onTap: (t: TapTarget) => void): Promise<() => void> {
   if (!isNative()) return () => {};
   const handle = await LocalNotifications.addListener("localNotificationActionPerformed", async (e: ActionPerformed) => {
-    const extra = (e.notification.extra ?? {}) as { taskId?: string; kind?: TapTarget["kind"]; key?: string; ref?: string; at?: number };
+    const extra = (e.notification.extra ?? {}) as { taskId?: string; kind?: TapTarget["kind"]; key?: string; ref?: string; at?: number; occ?: { id: string; date: string } };
     const { actionId } = e;
 
     // "Time's up" on a timer: Done logs it, +5 min keeps going.
@@ -298,13 +307,13 @@ export async function listenForActions(onTap: (t: TapTarget) => void): Promise<(
           await whenLoaded();
           applyAlarmAction("ack", extra.taskId, extra.at);
         }
-        onTap({ kind: extra.kind, taskId: extra.taskId, key: extra.key, ref: extra.ref });
+        onTap({ kind: extra.kind, taskId: extra.taskId, key: extra.key, ref: extra.ref, occ: extra.occ });
       }
       return;
     }
     await whenLoaded(); // cold start: wait for the saved data before touching it
     if (!applyAlarmAction(actionId, extra.taskId, extra.at)) {
-      const task = getData().tasks.find((t) => t.id === extra.taskId);
+      const task = extra.taskId ? findTask(getData(), extra.taskId) : undefined;
       if (!task || task.status !== "open") return;
       if (actionId === "ontrack") actions.recordCheckIn(task.id, "on-track");
       else if (actionId === "snooze") actions.update(task.id, { remindAt: Date.now() + 2 * 3600_000 });

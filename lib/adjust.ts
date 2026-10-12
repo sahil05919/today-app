@@ -1,5 +1,6 @@
 import { addDays, diffDays, toISO } from "./dates";
 import { priorityScore } from "./rescue";
+import { withRepeats } from "./series";
 import { buildTimeline, type TLItem } from "./timeline";
 import type { AppData, Energy, ISODate, Task } from "./types";
 
@@ -46,8 +47,9 @@ function score(it: TLItem, task: Task | undefined, date: ISODate, energy: Energy
   return s;
 }
 
-export function planAdjust(data: AppData, now: Date, opts: { minutes: number; energy: Energy }): AdjustPlan {
+export function planAdjust(raw: AppData, now: Date, opts: { minutes: number; energy: Energy }): AdjustPlan {
   const today = toISO(now);
+  const data = withRepeats(raw, today);
   const tl = buildTimeline(data, today, now);
   const tasks = new Map(data.tasks.map((t) => [t.id, t]));
   const booked = tl.items.filter((x) => x.fixed && !x.done && !x.skipped && !x.muted && !x.allDay);
@@ -81,8 +83,9 @@ export function planAdjust(data: AppData, now: Date, opts: { minutes: number; en
 }
 
 /** Applies the plan: tasks move to tomorrow (overdue ones are parked, staying first in line), the rest are skipped for today. */
-export function applyAdjust(plan: AdjustPlan, apply: { moveTasks: (m: Array<{ taskId: string; to: ISODate }>) => void; parkTasks: (ids: string[], until: ISODate) => void; skip: (it: TLItem) => void }, data: AppData, now: Date) {
+export function applyAdjust(plan: AdjustPlan, apply: { moveTasks: (m: Array<{ taskId: string; to: ISODate }>) => void; parkTasks: (ids: string[], until: ISODate) => void; skip: (it: TLItem) => void }, raw: AppData, now: Date) {
   const today = toISO(now);
+  const data = withRepeats(raw, today);
   const tomorrow = addDays(today, 1);
   const byId = new Map(data.tasks.map((t) => [t.id, t]));
   const move: Array<{ taskId: string; to: ISODate }> = [];

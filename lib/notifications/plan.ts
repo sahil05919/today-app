@@ -13,6 +13,7 @@ import { plannedForDay } from "../schedule";
 import { answerFor } from "../feeling";
 import { isQuoteDay, quoteForDate, quoteLine, quoteStateOf } from "../quoteBag";
 import { buildTimeline } from "../timeline";
+import { LOOKBACK_DAYS, withOccurrences } from "../series";
 import { weekStart } from "../stats";
 import { timerEndsAt } from "../timer";
 import { choreKey, entryFor, wrapKey } from "../sessions";
@@ -49,8 +50,10 @@ export interface PlannedNotification {
   timer?: boolean;
 }
 
-const DAYS_AHEAD = 7;
-const MAX_NOTIFICATIONS = 120;
+/** The rolling window: recomputed on start, on resume and after any change. */
+export const DAYS_AHEAD = 14;
+/** Android allows 500 scheduled alarms per app; stay well under. */
+const MAX_NOTIFICATIONS = 320;
 const MAX_CHECKINS_PER_DAY = 3;
 /** An alarm that nobody reacts to rings again this many minutes later. */
 export const NAG_AFTER_MIN = [5, 10, 15];
@@ -132,9 +135,11 @@ const friendlyWhen = (due: ISODate, today: ISODate) => {
   return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][d.getDay()];
 };
 
-export function planNotifications(data: AppData, now: Date = new Date()): PlannedNotification[] {
-  const p = withDefaults(data.profile);
+export function planNotifications(raw: AppData, now: Date = new Date()): PlannedNotification[] {
   const today = toISO(now);
+  // Repeats of the window come from getOccurrences, so the Vitamin has a 11:00 reminder on EVERY coming day.
+  const data = withOccurrences(raw, addDays(today, -LOOKBACK_DAYS), addDays(today, DAYS_AHEAD + 7), today);
+  const p = withDefaults(data.profile);
   const open = data.tasks.filter((t) => t.status === "open");
   const isWorkTask = (t: Task) => !!t.area && !!p.areas.find((a) => a.id === t.area)?.isWork;
   const out: PlannedNotification[] = [];
@@ -399,6 +404,8 @@ export function planNotifications(data: AppData, now: Date = new Date()): Planne
   /** The same alarm again a few minutes later, until you react (Done, Snooze, or opening the task). */
   const pushNags = (t: Task, key: string, first: Date) => {
     if (t.alarmAck && t.alarmAck >= first.getTime()) return;
+    // Follow-ups only make sense soon: a daily reminder two weeks out does not need three nags each.
+    if (toISO(first) > addDays(today, 1)) return;
     NAG_AFTER_MIN.forEach((m, i) =>
       push({
         ...alarm(t),

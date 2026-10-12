@@ -6,6 +6,7 @@ import { isOffDay, OFF_DAY_MAX_MIN } from "./offday";
 import { toMin, withDefaults } from "./profile";
 import { entryFor, nextNumber, sessionKey, sessionTitle, variantFor } from "./sessions";
 import { weekStart } from "./stats";
+import { withOccurrences } from "./series";
 import type { Area, AppData, ISODate, Slot } from "./types";
 
 /**
@@ -91,11 +92,13 @@ function layout(items: Item[], wins: Array<[number, number]>, buffer: number): P
   return out;
 }
 
-export function planSessions(data: AppData, now: Date = new Date(), busyOverride?: BusyFn): PlannedSession[] {
+export function planSessions(raw: AppData, now: Date = new Date(), busyOverride?: BusyFn): PlannedSession[] {
+  const today = toISO(now);
+  const monday = weekStart(today);
+  const data = withOccurrences(raw, monday, addDays(monday, 6), today);
   const busy: BusyFn = busyOverride ?? planningBusy(data);
   const p = withDefaults(data.profile);
   const buffer = p.bufferMin;
-  const today = toISO(now);
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const week = Array.from({ length: 7 }, (_, i) => addDays(weekStart(today), i));
   const logs = data.sessions ?? [];

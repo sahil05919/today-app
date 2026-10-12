@@ -11,6 +11,7 @@ import { toMin, withDefaults } from "@/lib/profile";
 import { isQuoteDay, quoteStateOf } from "@/lib/quoteBag";
 import { dateInKey, resolveTap } from "@/lib/tap";
 import { settleNote, settleOverflow } from "@/lib/settle";
+import { findTask } from "@/lib/series";
 import { actions, getData, useData } from "@/lib/store";
 import { buildTimeline, firstThing, isNight } from "@/lib/timeline";
 import type { ISODate, Task } from "@/lib/types";
@@ -125,7 +126,7 @@ export default function App() {
     if (r.k === "task") setOpenId(r.taskId);
     else if (r.k === "checkin") {
       // "Behind" lives here: the check-in offers a new date or a small next step.
-      const task = data.tasks.find((x) => x.id === r.taskId);
+      const task = findTask(data, r.taskId);
       if (task) setCheckIn([task]);
     } else if (r.k === "item" || r.k === "event" || (r.k === "panel" && r.panel === "progress")) {
       setPanel(null);
@@ -200,6 +201,11 @@ export default function App() {
     if (loaded && sunday) void ensureLetter();
   }, [loaded, sunday, today]);
 
+  // Each new day (and on start): older unresolved repeats are logged as missed; only the latest carries forward.
+  useEffect(() => {
+    if (loaded) actions.sweep(today);
+  }, [loaded, today]);
+
   // The planner moved a session to the slot where it really happens: say so once, never silently.
   useEffect(() => {
     if (!data) return;
@@ -226,7 +232,7 @@ export default function App() {
     return <div className="mx-auto min-h-dvh max-w-md" aria-busy="true" />;
   }
 
-  const openTask = openId ? data.tasks.find((t) => t.id === openId) : undefined;
+  const openTask = openId ? findTask(data, openId) : undefined;
   const night = isNight(now, profile) && !peek;
   const first = night ? firstThing(data, now) : null;
   const evening = now.getHours() >= 18 && tl.summary.total > 0;
@@ -317,10 +323,8 @@ export default function App() {
       {panel === "quotes" && <QuotesSheet onClose={closePanel} />}
       {panel === "quote" && <QuoteCard date={quoteDate} onClose={closePanel} />}
       {panel === "evening" && <EveningWrap data={data} ctx={ctx} onClose={closePanel} />}
-      {when && when.mode === "snooze" && data.tasks.some((t) => t.id === when.id) && <SnoozeSheet target={{ kind: "task", taskId: when.id }} ctx={ctx} onClose={() => setWhen(null)} />}
-      {when && when.mode === "schedule" && data.tasks.find((t) => t.id === when.id) && (
-        <WhenSheet task={data.tasks.find((t) => t.id === when.id)!} mode="schedule" ctx={ctx} onClose={() => setWhen(null)} />
-      )}
+      {when && when.mode === "snooze" && !!findTask(data, when.id) && <SnoozeSheet target={{ kind: "task", taskId: when.id }} ctx={ctx} onClose={() => setWhen(null)} />}
+      {when && when.mode === "schedule" && findTask(data, when.id) && <WhenSheet task={findTask(data, when.id)!} mode="schedule" ctx={ctx} onClose={() => setWhen(null)} />}
       {invite && <ImportSheet events={invite} ctx={ctx} onClose={() => setInvite(null)} />}
       {checkIn && <CheckIn tasks={checkIn} today={today} onFinish={() => setCheckIn(null)} />}
     </div>

@@ -6,6 +6,7 @@ import { eventSpan, eventsOn } from "./fixed";
 import { toHHMM, toMin, withDefaults } from "./profile";
 import { priorityScore } from "./rescue";
 import { plannedForDay } from "./schedule";
+import { windowFor, withOccurrences } from "./series";
 import { choreKey, entryFor } from "./sessions";
 import { buildDurationModel } from "./stats";
 import type { AppData, ISODate, Task } from "./types";
@@ -101,10 +102,13 @@ export function taskBlock(t: Task, model: ReturnType<typeof buildDurationModel>)
   return { minutes: Math.min(MAX_BLOCK, Math.max(15, ceil5(step?.estimateMin ?? 60))), partial: true };
 }
 
-export function buildTimeline(data: AppData, date: ISODate, now: Date = new Date()): Timeline {
+export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date()): Timeline {
+  const todayIso = toISO(now);
+  // Repeats come from getOccurrences (lib/series.ts), added as ordinary tasks for this week (+ the carry-over lookback today).
+  const win = windowFor(date, todayIso);
+  const data = withOccurrences(raw, win.from, win.to, todayIso);
   const p = withDefaults(data.profile);
   const r = dayRules(data, date);
-  const todayIso = toISO(now);
   const isToday = date === todayIso;
   const isPast = date < todayIso;
   const nowMin = now.getHours() * 60 + now.getMinutes();

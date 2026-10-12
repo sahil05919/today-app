@@ -1,4 +1,5 @@
 import { addDays, fromISO, toISO } from "./dates";
+import { withRepeats } from "./series";
 import { buildTimeline } from "./timeline";
 import type { AppData, ISODate, Task } from "./types";
 
@@ -16,8 +17,9 @@ export interface Move {
 
 const DAYS_AHEAD = 7;
 
-export function settleOverflow(data: AppData, now: Date = new Date()): Move[] {
+export function settleOverflow(raw: AppData, now: Date = new Date()): Move[] {
   const today = toISO(now);
+  const data = withRepeats(raw, today);
   const first = buildTimeline(data, today, now);
   const candidates = first.overflow.filter((o) => !o.carried).map((o) => o.task);
   if (!candidates.length) return [];

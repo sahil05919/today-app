@@ -1,4 +1,5 @@
 import { addDays, isISO } from "./dates";
+import { findTask } from "./series";
 import { buildTimeline, type TLItem } from "./timeline";
 import type { AppData, FixedEvent, ISODate } from "./types";
 
@@ -10,6 +11,8 @@ export interface TapInfo {
   key?: string;
   /** What Done / Snooze / Skip refer to: "session:<area>:<date>", "chore:<id>:<date>", "bill:<id>:<due>". */
   ref?: string;
+  /** A repeating task's occurrence: the series and the day it belongs to. */
+  occ?: { id: string; date: ISODate };
 }
 
 /** Where a tap should land. `gone` = the thing is already done, skipped or deleted. */
@@ -73,7 +76,7 @@ export function resolveTap(data: AppData, t: TapInfo, today: ISODate, now: Date 
   }
 
   if (t.taskId) {
-    const task = data.tasks.find((x) => x.id === t.taskId);
+    const task = findTask(data, t.occ ? `${t.occ.id}@${t.occ.date}` : t.taskId) ?? findTask(data, t.taskId);
     if (!task || task.status !== "open") return { k: "gone", message: GONE };
     return t.kind === "checkin" ? { k: "checkin", taskId: task.id } : { k: "task", taskId: task.id };
   }

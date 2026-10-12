@@ -1,8 +1,8 @@
 import { addDays, fromISO, toISO } from "./dates";
 import { billKey } from "./bills";
 import { withDefaults } from "./profile";
-import { nextOccurrence } from "./recur";
 import { addLog, choreKey, removeLog, sessionKey, sessionTitle } from "./sessions";
+import { completeOcc, findTask, isOccId, nextDateAfter, reopenOcc, seriesOf } from "./series";
 import type { AppData, DayEntry, ISODate, Task } from "./types";
 
 /**
@@ -81,31 +81,17 @@ function setEntries(data: AppData, changes: Array<[string, DayEntry["status"]]>,
 // ---- Tasks (shared with the store's toggleDone) -----------------------------------------------------------------
 
 /**
- * Completes a task. A repeating one spawns its next occurrence; a task that counts as a session (a freed slot filled with
- * an "extra session") logs it. Returns the new data and the spawned task.
+ * Completes a task. A task that counts as a session (a freed slot filled with an "extra session") logs it. A repeat
+ * (an occurrence id) is marked done for THAT day only: nothing is generated, so `next` is always null.
  */
 export function completeTaskIn(d: AppData, id: string, now: Date): { data: AppData; next: Task | null } | null {
+  if (isOccId(id) && !d.tasks.some((x) => x.id === id)) {
+    const data = completeOcc(d, id, now);
+    return data ? { data, next: null } : null;
+  }
   const t = d.tasks.find((x) => x.id === id);
   if (!t || t.status === "done") return null;
   const today = toISO(now);
-  let next: Task | null = null;
-  if (t.recur) {
-    // If it's overdue, count from today so we don't spawn a pile of missed occurrences.
-    const base = t.due && t.due > today ? t.due : today;
-    next = {
-      ...t,
-      id: crypto.randomUUID(),
-      due: nextOccurrence(t.recur, base),
-      steps: t.steps.map((s) => ({ ...s, id: crypto.randomUUID(), done: false })),
-      status: "open",
-      completedAt: undefined,
-      nextId: undefined,
-      focus: false,
-      lastCheckIn: undefined,
-      sessionLogId: undefined,
-      createdAt: now.getTime(),
-    };
-  }
   let data = d;
   let sessionLogId: string | undefined;
   if (t.countsFor) {
@@ -115,17 +101,16 @@ export function completeTaskIn(d: AppData, id: string, now: Date): { data: AppDa
       sessionLogId = r.log.id;
     }
   }
-  const done: Task = { ...t, status: "done", completedAt: now.getTime(), focus: false, nextId: next?.id, sessionLogId };
-  return { data: { ...data, tasks: [...(next ? [next] : []), ...d.tasks.map((x) => (x.id === id ? done : x))] }, next };
+  const done: Task = { ...t, status: "done", completedAt: now.getTime(), focus: false, sessionLogId };
+  return { data: { ...data, tasks: d.tasks.map((x) => (x.id === id ? done : x)) }, next: null };
 }
 
-/** Reopens a completed task: removes the occurrence it spawned (if still untouched) and the session it logged. */
+/** Reopens a completed task, and takes back the session it logged. */
 export function reopenTaskIn(d: AppData, id: string): AppData | null {
+  if (isOccId(id) && !d.tasks.some((x) => x.id === id)) return reopenOcc(d, id);
   const t = d.tasks.find((x) => x.id === id);
   if (!t || t.status !== "done") return null;
-  const tasks = d.tasks
-    .filter((x) => !(t.nextId && x.id === t.nextId && x.status === "open"))
-    .map((x) => (x.id === id ? { ...x, status: "open" as const, completedAt: undefined, nextId: undefined, sessionLogId: undefined } : x));
+  const tasks = d.tasks.map((x) => (x.id === id ? { ...x, status: "open" as const, completedAt: undefined, sessionLogId: undefined } : x));
   const base = { ...d, tasks };
   return t.sessionLogId ? removeLog(base, t.sessionLogId) : base;
 }
@@ -222,19 +207,22 @@ export function applyDone(d: AppData, target: DoneTarget, opts: DoneOptions): Do
     });
   }
 
-  // task
-  const t = d.tasks.find((x) => x.id === target.id);
+  // task (or one occurrence of a repeating task)
+  const t = findTask(d, target.id);
   if (!t) return out({ data: d, noop: true, message: "That task is gone", title: target.id });
   if (t.status === "done") return out({ data: d, noop: true, message: `${t.title} is already done`, title: t.title });
   const r = completeTaskIn(d, t.id, now)!;
   receipt.taskId = t.id;
   const early = !!t.due && t.due > today;
+  const series = seriesOf(d, t.id);
+  const nextDay = series && t.occDate ? nextDateAfter(series, t.occDate) : null;
+  const next = nextDay ? `Next: ${dayWord(nextDay, today)}` : "";
   return out({
     data: r.data,
     title: t.title,
     early,
     forDate: t.due && t.due !== today ? t.due : undefined,
-    message: early ? `${t.title} done early 👍${r.next ? ` Next: ${dayWord(r.next.due!, today)}.` : ""}` : `${t.title} done${r.next ? `. Next: ${dayWord(r.next.due!, today)}` : ""}`,
+    message: early ? `${t.title} done early 👍${next ? ` ${next}.` : ""}` : `${t.title} done${next ? `. ${next}` : ""}`,
   });
 }
 

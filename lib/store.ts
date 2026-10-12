@@ -1,7 +1,7 @@
 "use client";
 import { Preferences } from "@capacitor/preferences";
 import { useSyncExternalStore } from "react";
-import { emptyData, migrate } from "./backup";
+import { emptyData, migrate, needsUpgrade } from "./backup";
 import { addDays, toISO, todayISO } from "./dates";
 import { isNative } from "./platform";
 import { seedIfNeeded } from "./seed";
@@ -14,11 +14,27 @@ import { assignDate, quoteStateOf, takeAnother } from "./quoteBag";
 import type { Quote } from "./quotes/types";
 import type { ParsedCapture } from "./parse";
 import { TEMPLATES } from "./templates";
+import {
+  addSeries,
+  applyOccTask,
+  editSeries,
+  endSeries,
+  findTask,
+  isOccId,
+  makeSeries,
+  restoreSnapshot,
+  setOccSkipped,
+  snapshotOf,
+  sweepMissed,
+  taskToSeries,
+  type SeriesPatch,
+  type SeriesSnapshot,
+} from "./series";
 import { billKey } from "./bills";
 import { forget, learnFix, learnItem } from "./learn";
 import { canTakeOffDay } from "./offday";
 import { withLetter } from "./letters";
-import type { AppData, Bill, BoredIdea, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, SessionLog, Settings, Step, Task, TemplateId } from "./types";
+import type { AppData, Bill, BoredIdea, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
 /**
@@ -33,6 +49,8 @@ export interface StorageAdapter {
 }
 
 export const KEY = "today:v1";
+/** A full copy of the data exactly as the older (v1) build saved it, written once before anything is migrated. */
+export const BACKUP_KEY = "today:v1:backup-pre-v2";
 /** A task or item can be snoozed this many times; the next time you must choose. */
 export const MAX_SNOOZES = 2;
 /** "Do it now": a small first push. */
@@ -42,7 +60,14 @@ export const localStorageAdapter: StorageAdapter = {
   load() {
     try {
       const raw = localStorage.getItem(KEY);
-      return raw ? migrate(JSON.parse(raw)) : null;
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const upgrade = needsUpgrade(parsed);
+      // Schema change: keep the old data first (never overwriting an earlier backup), then migrate and save.
+      if (upgrade && localStorage.getItem(BACKUP_KEY) == null) localStorage.setItem(BACKUP_KEY, raw);
+      const data = migrate(parsed);
+      if (upgrade) localStorage.setItem(KEY, JSON.stringify(data));
+      return data;
     } catch {
       return null;
     }
@@ -60,7 +85,18 @@ export const localStorageAdapter: StorageAdapter = {
 async function loadNative(): Promise<AppData | null> {
   try {
     const { value } = await Preferences.get({ key: KEY });
-    if (value) return migrate(JSON.parse(value));
+    if (value) {
+      const parsed = JSON.parse(value);
+      const upgrade = needsUpgrade(parsed);
+      if (upgrade) {
+        // Schema change: the old data is copied to its own key FIRST (an earlier backup is never overwritten).
+        const have = await Preferences.get({ key: BACKUP_KEY });
+        if (!have.value) await Preferences.set({ key: BACKUP_KEY, value });
+      }
+      const data = migrate(parsed);
+      if (upgrade) await Preferences.set({ key: KEY, value: JSON.stringify(data) });
+      return data;
+    }
   } catch (e) {
     console.warn("Could not read Preferences", e);
   }
@@ -174,6 +210,12 @@ export function useData(): AppData | null {
 const uid = () => crypto.randomUUID();
 const mapTask = (id: string, fn: (t: Task) => Task) => {
   const d = ensure();
+  // A repeat (seriesId@day) changes THIS occurrence only: the difference goes into its small record.
+  if (isOccId(id) && !d.tasks.some((t) => t.id === id)) {
+    const t = findTask(d, id);
+    if (t) commit(applyOccTask(d, id, t, fn(t)));
+    return;
+  }
   commit({ ...d, tasks: d.tasks.map((t) => (t.id === id ? fn(t) : t)) });
 };
 const openFocusCount = (d: AppData) => d.tasks.filter((t) => t.focus && t.status === "open").length;
@@ -218,6 +260,13 @@ export const actions = {
       createdAt: Date.now(),
     };
     if (p.template) applyTemplateTo(task, p.template);
+    if (p.recur) {
+      // A repeat is a series: its occurrences are computed, nothing is generated ahead.
+      const series = makeSeries({ title: task.title, notes: task.notes, time: task.dueTime, estimateMin: task.estimateMin, area: task.area, tags: task.tags, important: task.important, steps: task.steps, template: task.template, rule: p.recur, from: due ?? todayISO() });
+      const r = addSeries(d, series);
+      commit(r.data);
+      return r.first;
+    }
     commit({ ...d, tasks: [task, ...d.tasks] });
     return task;
   },
@@ -240,15 +289,13 @@ export const actions = {
   startTimer(id: string, goalMin?: number) {
     if (ensure().settings.timer) actions.stopTimer();
     // No goal given: a task with an estimate runs for that long.
-    const goal = goalMin ?? taskGoal(ensure().tasks.find((t) => t.id === id) ?? {});
+    const goal = goalMin ?? taskGoal(findTask(ensure(), id) ?? {});
     actions.settings({ timer: { taskId: id, startedAt: Date.now(), goalMin: goal } });
   },
 
   /** Parks overdue tasks until a later day: they stay carried over (first in line then) but leave today's plan. */
   parkTasks(ids: string[], until: ISODate) {
-    const d = ensure();
-    const set = new Set(ids);
-    commit({ ...d, tasks: d.tasks.map((t) => (set.has(t.id) ? { ...t, hideUntil: until } : t)) });
+    ids.forEach((id) => mapTask(id, (t) => ({ ...t, hideUntil: until })));
   },
 
   /** Starts a timer on a session / chore / bill (anything on the timeline that isn't a task). */
@@ -268,10 +315,14 @@ export const actions = {
       return null;
     }
     const minutes = Math.min(240, Math.max(1, Math.round((Date.now() - timer.startedAt) / 60000)));
-    const task = d.tasks.find((t) => t.id === timer.taskId);
-    const tasks = d.tasks.map((t) =>
-      t.id === timer.taskId ? { ...t, sessions: [...(t.sessions ?? []), { at: Date.now(), min: minutes }] } : t,
-    );
+    const task = findTask(d, timer.taskId);
+    const logged = { at: Date.now(), min: minutes };
+    if (task && isOccId(task.id) && !d.tasks.some((t) => t.id === task.id)) {
+      const next = applyOccTask(d, task.id, task, { ...task, sessions: [...(task.sessions ?? []), logged] });
+      commit({ ...next, settings: { ...next.settings, timer: undefined } });
+      return { task, minutes };
+    }
+    const tasks = d.tasks.map((t) => (t.id === timer.taskId ? { ...t, sessions: [...(t.sessions ?? []), logged] } : t));
     commit({ ...d, tasks, settings: { ...d.settings, timer: undefined } });
     return task ? { task, minutes } : null;
   },
@@ -282,12 +333,12 @@ export const actions = {
   },
 
   /**
-   * Completes (or reopens) a task. Completing a recurring task spawns its next occurrence and returns it;
-   * reopening removes that spawned occurrence again so nothing is duplicated.
+   * Completes (or reopens) a task. A repeating task is done for THAT day only (its other days are untouched), so
+   * this never returns a "next" copy any more.
    */
   toggleDone(id: string, now: Date = new Date()): Task | null {
     const d = ensure();
-    const t = d.tasks.find((x) => x.id === id);
+    const t = findTask(d, id);
     if (!t) return null;
     if (t.status === "done") {
       const next = reopenTaskIn(d, id);
@@ -302,7 +353,49 @@ export const actions = {
 
   remove(id: string) {
     const d = ensure();
+    // A repeat: "delete" means this one day only (use endRepeating for this and every later one).
+    if (isOccId(id) && !d.tasks.some((t) => t.id === id)) return commit(setOccSkipped(d, id, true));
     commit({ ...d, tasks: d.tasks.filter((t) => t.id !== id) });
+  },
+
+  // --- Repeating tasks (see lib/series.ts) ------------------------------------------------------------
+  /** Skips one occurrence (or brings it back). */
+  skipOccurrence(id: string, skipped = true) {
+    commit(setOccSkipped(ensure(), id, skipped));
+  },
+
+  /** Edits a repeat: "this" = this one only, "future" = this and every later one. Returns the id of the occurrence to keep open. */
+  editRepeating(id: string, patch: SeriesPatch, scope: "this" | "future"): string {
+    const r = editSeries(ensure(), id, patch, scope);
+    commit(r.data);
+    return r.openId;
+  },
+
+  /** A one-off task starts repeating. Returns the occurrence id to keep open. */
+  makeRepeating(taskId: string, rule: Recurrence): string | null {
+    const r = taskToSeries(ensure(), taskId, rule, todayISO());
+    if (!r) return null;
+    commit(r.data);
+    return r.openId;
+  },
+
+  /** Stops a repeat from this occurrence on (history stays). Returns a snapshot for Undo. */
+  endRepeating(id: string): SeriesSnapshot {
+    const d = ensure();
+    const snap = snapshotOf(d, id);
+    commit(endSeries(d, id));
+    return snap;
+  },
+
+  restoreRepeating(snap: SeriesSnapshot) {
+    commit(restoreSnapshot(ensure(), snap));
+  },
+
+  /** Older unresolved occurrences become "missed" (only the latest carries forward). Cheap to call often. */
+  sweep(today: ISODate = todayISO()) {
+    const d = ensure();
+    const next = sweepMissed(d, today);
+    if (next !== d) commit(next);
   },
 
   /**
@@ -310,8 +403,13 @@ export const actions = {
    * or you accepted a catch-up plan).
    */
   moveTasks(moves: Array<{ taskId: string; to: ISODate; time?: string }>) {
-    const d = ensure();
+    let d = ensure();
     const by = new Map(moves.map((m) => [m.taskId, m]));
+    for (const m of moves) {
+      if (!isOccId(m.taskId) || d.tasks.some((t) => t.id === m.taskId)) continue;
+      const t = findTask(d, m.taskId);
+      if (t) d = applyOccTask(d, m.taskId, t, { ...t, due: m.to, dueTime: m.time, remindAt: undefined, slot: undefined, hideUntil: undefined });
+    }
     commit({
       ...d,
       tasks: d.tasks.map((t) => {
@@ -326,7 +424,7 @@ export const actions = {
    * (do it now, give it a fixed slot, or drop it), so nothing drifts for ever.
    */
   snoozeTask(id: string, kind: "hour" | "evening" | "tomorrow", now: Date = new Date()): "snoozed" | "decide" {
-    const t = ensure().tasks.find((x) => x.id === id);
+    const t = findTask(ensure(), id);
     if (!t) return "snoozed";
     if ((t.snoozeCount ?? 0) >= MAX_SNOOZES) return "decide";
     const count = (t.snoozeCount ?? 0) + 1;
@@ -355,7 +453,7 @@ export const actions = {
 
   /** The third-snooze choice. "now" starts a 15-minute timer, "slot" books a fixed time, "drop" deletes it (undoable by the caller). */
   decideTask(id: string, choice: "now" | "slot" | "drop", slot?: { date: ISODate; time: string }) {
-    const t = ensure().tasks.find((x) => x.id === id);
+    const t = findTask(ensure(), id);
     if (!t) return;
     if (choice === "drop") {
       actions.remove(id);
@@ -394,7 +492,7 @@ export const actions = {
   /** Returns false when the focus list is full. */
   toggleFocus(id: string): boolean {
     const d = ensure();
-    const t = d.tasks.find((x) => x.id === id);
+    const t = findTask(d, id);
     if (!t) return false;
     if (!t.focus && openFocusCount(d) >= MAX_FOCUS) return false;
     mapTask(id, (x) => ({ ...x, focus: !x.focus }));

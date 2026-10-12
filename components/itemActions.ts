@@ -2,6 +2,7 @@ import { buzz } from "@/lib/haptics";
 import { cheerLine } from "@/lib/cheer";
 import { toISO } from "@/lib/dates";
 import { choreKey } from "@/lib/sessions";
+import { findTask } from "@/lib/series";
 import { actions, getData } from "@/lib/store";
 import { timerGoal } from "@/lib/timer";
 import type { TLItem } from "@/lib/timeline";
@@ -48,7 +49,7 @@ export function completeItem(it: TLItem, ctx: ViewCtx, date: ISODate, left: numb
   const line = () => cheerLine(ctx.profile.name, left);
   buzz(20);
   if (it.kind === "task" && it.taskId && date === ctx.today) {
-    const t = getData().tasks.find((x) => x.id === it.taskId);
+    const t = findTask(getData(), it.taskId);
     if (!t) return;
     // A running timer on it stops with it.
     if (getData().settings.timer?.taskId === t.id) actions.stopTimer();

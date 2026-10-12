@@ -3,6 +3,7 @@ import { addDays, fromISO, toISO } from "./dates";
 import { eventsOn } from "./fixed";
 import { isOffDay } from "./offday";
 import { planSessions, plannedForDay } from "./schedule";
+import { withOccurrences } from "./series";
 import { entryFor, weekProgress } from "./sessions";
 import type { AppData, ISODate } from "./types";
 
@@ -94,7 +95,7 @@ export function computeNudges(data: AppData, now: Date = new Date()): Nudge[] {
     const busyTomorrow =
       plannedForDay(data, tomorrow).length > 0 ||
       eventsOn(data, tomorrow).length > 0 ||
-      data.tasks.some((t) => t.status === "open" && t.due === tomorrow) ||
+      withOccurrences(data, tomorrow, tomorrow, today).tasks.some((t) => t.status === "open" && t.due === tomorrow) ||
       billReminders(data, tomorrow, tomorrow, today).length > 0;
     if (!busyTomorrow) out.push({ id: "empty-day", kind: "empty-day", text: "Tomorrow looks empty. Want to add a session?" });
   }

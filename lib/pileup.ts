@@ -3,6 +3,7 @@ import { paceStatus } from "./pace";
 import { planSessions } from "./schedule";
 import { weekProgress } from "./sessions";
 import type { Move } from "./settle";
+import { withRepeats } from "./series";
 import { buildTimeline } from "./timeline";
 import type { AppData, ISODate, Task } from "./types";
 
@@ -14,8 +15,8 @@ export const PILE_UP_OVERDUE = 3;
 const HORIZON_DAYS = 7;
 
 /** Open tasks whose day has passed (and that "Adjust my day" hasn't parked for later). */
-export function overdueTasks(data: AppData, today: ISODate): Task[] {
-  return data.tasks
+export function overdueTasks(raw: AppData, today: ISODate): Task[] {
+  return withRepeats(raw, today).tasks
     .filter((t) => t.status === "open" && t.due != null && t.due < today && !(t.hideUntil && t.hideUntil > today))
     .sort((a, b) => (a.due ?? "").localeCompare(b.due ?? ""));
 }
@@ -66,8 +67,9 @@ export interface CatchUpPlan {
  * Spreads overdue tasks over the days that have room (today first), one day at a time, judged by the real timeline,
  * so the plan is one you can actually do. Nothing is dropped: whatever can't fit comes back in `stuck` for you to decide.
  */
-export function catchUpPlan(data: AppData, now: Date = new Date()): CatchUpPlan {
+export function catchUpPlan(raw: AppData, now: Date = new Date()): CatchUpPlan {
   const today = toISO(now);
+  const data = withRepeats(raw, today);
   const moves: Move[] = [];
   const stuck: Task[] = [];
   let work = data;
@@ -112,7 +114,8 @@ export const moveWhen = (to: ISODate, today: ISODate) => {
 };
 
 /** The first day from `from` (up to a week) whose real timeline has room for this task. Falls back to `from`. */
-export function firstDayWithRoom(data: AppData, task: Task, from: ISODate): ISODate {
+export function firstDayWithRoom(raw: AppData, task: Task, from: ISODate): ISODate {
+  const data = withRepeats(raw, toISO(new Date()));
   for (let i = 0; i < 7; i++) {
     const day = addDays(from, i);
     const trial: AppData = { ...data, tasks: data.tasks.map((x) => (x.id === task.id ? { ...x, due: day, dueTime: undefined, hideUntil: undefined } : x)) };
@@ -122,5 +125,5 @@ export function firstDayWithRoom(data: AppData, task: Task, from: ISODate): ISOD
 }
 
 /** Everything still open that was meant for today or earlier: what the Sunday review makes you decide on. */
-export const pendingForReview = (data: AppData, today: ISODate): Task[] =>
-  data.tasks.filter((t) => t.status === "open" && t.due != null && t.due <= today).sort((a, b) => (a.due ?? "").localeCompare(b.due ?? ""));
+export const pendingForReview = (raw: AppData, today: ISODate): Task[] =>
+  withRepeats(raw, today).tasks.filter((t) => t.status === "open" && t.due != null && t.due <= today).sort((a, b) => (a.due ?? "").localeCompare(b.due ?? ""));

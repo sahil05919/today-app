@@ -162,7 +162,7 @@ describe("planNotifications", () => {
   it("is sorted, stable and capped", () => {
     const many = Array.from({ length: 40 }, (_, i) => task({ title: `T${i}`, due: "2026-10-07", dueTime: `${10 + (i % 10)}:00`, area: "work" }));
     const list = planNotifications(data(many), NOW);
-    expect(list.length).toBeLessThanOrEqual(120);
+    expect(list.length).toBeLessThanOrEqual(320);
     expect(list.map((n) => n.at.getTime())).toEqual([...list.map((n) => n.at.getTime())].sort((a, b) => a - b));
     expect(hashId("morning:2026-10-06")).toBe(hashId("morning:2026-10-06"));
     expect(signature(list)).toBe(signature(planNotifications(data(many), NOW)));

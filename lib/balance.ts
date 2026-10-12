@@ -1,5 +1,6 @@
 import { addDays } from "./dates";
 import { withDefaults } from "./profile";
+import { withOccurrences } from "./series";
 import { weekStart } from "./stats";
 import type { AppData, ISODate } from "./types";
 import { toISO } from "./dates";
@@ -14,11 +15,11 @@ export interface BalanceNudge {
  * "All work this week, nothing in Family or Fun." Looks at this week's tasks that have a life area
  * (planned or finished). Needs a few tagged tasks before it says anything.
  */
-export function balanceNudge(data: AppData, today: ISODate): BalanceNudge | null {
-  const p = withDefaults(data.profile);
+export function balanceNudge(raw: AppData, today: ISODate): BalanceNudge | null {
+  const p = withDefaults(raw.profile);
   const start = weekStart(today);
   const end = addDays(start, 6);
-  const inWeek = data.tasks.filter((t) => {
+  const inWeek = withOccurrences(raw, start, end, today).tasks.filter((t) => {
     if (!t.area || t.area === "others") return false; // untagged and "Others" say nothing about balance
     const d = t.status === "done" && t.completedAt ? toISO(new Date(t.completedAt)) : t.due;
     return !!d && d >= start && d <= end;

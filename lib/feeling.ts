@@ -3,6 +3,7 @@ import { addDays, fromISO, toISO } from "./dates";
 import { toHHMM } from "./profile";
 import { firstDayWithRoom } from "./pileup";
 import { planSessions } from "./schedule";
+import { withRepeats } from "./series";
 import { settleOverflow, type Move } from "./settle";
 import { choreKey, weekProgress } from "./sessions";
 import { buildTimeline, type TLItem } from "./timeline";
@@ -142,8 +143,9 @@ export function applyChoiceToData(data: AppData, plan: Pick<ChoicePlan, "taskMov
 }
 
 /** Works out what "Make it work" does for these ticks, without changing anything. */
-export function planChoice(data: AppData, now: Date, ticked: ReadonlySet<string>): ChoicePlan {
+export function planChoice(raw: AppData, now: Date, ticked: ReadonlySet<string>): ChoicePlan {
   const today = toISO(now);
+  const data = withRepeats(raw, today);
   const tomorrow = addDays(today, 1);
   const open = openItems(data, now).filter((x) => !isHard(x, today));
   const dropped = open.filter((x) => !ticked.has(x.key));

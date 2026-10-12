@@ -2,6 +2,7 @@ import { toISO } from "./dates";
 import { nextStep, remainingMinutes } from "./estimate";
 import { priorityScore } from "./rescue";
 import { toHHMM, toMin, withDefaults } from "./profile";
+import { withRepeats } from "./series";
 import { buildDurationModel } from "./stats";
 import type { AppData, ISODate, Profile, Task } from "./types";
 
@@ -61,9 +62,10 @@ function subtract(gaps: Gap[], s: number, e: number): Gap[] {
   return out;
 }
 
-export function buildDayPlan(data: AppData, now: Date = new Date()): DayPlan {
-  const p: Profile = withDefaults(data.profile);
+export function buildDayPlan(raw: AppData, now: Date = new Date()): DayPlan {
   const date = toISO(now);
+  const data = withRepeats(raw, date);
+  const p: Profile = withDefaults(data.profile);
   const dow = now.getDay();
   const model = buildDurationModel(data.tasks);
 
