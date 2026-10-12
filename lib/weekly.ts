@@ -2,7 +2,7 @@ import { addDays, fromISO, toISO } from "./dates";
 import { eventMarkKey } from "./fixed";
 import { latestByKey } from "./history";
 import { toMin, withDefaults } from "./profile";
-import { planSessions, SESSION_CAP } from "./schedule";
+import { planWeek, SESSION_CAP } from "./schedule";
 import { getOccurrences, withRepeats } from "./series";
 import { weekProgress } from "./sessions";
 import { weekStart } from "./stats";
@@ -151,35 +151,31 @@ export interface CatchUp {
 const MAX_CATCH_UP = 2;
 
 /**
- * At most two suggestions for the weekend, for the areas furthest behind that the plan cannot already fit. A weekend day
- * stays light: its sessions never pass the weekend cap, and an area has at most one session a day. Nothing is added: the
- * suggestions are shown with buttons, and only a tap adds a session.
+ * At most two suggestions for the weekend, for the areas whose target the plan could NOT fully place (see `planWeek`: the
+ * weekly targets are a hard rule, so what the plan could fit is already in it). Nothing is added: the suggestions are shown
+ * with buttons, and only a tap adds an extra session, on a day that has no task of that area yet.
  */
 export function catchUpSuggestions(data: AppData, now: Date): CatchUp[] {
   const today = toISO(now);
   const start = weekStart(today);
   const days = [addDays(start, 5), addDays(start, 6)].filter((d) => d >= today);
   if (!days.length) return [];
-  const stats = weekStats(data, start, today);
   const eff = withRepeats(data, today);
-  const plan = planSessions(data, now).filter((s) => !s.done);
-  const pending = (id: string) => eff.tasks.filter((t) => t.status === "open" && t.countsFor === id && t.due != null && t.due >= start && t.due <= addDays(start, 6)).length;
+  const { sessions, short } = planWeek(data, now);
+  const plan = sessions.filter((s) => !s.done);
   const used = new Map<ISODate, number>(days.map((d) => [d, plan.filter((s) => s.date === d).reduce((n, s) => n + s.minutes, 0) + eff.tasks.filter((t) => t.status === "open" && t.countsFor && t.due === d).reduce((n, t) => n + (t.estimateMin ?? 30), 0)]));
   const out: CatchUp[] = [];
-  for (const a of behind(stats)) {
+  for (const s of [...short].sort((x, y) => y.target - y.fit - (x.target - x.fit))) {
     if (out.length >= MAX_CATCH_UP) break;
-    const area = withDefaults(data.profile).areas.find((x) => x.id === a.id);
+    const area = withDefaults(data.profile).areas.find((x) => x.id === s.areaId);
     if (!area?.target) continue;
-    // What the plan can already fit this week is not "behind".
-    const short = a.target - a.done - plan.filter((s) => s.areaId === a.id).length - pending(a.id);
-    if (short <= 0) continue;
-    const day = days.find((d) => {
-      const has = plan.some((s) => s.areaId === a.id && s.date === d) || eff.tasks.some((t) => t.status === "open" && t.countsFor === a.id && t.due === d) || out.some((c) => c.areaId === a.id);
-      return !has && (used.get(d) ?? 0) + area.target!.minutes <= SESSION_CAP(d);
-    });
+    // The lightest weekend day that has no extra of this area yet (the plan's own session there stays; this is one more).
+    const day = days
+      .filter((d) => !eff.tasks.some((t) => t.status === "open" && t.countsFor === s.areaId && t.due === d) && !out.some((c) => c.areaId === s.areaId))
+      .sort((x, y) => (used.get(x) ?? 0) - (used.get(y) ?? 0))[0];
     if (!day) continue;
     used.set(day, (used.get(day) ?? 0) + area.target.minutes);
-    out.push({ areaId: a.id, name: a.name, emoji: a.emoji, date: day, label: `Add to ${fromISO(day).getDay() === 6 ? "Sat" : "Sun"}`, minutes: area.target.minutes });
+    out.push({ areaId: s.areaId, name: s.name, emoji: area.emoji, date: day, label: `Add to ${fromISO(day).getDay() === 6 ? "Sat" : "Sun"}`, minutes: area.target.minutes });
   }
   return out;
 }

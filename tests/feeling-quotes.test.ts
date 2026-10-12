@@ -63,15 +63,18 @@ describe("How are you feeling? · choose your day", () => {
     // The booked event is untouched and still on its day.
     expect(after.events).toEqual(d.events);
     expect(buildTimeline(after, TODAY, NOW).items.some((i) => i.title === "Dinner")).toBe(true);
-    expect(plan.summary).toMatch(/^Moved Drop me to /);
+    // Sessions that were unticked are re-planned too (the weekly targets are a hard rule), so the line for the task may not be first.
+    expect(plan.lines.some((l) => /^Drop me → /.test(l))).toBe(true);
+    expect(plan.summary).toMatch(/^Moved /);
   });
 
   it("moved tasks spread over days instead of piling on one", () => {
-    const many = Array.from({ length: 9 }, (_, i) => task({ due: TODAY, estimateMin: 60, title: `Big ${i}` }));
+    // With every weekly target now placed (a hard rule), the week has less spare room than before: six 45-minute tasks.
+    const many = Array.from({ length: 6 }, (_, i) => task({ due: TODAY, estimateMin: 45, title: `Big ${i}` }));
     const d = base(many);
     const plan = planChoice(d, NOW, new Set());
     const days = new Set(plan.taskMoves.map((m) => m.to));
-    expect(plan.taskMoves).toHaveLength(9);
+    expect(plan.taskMoves).toHaveLength(6);
     expect(days.size).toBeGreaterThan(1);
   });
 

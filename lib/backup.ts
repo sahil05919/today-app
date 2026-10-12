@@ -3,6 +3,7 @@ import { downloadText } from "./ics";
 import { withDefaults } from "./profile";
 import { backfillHistory } from "./history";
 import { upgradeRecurring } from "./series";
+import { cleanupData } from "./cleanup";
 import type {
   AppData,
   AreaTarget,
@@ -37,7 +38,7 @@ export const BACKUP_EVERY_DAYS = 14;
 const DAY = 86_400_000;
 
 export function emptyData(now = Date.now()): AppData {
-  return { version: 2, tasks: [], settings: { firstRunAt: now } };
+  return { version: 3, tasks: [], settings: { firstRunAt: now } };
 }
 
 export function backupDue(data: AppData, now = Date.now()): boolean {
@@ -79,6 +80,7 @@ function cleanRecur(v: any): Recurrence | undefined {
     interval: Number.isInteger(v.interval) && v.interval > 0 && v.interval <= 365 ? v.interval : 1,
     weekdays: weekdays.length ? weekdays : undefined,
     monthDay: Number.isInteger(v.monthDay) && v.monthDay >= 1 && v.monthDay <= 31 ? v.monthDay : undefined,
+    nth: Number.isInteger(v.nth) && ((v.nth >= 1 && v.nth <= 4) || v.nth === -1) && weekdays.length ? v.nth : undefined,
   };
 }
 
@@ -157,6 +159,8 @@ function cleanSeries(v: any): Series[] | undefined {
       steps: Array.isArray(x.steps) ? x.steps.map(cleanStep).filter((t: Step | null): t is Step => !!t) : [],
       template: TEMPLATES.includes(x.template) ? x.template : undefined,
       countsFor: str(x.countsFor, 40),
+      lifeId: str(x.lifeId, 40),
+      off: x.off === true ? true : undefined,
       rule,
       startDate: x.startDate,
       anchor: isISO(x.anchor) ? x.anchor : undefined,
@@ -250,7 +254,7 @@ function cleanOccurrences(v: any): Occurrence[] | undefined {
       status: ["done", "skipped", "missed"].includes(r.status) ? r.status : undefined,
       doneAt: num(r.doneAt),
       movedTo: r.movedTo && isISO(r.movedTo.date) ? { date: r.movedTo.date, time: hhmmOf(r.movedTo.time) } : undefined,
-      time: typeof r.time === "string" && (r.time === "" || /^d{2}:d{2}$/.test(r.time)) ? r.time : undefined,
+      time: typeof r.time === "string" && (r.time === "" || /^\d{2}:\d{2}$/.test(r.time)) ? r.time : undefined,
       extra: r.extra === true ? true : undefined,
       over: o
         ? {
@@ -494,7 +498,7 @@ function cleanProfile(p: any): Profile {
       areas: Array.isArray(p.areas)
         ? p.areas
             .filter((a: any) => a && typeof a.id === "string" && typeof a.name === "string")
-            .slice(0, 20)
+            .slice(0, 40)
             .map((a: any) => ({
               id: a.id.slice(0, 40),
               name: a.name.slice(0, 30),
@@ -572,7 +576,7 @@ export function migrate(raw: unknown): AppData {
   const r = raw as any;
   const s = r.settings ?? {};
   const out: AppData = {
-    version: 2,
+    version: 3,
     series: cleanSeries(r.series),
     occurrences: cleanOccurrences(r.occurrences),
     history: cleanHistory(r.history),
@@ -636,6 +640,7 @@ export function migrate(raw: unknown): AppData {
           ? (Object.fromEntries(Object.entries(s.snoozes).filter(([k, v]) => typeof v === "number" && v > 0 && k.length < 90).slice(0, 300)) as Record<string, number>)
           : undefined,
       exactAsked: s.exactAsked === true ? true : undefined,
+      shortDismissed: s.shortDismissed && isISO(s.shortDismissed.week) && Array.isArray(s.shortDismissed.areas) ? { week: s.shortDismissed.week, areas: s.shortDismissed.areas.filter((a: unknown) => typeof a === "string").slice(0, 20) } : undefined,
       sofarWeek: isISO(s.sofarWeek) ? s.sofarWeek : undefined,
       focus: s.focus && isISO(s.focus.week) && Array.isArray(s.focus.areas) ? { week: s.focus.week, areas: s.focus.areas.filter((a: unknown) => typeof a === "string").slice(0, 4) } : undefined,
       planDate: isISO(s.planDate) ? s.planDate : undefined,
@@ -648,18 +653,28 @@ export function migrate(raw: unknown): AppData {
   };
   // Repeats used to be "finishing one creates the next". They are series now (lossless, and a no-op once converted).
   let upgraded = upgradeRecurring(out);
-  if (needsUpgrade(raw)) {
+  if (((r.version ?? 1) as number) < 2) {
     // The weekly review's history starts from what the older data already holds for this week.
     if (!upgraded.history) upgraded = { ...upgraded, history: backfillHistory(upgraded) };
     // The Sunday review used to default to 18:30; the new default for both reviews is 21:00. A changed time is left alone.
     if (upgraded.profile && upgraded.profile.reviewTime === "18:30") upgraded = { ...upgraded, profile: { ...upgraded.profile, reviewTime: "21:00" } };
   }
-  return upgraded;
+  // v3: a repeat that exists twice (an old copy, a migration that ran twice) is one repeat; a typed command is not a task.
+  return cleanupData(upgraded);
 }
 
-/** True for data saved by an older build (before repeats became series): the raw copy must be backed up first. */
+/** The schema version this build writes. */
+export const SCHEMA_VERSION = 3;
+
+/** True for data saved by an older build: the raw copy must be backed up first (see lib/store.ts). */
 export function needsUpgrade(raw: unknown): boolean {
-  return !!raw && typeof raw === "object" && Array.isArray((raw as any).tasks) && ((raw as any).version ?? 1) < 2;
+  return !!raw && typeof raw === "object" && Array.isArray((raw as any).tasks) && ((raw as any).version ?? 1) < SCHEMA_VERSION;
+}
+
+/** Which backup keys the raw data of an older build must be copied to before it is migrated. */
+export function backupKeysFor(raw: unknown, keys: { v2: string; v3: string }): string[] {
+  const v = (raw && typeof raw === "object" ? ((raw as any).version ?? 1) : 1) as number;
+  return [...(v < 2 ? [keys.v2] : []), ...(v < 3 ? [keys.v3] : [])];
 }
 
 export async function readBackupFile(file: File): Promise<AppData> {

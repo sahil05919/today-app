@@ -29,7 +29,7 @@ export const listable = (items: TLItem[]) => items.filter((x) => !x.muted && !x.
 export function upcomingDays(data: AppData, today: ISODate, days = 3, perDay = 3): UpcomingDay[] {
   return Array.from({ length: days }, (_, i) => {
     const date = addDays(today, i + 1);
-    const items = listable(buildTimeline(data, date, fromISO(date)).items);
+    const items = listable(buildTimeline(data, date, fromISO(date), { today }).items);
     // Fixed things (events, timed tasks) first, in time order; then the flexible ones in the order they'll happen.
     const ordered = [...items.filter((x) => x.fixed || x.kind === "event" || x.kind === "calendar"), ...items.filter((x) => !(x.fixed || x.kind === "event" || x.kind === "calendar"))];
     const d = fromISO(date);

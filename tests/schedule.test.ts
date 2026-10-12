@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planSessions } from "../lib/schedule";
+import { planSessions, planWeek } from "../lib/schedule";
 import { seedIfNeeded } from "../lib/seed";
 import { nextNumber, weekProgress } from "../lib/sessions";
 import { toHHMM } from "../lib/profile";
@@ -104,11 +104,24 @@ describe("weekly planner", () => {
     expect(weekProgress(base({ sessions: logs }), "2026-10-06").find((r) => r.area.id === "powerbi")).toMatchObject({ done: 1, target: 4 });
   });
 
-  it("when behind, packs what's possible into the days left, still not on the weekend", () => {
-    const p = planSessions(base(), new Date(2026, 9, 9, 7, 0)); // Friday morning, nothing done yet
-    const pbi = p.filter((s) => s.areaId === "powerbi");
-    expect(pbi.length).toBeLessThan(4);
-    expect(pbi.every((s) => s.date === "2026-10-09")).toBe(true);
+  it("when behind, the hard rule packs what fits into the days left (weekend too) and reports what does not", () => {
+    // Friday morning, nothing done yet: Friday, Saturday and Sunday are all that is left of the week.
+    const w = planWeek(base(), new Date(2026, 9, 9, 7, 0));
+    const pbi = w.sessions.filter((s) => s.areaId === "powerbi");
+    expect(pbi.length).toBeGreaterThanOrEqual(3);
+    expect(pbi.some((s) => ["2026-10-10", "2026-10-11"].includes(s.date))).toBe(true);
+    // Never dropped silently: either all 4 are planned, or the shortfall says how many fit.
+    const short = w.short.find((x) => x.areaId === "powerbi");
+    expect(pbi.length === 4 || short?.fit === pbi.length).toBe(true);
+    // And no day is stacked past the relaxed cap.
+    for (const d of new Set(w.sessions.map((s) => s.date))) expect(w.sessions.filter((s) => s.date === d).reduce((n, s) => n + s.minutes, 0)).toBeLessThanOrEqual([0, 6].includes(dayOf(d)) ? 160 : 270);
+  });
+
+  it("when nothing at all fits, every area is reported, none is dropped quietly", () => {
+    const w = planWeek(base(), MON, () => [[0, 1440]]);
+    expect(w.sessions.filter((s) => !s.done)).toHaveLength(0);
+    expect(w.short.map((s) => s.areaId).sort()).toEqual(["english", "job", "meditation", "powerbi", "walking"]);
+    expect(w.short.find((s) => s.areaId === "powerbi")).toMatchObject({ target: 4, fit: 0 });
   });
 
   it("fixed events push sessions to other days instead of dropping them", () => {

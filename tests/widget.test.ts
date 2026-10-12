@@ -18,7 +18,8 @@ const base = (tasks: Task[] = []): AppData => ({ ...seedIfNeeded({ version: 1, t
 describe("the widget snapshot", () => {
   it("lists what is still open today in time order, with times, and whether Start / Done make sense", () => {
     const d: AppData = {
-      ...base([task({ title: "Reply to Sam", due: TODAY })]),
+      // A timed task: the evening is full of the week's sessions and Dinner, so an untimed one would honestly wait for room.
+      ...base([task({ title: "Reply to Sam", due: TODAY, dueTime: "10:00" })]),
       events: [{ id: "e1", title: "Dinner", date: TODAY, start: "19:00", end: "21:00", createdAt: 1 }],
     };
     const s = buildWidgetSnapshot(d, NOW);

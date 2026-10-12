@@ -43,14 +43,17 @@ describe("C. routine blocks: Commute 45 → 120", () => {
     expect(at(d1, MON, /Team catch-up/)).toMatchObject({ start: 17 * 60, fixed: true });
   });
 
-  it("what no longer fits before ~22:30 moves to the next day with room, and says so", () => {
-    const onMon = sessionsOn(d1, MON).map((s) => s.areaId);
-    expect(onMon).not.toContain("english");
-    expect(sessionsOn(d1, MON).every((s) => s.end <= 22 * 60 + 30)).toBe(true);
-    const later = planSessions(d1, NOW).find((s) => s.areaId === "english" && !s.done && s.date > MON)!;
-    expect(later).toBeTruthy();
-    const note = rippleNote(d0, d1, MON, "Commute", 75, NOW)!;
-    expect(note).toMatch(/^Commute \+75 min → moved English Reading to (Tue|Wed|Thu|Fri|Sat|Sun)/);
+  it("what no longer fits before ~22:30 is not dropped: a daily habit finds other time (the target is a hard rule)", () => {
+    // English is a daily habit, so there is no other day to take it: it moves to the free morning before the commute.
+    const eve = sessionsOn(d1, MON).filter((s) => s.start >= 17 * 60);
+    expect(eve.map((s) => s.areaId)).not.toContain("english");
+    expect(eve.every((s) => s.end <= 22 * 60 + 30)).toBe(true);
+    const english = sessionsOn(d1, MON).find((s) => s.areaId === "english")!;
+    expect(english).toBeTruthy();
+    expect(english.end).toBeLessThanOrEqual(8 * 60);
+    // The week still has all seven.
+    expect(planSessions(d1, NOW).filter((s) => s.areaId === "english" && !s.done)).toHaveLength(7);
+    expect(rippleNote(d0, d1, MON, "Commute", 75, NOW)).toMatch(/^Commute \+75 min → /);
   });
 
   it("'Just today' does not leak into the next office day", () => {

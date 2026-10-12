@@ -4,7 +4,7 @@ import { computeNudges } from "../lib/nudges";
 import { planNotifications } from "../lib/notifications/plan";
 import { parseCapture } from "../lib/parse";
 import { defaultProfile, toHHMM } from "../lib/profile";
-import { planSessions } from "../lib/schedule";
+import { planSessions, planWeek } from "../lib/schedule";
 import { seedIfNeeded } from "../lib/seed";
 import { weekProgress } from "../lib/sessions";
 import type { AppData, FixedEvent } from "../lib/types";
@@ -76,14 +76,24 @@ describe("events reshuffle the week", () => {
     expect(plan.filter((s) => s.date === "2026-10-11").reduce((n, s) => n + s.minutes, 0)).toBeLessThanOrEqual(100);
   });
 
-  it("when a target can't be met, it says so instead of cramming", () => {
-    // Job only happens on weekday nights; losing Wednesday night leaves 4 of 5.
+  it("a lost slot is made up somewhere else in the week (the target is a hard rule), without stacking a day", () => {
+    // Job usually happens on weekday nights; losing Wednesday night no longer costs a session: it lands in other free time.
     const d = seeded({ events: [ev({ start: "20:00", end: "22:30" })] });
     const plan = planSessions(d, MON);
-    expect(count(plan, "job")).toBe(4);
-    // Mid-week it's flagged; on a Monday it's too early to worry.
+    expect(count(plan, "job")).toBe(5);
+    expect(plan.filter((s) => s.areaId === "job" && s.date === "2026-10-07")).toHaveLength(0);
+    // Nothing is behind, so no nudge, on a Monday or mid-week.
     expect(computeNudges(d, MON).some((n) => n.id === "behind:job")).toBe(false);
-    expect(computeNudges(d, new Date(2026, 9, 8, 7, 0)).some((n) => n.id === "behind:job")).toBe(true);
+    expect(computeNudges(d, new Date(2026, 9, 8, 7, 0)).some((n) => n.id === "behind:job")).toBe(false);
+  });
+
+  it("when a target truly cannot be met, it says so instead of cramming", () => {
+    // Only Friday evening is left and nothing is done: a day cannot take the whole week, so what does not fit is reported.
+    const d = seeded({});
+    const w = planWeek(d, new Date(2026, 9, 9, 20, 0));
+    expect(w.short.length).toBeGreaterThan(0);
+    for (const s of w.short) expect(s.fit).toBeLessThan(s.target);
+    expect(w.sessions.filter((s) => s.date === "2026-10-09").reduce((n, s) => n + s.minutes, 0)).toBeLessThanOrEqual(270);
   });
 
   it("an outing counts as the walk: none planned that day, and it counts once the day comes", () => {

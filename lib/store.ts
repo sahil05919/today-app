@@ -1,7 +1,7 @@
 "use client";
 import { Preferences } from "@capacitor/preferences";
 import { useSyncExternalStore } from "react";
-import { emptyData, migrate, needsUpgrade } from "./backup";
+import { backupKeysFor, emptyData, migrate, needsUpgrade } from "./backup";
 import { addDays, toISO, todayISO } from "./dates";
 import { isNative } from "./platform";
 import { seedIfNeeded } from "./seed";
@@ -17,6 +17,8 @@ import { TEMPLATES } from "./templates";
 import {
   addSeries,
   applyOccTask,
+  deleteSeriesWhole,
+  updateSeriesWhole,
   editSeries,
   endSeries,
   findTask,
@@ -58,6 +60,8 @@ export interface StorageAdapter {
 export const KEY = "today:v1";
 /** A full copy of the data exactly as the older (v1) build saved it, written once before anything is migrated. */
 export const BACKUP_KEY = "today:v1:backup-pre-v2";
+/** Same again before the v3 (assistant pass) migration. */
+export const BACKUP_KEY_V3 = "today:v1:backup-pre-v3";
 /** "Do it now": a small first push. */
 export const DO_NOW_MIN = 15;
 
@@ -69,7 +73,7 @@ export const localStorageAdapter: StorageAdapter = {
       const parsed = JSON.parse(raw);
       const upgrade = needsUpgrade(parsed);
       // Schema change: keep the old data first (never overwriting an earlier backup), then migrate and save.
-      if (upgrade && localStorage.getItem(BACKUP_KEY) == null) localStorage.setItem(BACKUP_KEY, raw);
+      if (upgrade) for (const k of backupKeysFor(parsed, { v2: BACKUP_KEY, v3: BACKUP_KEY_V3 })) if (localStorage.getItem(k) == null) localStorage.setItem(k, raw);
       const data = migrate(parsed);
       if (upgrade) localStorage.setItem(KEY, JSON.stringify(data));
       return data;
@@ -95,8 +99,10 @@ async function loadNative(): Promise<AppData | null> {
       const upgrade = needsUpgrade(parsed);
       if (upgrade) {
         // Schema change: the old data is copied to its own key FIRST (an earlier backup is never overwritten).
-        const have = await Preferences.get({ key: BACKUP_KEY });
-        if (!have.value) await Preferences.set({ key: BACKUP_KEY, value });
+        for (const k of backupKeysFor(parsed, { v2: BACKUP_KEY, v3: BACKUP_KEY_V3 })) {
+          const have = await Preferences.get({ key: k });
+          if (!have.value) await Preferences.set({ key: k, value });
+        }
       }
       const data = migrate(parsed);
       if (upgrade) await Preferences.set({ key: KEY, value: JSON.stringify(data) });
@@ -396,6 +402,25 @@ export const actions = {
     if (!r) return null;
     commit(r.data);
     return r.openId;
+  },
+
+  /** Settings → Repeating tasks: change a whole series (title, time, rule). */
+  updateSeries(seriesId: string, patch: SeriesPatch) {
+    commit(updateSeriesWhole(ensure(), seriesId, patch));
+  },
+
+  /** Settings → Repeating tasks: delete a whole series. Returns an Undo. */
+  deleteSeries(seriesId: string): () => void {
+    const d = ensure();
+    const snap = { series: (d.series ?? []).filter((s) => s.id === seriesId), records: (d.occurrences ?? []).filter((r) => r.seriesId === seriesId) };
+    commit(deleteSeriesWhole(d, seriesId));
+    return () => commit(restoreSnapshot(ensure(), snap));
+  },
+
+  /** Switches a series off or on (Life admin). */
+  setSeriesOff(seriesId: string, off: boolean) {
+    const d = ensure();
+    commit({ ...d, series: (d.series ?? []).map((s) => (s.id === seriesId ? { ...s, off: off || undefined } : s)) });
   },
 
   /** Stops a repeat from this occurrence on (history stays). Returns a snapshot for Undo. */

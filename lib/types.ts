@@ -54,6 +54,8 @@ export interface Recurrence {
   weekdays?: number[];
   /** monthly only: 1–31 (clamped to month length). Omitted = same day as the due date. */
   monthDay?: number;
+  /** monthly + weekdays: the Nth such weekday of the month (1–4), or -1 for the last ("1st Saturday", "last Sunday"). */
+  nth?: number;
 }
 
 /** A life area ("Work", "Family"…). Tasks can be tagged with one. */
@@ -412,6 +414,10 @@ export interface Series {
   template?: TemplateId;
   countsFor?: string;
   rule: Recurrence;
+  /** A life-admin series (lib/lifeAdmin.ts): its id there, e.g. "laundry". Such a series rolls forward once, then drops. */
+  lifeId?: string;
+  /** Switched off (Settings → Life admin): it makes no occurrences until it is switched on again. */
+  off?: boolean;
   /** First day it can happen. */
   startDate: ISODate;
   /** Counting for "every N days / weeks / months" starts here. Defaults to `startDate`. */
@@ -546,11 +552,13 @@ export interface Settings {
   celebrated?: string[];
   /** The latest "target reached" card on Today, until it is answered. */
   freed?: FreedOffer;
+  /** Areas whose "2 of 4 fit this week" card was set aside for this week. */
+  shortDismissed?: { week: ISODate; areas: string[] };
 }
 
 export interface AppData {
-  /** Bump when the shape changes and add a step in lib/backup.ts `migrate`. 2 = repeats are series + occurrences. */
-  version: 1 | 2;
+  /** Bump when the shape changes and add a step in lib/backup.ts `migrate`. 2 = repeats are series + occurrences, 3 = the assistant pass. */
+  version: 1 | 2 | 3;
   tasks: Task[];
   settings: Settings;
   /** "Me": routines, areas and shortcuts. Missing = defaults (see lib/profile.ts). */

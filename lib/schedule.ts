@@ -41,6 +41,22 @@ export interface PlannedSession {
 
 export type BusyFn = (date: ISODate) => Array<[number, number]>;
 
+/** An area whose weekly target could not be fully placed: "Power BI: 2 of 4 fit this week". Never dropped silently. */
+export interface Shortfall {
+  areaId: string;
+  name: string;
+  target: number;
+  /** Done + already pending as a task + planned. */
+  fit: number;
+}
+
+/** The relaxed pass may stack a day this high (minutes of sessions) and put this many of one area in a day. */
+const RELAXED_WEEKDAY_CAP = 270;
+const RELAXED_WEEKEND_CAP = 160;
+const RELAXED_PER_DAY = 2;
+/** The relaxed pass may fill an evening this much past its cap (the normal pass already allows a tenth); beyond it, tasks would have no room at all. */
+const RELAXED_EVENING = 1.3;
+
 /** The evening cap is "about" 2.5 h: weekly sessions may run a tenth over so a normal day of them still fits. */
 export const SESSION_CAP_SLACK = 1.1;
 const WEEKDAY_CAP = 210; // minutes of sessions per day
@@ -97,6 +113,15 @@ function layout(items: Item[], wins: Array<[number, number]>, buffer: number): P
 }
 
 export function planSessions(raw: AppData, now: Date = new Date(), busyOverride?: BusyFn): PlannedSession[] {
+  return planWeek(raw, now, busyOverride).sessions;
+}
+
+/**
+ * The week plan, and what did not fit. Weekly targets are a hard rule: after the normal pass every area that is still short
+ * gets its sessions in ANY free time left in the week (other slots, weekends, a fuller evening, two on a day), and only what
+ * truly cannot be placed comes back in `short`, for the person to decide.
+ */
+export function planWeek(raw: AppData, now: Date = new Date(), busyOverride?: BusyFn): { sessions: PlannedSession[]; short: Shortfall[] } {
   const today = toISO(now);
   const monday = weekStart(today);
   const data = withOccurrences(raw, monday, addDays(monday, 6), today);
@@ -228,6 +253,84 @@ export function planSessions(raw: AppData, now: Date = new Date(), busyOverride?
   }
   placed.sort((x, y) => x.date.localeCompare(y.date) || x.start - y.start);
 
+  // ---- The hard rule: every target session lands somewhere in the week -------------------------------------------------
+  const short: Shortfall[] = [];
+  const doneCount = (a: Area) =>
+    logs.filter((l) => l.areaId === a.id && l.date >= week[0] && l.date <= week[6]).length +
+    week.filter((d) => countedByEvent(data, a.id, d) && !logs.some((l) => l.areaId === a.id && l.date === d)).length;
+  const spansOn = (d: ISODate): Array<[number, number]> => placed.filter((x) => x.date === d).map((x) => [Math.max(0, x.start - buffer), x.end + buffer]);
+  const minutesOn = (d: ISODate) => placed.filter((x) => x.date === d).reduce((n, x) => n + x.minutes, 0) + logs.filter((l) => l.date === d).reduce((n, l) => n + l.minutes, 0);
+  const subtract = (ws: Array<[number, number]>, taken: Array<[number, number]>) => {
+    let out = ws;
+    for (const [bs, be] of taken) out = out.flatMap(([s, e]) => (be <= s || bs >= e ? [[s, e] as [number, number]] : [[s, Math.min(e, bs)] as [number, number], [Math.max(s, be), e] as [number, number]]));
+    return out.filter(([s, e]) => e - s >= 5);
+  };
+  /** Free stretches anywhere outside work hours on a day (level B), after events, the break, the commute and what is placed. */
+  const freeWindows = (d: ISODate): Array<[number, number]> => {
+    const r = rulesOf(d);
+    const from = Math.max(isWeekend(d) ? 9 * 60 : r.dayStart, earliest(d));
+    const to = Math.max(from, r.dayEnd);
+    const taken: Array<[number, number]> = [...busy(d), ...spansOn(d)];
+    if (r.work) taken.push(r.work);
+    return subtract([[from, to]], taken);
+  };
+  /** Minutes already in a day's evening: sessions that start there plus clock-time commitments in it. */
+  const eveningMinutes = (d: ISODate) => {
+    const r = rulesOf(d);
+    return placed.filter((x) => x.date === d && x.start >= r.eveningStart).reduce((n, x) => n + x.minutes, 0) + overlapMinutes(fixedSpans(data, d), r.eveningStart, 1440);
+  };
+  /** Where one more session of this area could start on this day. Level A: its own slots. Level B: any free time. Neither may overfill the day or its evening. */
+  const relaxedSpot = (a: Area, d: ISODate, level: "A" | "B"): { start: number; slotId: string } | null => {
+    const minutes = a.target!.minutes;
+    if (isOffDay(data, d) && (minutes > OFF_DAY_MAX_MIN || logs.some((l) => l.date === d))) return null;
+    if (minutesOn(d) + minutes > (isWeekend(d) ? RELAXED_WEEKEND_CAP : RELAXED_WEEKDAY_CAP)) return null;
+    const r = rulesOf(d);
+    const roomInEvening = eveningMinutes(d) + minutes <= r.eveningCap * RELAXED_EVENING;
+    const ok = (ws: Array<[number, number]>) => ws.find(([s, e]) => e - s >= minutes && (s < r.eveningStart || roomInEvening));
+    if (level === "A") {
+      for (const s of slotsFor(a, d)) {
+        const hit = ok(subtract(windows(s, d, earliest(d), busy, shiftFor(s, d)), spansOn(d)));
+        if (hit) return { start: hit[0], slotId: s.id };
+      }
+      return null;
+    }
+    const hit = ok(freeWindows(d));
+    return hit ? { start: Math.ceil(hit[0] / 5) * 5, slotId: "flex" } : null;
+  };
+  const countOf = (a: Area, d?: ISODate) => placed.filter((x) => x.area.id === a.id && (!d || x.date === d)).length;
+  const have = (a: Area) => doneCount(a) + pendingTasks(a) + countOf(a);
+  const mayUse = (a: Area, d: ISODate) => d >= today && !doneOn(a, d) && !skipped(a, d);
+
+  // Your own priority order first (the lower `order`), then the area furthest from its target, so what matters most gets the free time.
+  const gap = (a: Area) => (a.target!.perWeek - have(a)) / a.target!.perWeek;
+  const byGap = [...areas].sort((x, y) => (x.target!.order ?? 5) - (y.target!.order ?? 5) || gap(y) - gap(x));
+  const passes: Array<["A" | "B", number]> = [["A", 1], ["B", 1], ["B", RELAXED_PER_DAY]];
+  /** One more session of this area, if any day can take it. */
+  const placeOne = (a: Area, level: "A" | "B", perDay: number): boolean => {
+    const days = week.filter((d) => mayUse(a, d) && countOf(a, d) < perDay).sort((x, y) => minutesOn(x) - minutesOn(y) || x.localeCompare(y));
+    for (const d of days) {
+      const spot = relaxedSpot(a, d, level);
+      if (!spot) continue;
+      const slot: Slot = slots.get(spot.slotId) ?? { id: spot.slotId, name: "Free time", start: "00:00", end: "23:59", days: [0, 1, 2, 3, 4, 5, 6] };
+      placed.push({ area: a, minutes: a.target!.minutes, order: a.target!.order ?? 5, start: spot.start, end: spot.start + a.target!.minutes, date: d, slot });
+      return true;
+    }
+    return false;
+  };
+  // Round-robin, one session per area per round: a crowded week is shared out instead of one area taking all the free time.
+  for (const [level, perDay] of passes) {
+    for (let moved = true; moved; ) {
+      moved = false;
+      for (const a of byGap) {
+        // A daily habit (6+ a week) is never doubled up to catch up: it is reported instead.
+        if (perDay > 1 && a.target!.perWeek > 5) continue;
+        if (have(a) < a.target!.perWeek && placeOne(a, level, perDay)) moved = true;
+      }
+    }
+  }
+  for (const a of byGap) if (have(a) < a.target!.perWeek) short.push({ areaId: a.id, name: a.name, target: a.target!.perWeek, fit: have(a) });
+  placed.sort((x, y) => x.date.localeCompare(y.date) || x.start - y.start);
+
   const counters = new Map<string, number>();
   const out: PlannedSession[] = [];
 
@@ -274,7 +377,7 @@ export function planSessions(raw: AppData, now: Date = new Date(), busyOverride?
       done: false,
     });
   }
-  return out.sort((x, y) => x.date.localeCompare(y.date) || x.start - y.start);
+  return { sessions: out.sort((x, y) => x.date.localeCompare(y.date) || x.start - y.start), short };
 }
 
 /** Sessions still to do on a day (not done, not skipped). */

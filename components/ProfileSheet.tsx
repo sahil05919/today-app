@@ -8,6 +8,7 @@ import { actions } from "@/lib/store";
 import type { AppData, Area, AreaTarget, Bill, LearnedRule, Profile, RhythmItem, Slot } from "@/lib/types";
 import { CalendarSettings } from "./CalendarSettings";
 import { NotificationSettings } from "./NotificationSettings";
+import { RepeatingTasks } from "./RepeatingTasks";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
 
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -356,6 +357,10 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
             <Time label="Quiet from" value={p.quietStart} onChange={(v) => set("quietStart", v)} />
             <Time label="Quiet until" value={p.quietEnd} onChange={(v) => set("quietEnd", v)} />
           </div>
+        </Section>
+
+        <Section title="Repeating tasks" hint={`${(data.series ?? []).filter((s) => !s.until || s.until >= ctx.today).length} repeating`}>
+          <RepeatingTasks series={data.series ?? []} ctx={ctx} />
         </Section>
 
         <Section title="Bills & chores" hint="Reminders N days before, or none for autopay">

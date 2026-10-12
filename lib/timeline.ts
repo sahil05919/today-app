@@ -113,11 +113,17 @@ export function taskBlock(t: Task, model: ReturnType<typeof buildDurationModel>)
   return { minutes: Math.min(MAX_BLOCK, Math.max(15, ceil5(step?.estimateMin ?? 60))), partial: true };
 }
 
-export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date()): Timeline {
+/**
+ * `opts.today` is the REAL today when `now` is only a stand-in for the start of another day (how "Coming up", the
+ * notifications and the widget look at tomorrow). A day that is not the real today never carries anything over: an
+ * occurrence that is still open today is not "overdue" on tomorrow's list.
+ */
+export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(), opts: { today?: ISODate } = {}): Timeline {
   const todayIso = toISO(now);
+  const realToday = opts.today ?? todayIso;
   // Repeats come from getOccurrences (lib/series.ts), added as ordinary tasks for this week (+ the carry-over lookback today).
-  const win = windowFor(date, todayIso);
-  const data = withOccurrences(raw, win.from, win.to, todayIso);
+  const win = windowFor(date, realToday);
+  const data = withOccurrences(raw, win.from, win.to, realToday);
   const p = withDefaults(data.profile);
   const r = dayRules(data, date);
   const isToday = date === todayIso;
@@ -343,7 +349,7 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
 
   if (!isPast) {
     const open = data.tasks.filter((t) => t.status === "open");
-    const carried = isToday ? open.filter((t) => t.due != null && t.due < date) : [];
+    const carried = isToday && date === realToday ? open.filter((t) => t.due != null && t.due < date) : [];
     const todays = open.filter((t) => t.due === date && !t.dueTime);
     const order = (a: Task, b: Task) => priorityScore(b, date) - priorityScore(a, date) || a.createdAt - b.createdAt;
     const queue = [...carried.sort(order).map((t) => ({ t, carried: true })), ...todays.sort(order).map((t) => ({ t, carried: false }))];
@@ -456,7 +462,7 @@ export function firstThing(data: AppData, now: Date): { item: TLItem | null; dat
   const afterMidnight = m < toMin(p.wakeTime) && toMin(p.sleepStart) > toMin(p.wakeTime);
   const date = afterMidnight ? toISO(now) : addDays(toISO(now), 1);
   const startOfDay = fromISO(date);
-  const tl = buildTimeline(data, date, startOfDay);
+  const tl = buildTimeline(data, date, startOfDay, { today: toISO(now) });
   const item = tl.items.find((x) => actionable(x) && !x.done && !x.skipped && x.kind !== "calendar") ?? tl.items.find((x) => actionable(x) && !x.done && !x.skipped) ?? null;
   return { item, date, isTomorrow: !afterMidnight };
 }

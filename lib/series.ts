@@ -54,12 +54,13 @@ const seriesAnchor = (s: Series) => s.anchor ?? s.startDate;
 
 /** Does this series produce an occurrence on `date` (by its rule, ignoring any records)? */
 export function seriesHas(s: Series, date: ISODate): boolean {
-  return date >= s.startDate && (!s.until || date <= s.until) && ruleHits(s.rule, seriesAnchor(s), date);
+  return !s.off && date >= s.startDate && (!s.until || date <= s.until) && ruleHits(s.rule, seriesAnchor(s), date);
 }
 
 /** The days the rule produces within [from, to]. */
 export function seriesDates(s: Series, from: ISODate, to: ISODate): ISODate[] {
   const out: ISODate[] = [];
+  if (s.off) return out;
   const a = from > s.startDate ? from : s.startDate;
   const b = s.until && s.until < to ? s.until : to;
   for (let d = a; d <= b; d = addDays(d, 1)) if (ruleHits(s.rule, seriesAnchor(s), d)) out.push(d);
@@ -171,7 +172,7 @@ export function getOccurrences(data: AppData, start: ISODate, end: ISODate, toda
   const scanTo = end > addDays(today, -1) ? end : addDays(today, -1);
 
   for (const s of all) {
-    if (s.startDate > scanTo) continue;
+    if (s.off || s.startDate > scanTo) continue;
     const recs = ix.bySeries.get(s.id) ?? EMPTY;
     const dates = new Set(seriesDates(s, scanFrom, scanTo));
     // Records can add an occurrence the rule wouldn't give (an "extra"), keep history visible, or bring one in from elsewhere.
@@ -540,6 +541,20 @@ function pruneEmpty(d: AppData, seriesId: string): AppData {
   if (!s || !s.until || s.until >= s.startDate) return d;
   if ((d.occurrences ?? []).some((r) => r.seriesId === seriesId)) return d;
   return { ...d, series: (d.series ?? []).filter((x) => x.id !== seriesId) };
+}
+
+/**
+ * Edits the whole series in place (Settings → Repeating tasks): title, time, steps… and the rule. Done / skipped records stay.
+ */
+export function updateSeriesWhole(d: AppData, seriesId: string, patch: SeriesPatch): AppData {
+  const s = (d.series ?? []).find((x) => x.id === seriesId);
+  if (!s) return d;
+  return editSeries(d, occKey(s.id, s.startDate), { ...patch, rule: patch.rule === null ? undefined : patch.rule }, "future").data;
+}
+
+/** Deletes the whole series and its records (the history log keeps what was done). */
+export function deleteSeriesWhole(d: AppData, seriesId: string): AppData {
+  return { ...d, series: (d.series ?? []).filter((s) => s.id !== seriesId), occurrences: (d.occurrences ?? []).filter((r) => r.seriesId !== seriesId) };
 }
 
 /** Deletes this and every later occurrence (history stays). */

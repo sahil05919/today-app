@@ -45,7 +45,7 @@ export function findTimelineItem(data: AppData, ref: string, today: ISODate, now
   };
   const days = [dateInKey(ref), ...Array.from({ length: SCAN_DAYS }, (_, i) => addDays(today, i))].filter((d): d is ISODate => !!d);
   for (const day of [...new Set(days)]) {
-    const it = buildTimeline(data, day, day === today ? now : new Date(`${day}T00:00:00`)).items.find(match);
+    const it = buildTimeline(data, day, day === today ? now : new Date(`${day}T00:00:00`), { today }).items.find(match);
     if (it) return { it, date: day };
   }
   return null;

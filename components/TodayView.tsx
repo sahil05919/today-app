@@ -21,6 +21,7 @@ import { FreedCard } from "./FreedCard";
 import { openCount } from "./itemActions";
 import { NextDays } from "./NextDays";
 import { RescheduleSheet } from "./RescheduleSheet";
+import { ShortfallCard } from "./ShortfallCard";
 import type { RescheduleTarget } from "@/lib/reschedule";
 import { NextUpCard, TimelineList } from "./Timeline";
 import { EventSheet, ItemSheet, ProgressSheet } from "./TodayPlan";
@@ -221,6 +222,7 @@ export function TodayView({
         </p>
       )}
       <FreedCard data={data} ctx={ctx} now={now} />
+      <ShortfallCard data={data} ctx={ctx} now={now} />
       {banner}
 
       <TimelineList tl={tl} ctx={ctx} nowMin={nowMin} onOpen={open} onReschedule={reschedule} />

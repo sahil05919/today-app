@@ -69,7 +69,7 @@ export function buildWidgetSnapshot(data: AppData, now: Date = new Date()): Widg
 
   // First open thing tomorrow, from its own morning.
   const next = addDays(today, 1);
-  const first = buildTimeline(data, next, fromISO(next)).items.find((x) => actionable(x) && !x.done && !x.skipped);
+  const first = buildTimeline(data, next, fromISO(next), { today }).items.find((x) => actionable(x) && !x.done && !x.skipped);
   return {
     v: 1,
     date: today,

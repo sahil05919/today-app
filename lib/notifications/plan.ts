@@ -170,7 +170,7 @@ export function planNotifications(raw: AppData, now: Date = new Date()): Planned
   const timelineOf = (day: ISODate) => {
     let tl = timelines.get(day);
     if (!tl) {
-      tl = buildTimeline(data, day, day === today ? now : fromISO(day));
+      tl = buildTimeline(data, day, day === today ? now : fromISO(day), { today });
       timelines.set(day, tl);
     }
     return tl;
