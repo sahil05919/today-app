@@ -480,7 +480,7 @@ export interface HistoryEvent {
   at: number;
   /** The day the item belonged to. */
   date: ISODate;
-  kind: "done" | "skipped" | "missed" | "rescheduled" | "reopened";
+  kind: "done" | "skipped" | "missed" | "rescheduled" | "reopened" | "pulled";
   type: "session" | "task" | "event" | "bill" | "routine";
   /** The item's identity ("session:powerbi:2026-10-07", "occ:<series>@<date>", "task:<id>", "event:<id>:<date>"). */
   key: string;

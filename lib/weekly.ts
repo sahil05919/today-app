@@ -41,6 +41,8 @@ export interface WeekStats {
   missed: number;
   skipped: number;
   moved: number;
+  /** Things pulled forward from later in the week (Lighten my week). */
+  pulled: number;
   /** All sessions: done (capped at each target) over all targets, 0–100. */
   percent: number;
 }
@@ -102,6 +104,8 @@ export function weekStats(data: AppData, week: ISODate, today: ISODate = toISO(n
     missed: count("missed"),
     skipped: count("skipped"),
     moved: count("rescheduled"),
+    // Each pull counts (a later tick of the same item must not hide it).
+    pulled: new Set(events.filter((e) => e.kind === "pulled").map((e) => `${e.key}|${e.date}`)).size,
     percent: target ? Math.round((got / target) * 100) : 0,
   };
 }
@@ -228,8 +232,12 @@ export function soFarText(s: WeekStats, name: string, suggestions: CatchUp[]): T
   else if (s.areas.length) lines.push("Nothing is behind. You are right on target.");
   if (suggestions.length) lines.push(`If you would like to close the gap, a light weekend could take ${list(suggestions.map((c) => `${c.name} on ${c.label.replace("Add to ", "")}`))}. Nothing is added unless you tap.`);
   else if (behindRows.length) lines.push("The weekend stays light. Whatever is left simply rolls into next week's plan.");
+  if (s.pulled) lines.push(pulledLine(s.pulled));
   return { headline, lines };
 }
+
+/** "You pulled 3 things forward this week 💪" */
+export const pulledLine = (n: number) => `You pulled ${n} ${n === 1 ? "thing" : "things"} forward this week 💪`;
 
 /** Sunday's "Your week". */
 export function yourWeekText(s: WeekStats, prev: WeekStats, name: string): Text {
@@ -247,6 +255,7 @@ export function yourWeekText(s: WeekStats, prev: WeekStats, name: string): Text 
   if (sl.length) lines.push(`Slipped: ${shortList(sl.sort((a, b) => b.target - b.done - (a.target - a.done)))}.`);
   lines.push(`You added ${s.own.added}, finished ${s.own.finished}${s.own.names.length ? `: ${list(s.own.names.slice(0, 6))}${s.own.names.length > 6 ? ` and ${s.own.names.length - 6} more` : ""}` : ""}.`);
   if (s.events.handled) lines.push(`Calendar events handled: ${list(s.events.names.slice(0, 5))}.`);
+  if (s.pulled) lines.push(pulledLine(s.pulled));
   const moves = compare(s, prev).filter((c) => c.arrow !== "=");
   if (moves.length) lines.push(`Against last week: ${moves.map((c) => `${c.name} ${c.arrow}`).join(", ")}.`);
   const focus = focusFor(s);

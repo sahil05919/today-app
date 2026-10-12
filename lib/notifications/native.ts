@@ -7,7 +7,7 @@ import { itemFromRef } from "../reschedule";
 import { findTimelineItem } from "../tap";
 import { actions, getData, whenLoaded } from "../store";
 import { applyTimerAction } from "../timerRun";
-import { planNotifications, signature, type NotifKind, type PlannedNotification } from "./plan";
+import { hashId, planNotifications, signature, type NotifKind, type PlannedNotification } from "./plan";
 import type { AppData } from "../types";
 
 /**
@@ -195,6 +195,8 @@ const toSchema = (n: PlannedNotification, exactAllowed: boolean) => ({
 
 let lastSig = "";
 let chain: Promise<unknown> = Promise.resolve();
+/** Notifications that are not part of the plan (the "All done for today" one): a reschedule must not cancel them. */
+const keep = new Set<number>();
 
 /**
  * Cancels everything we scheduled and schedules what the data says should exist.
@@ -213,8 +215,9 @@ export function rescheduleAll(data: AppData, opts: { force?: boolean } = {}): Pr
 
     try {
       const pending = await LocalNotifications.getPending();
-      if (pending.notifications.length) {
-        await LocalNotifications.cancel({ notifications: pending.notifications.map((n) => ({ id: n.id })) });
+      const stale = pending.notifications.filter((n) => !keep.has(n.id));
+      if (stale.length) {
+        await LocalNotifications.cancel({ notifications: stale.map((n) => ({ id: n.id })) });
       }
       if (plan.length) {
         const exact = status.exact === "granted";
@@ -240,6 +243,34 @@ export async function pendingIds(): Promise<number[] | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * "All done for today 🎉": sent the moment the day's list is finished (the app calls it once a day). Not part of the plan,
+ * so it is kept when the plan is rescheduled a moment later.
+ */
+export async function notifyDayDone(): Promise<boolean> {
+  if (!isNative()) return false;
+  await initNotifications();
+  if ((await getStatus()).permission !== "granted") return false;
+  const date = toISO(new Date());
+  const id = hashId(`dayDone:${date}`);
+  keep.add(id);
+  await LocalNotifications.schedule({
+    notifications: [
+      {
+        id,
+        title: "All done for today 🎉",
+        body: "Your evening is free. Pull something forward to lighten the week, or take it easy?",
+        schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true },
+        channelId: CH_REMINDERS,
+        smallIcon: "ic_stat_today",
+        autoCancel: true,
+        extra: { kind: "dayDone", key: `dayDone:${date}`, at: Date.now() },
+      },
+    ],
+  });
+  return true;
 }
 
 /** A notification 5 seconds from now, to check everything is wired up. */

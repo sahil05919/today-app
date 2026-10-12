@@ -16,6 +16,8 @@ import { findTask } from "@/lib/series";
 import { weekStart } from "@/lib/stats";
 import { checkDue } from "@/lib/selfcheck";
 import { runCheck } from "@/lib/selfcheckRun";
+import { dayDoneState } from "@/lib/lighten";
+import { notifyDayDone } from "@/lib/notifications/native";
 import { actions, getData, useData } from "@/lib/store";
 import { buildTimeline, firstThing, isNight } from "@/lib/timeline";
 import type { ISODate, Task } from "@/lib/types";
@@ -27,6 +29,7 @@ import { Capture, type CaptureCommand } from "./Capture";
 import { CheckIn } from "./CheckIn";
 import { EveningWrap } from "./EveningWrap";
 import { IdeasSheet } from "./IdeasSheet";
+import { LightenSheet } from "./LightenSheet";
 import { ImportSheet } from "./ImportSheet";
 import { BillsSheet, GoalsSheet, ShoppingSheet } from "./ListSheets";
 import { CalendarIcon, MenuIcon } from "./icons";
@@ -245,6 +248,15 @@ export default function App() {
     };
   }, [loaded, today]);
 
+  // The day's list is finished and there is evening left: the card shows by itself, and ONE notification goes out a day.
+  useEffect(() => {
+    if (!data || !tl) return;
+    const st = dayDoneState(data, new Date(minuteKey * 60_000), tl);
+    if (!st.offer || data.settings.dayDoneDate === today) return;
+    actions.settings({ dayDoneDate: today });
+    if (withDefaults(data.profile).notify.dayDone !== false) void notifyDayDone();
+  }, [data, tl, today, minuteKey]);
+
   // Each new day (and on start): older unresolved repeats are logged as missed; only the latest carries forward.
   useEffect(() => {
     if (loaded) actions.sweep();
@@ -332,7 +344,7 @@ export default function App() {
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg/92 backdrop-blur">
         <div className="mx-auto max-w-md px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5">
           {hasTimer && <TimerBar data={data} ctx={ctx} />}
-          <Capture ctx={ctx} data={data} command={command} />
+          <Capture ctx={ctx} data={data} command={command} onLighten={() => setPanel("lighten")} />
         </div>
       </div>
 
@@ -371,6 +383,7 @@ export default function App() {
       {panel === "quotes" && <QuotesSheet onClose={closePanel} />}
       {panel === "quote" && <QuoteCard date={quoteDate} onClose={closePanel} />}
       {panel === "evening" && <EveningWrap data={data} ctx={ctx} onClose={closePanel} />}
+      {panel === "lighten" && <LightenSheet data={data} ctx={ctx} now={new Date()} onClose={closePanel} />}
       {when && when.mode === "reschedule" && !!findTask(data, when.id) && <RescheduleSheet target={{ kind: "task", taskId: when.id }} ctx={ctx} onClose={() => setWhen(null)} />}
       {when && when.mode === "schedule" && findTask(data, when.id) && <WhenSheet task={findTask(data, when.id)!} mode="schedule" ctx={ctx} onClose={() => setWhen(null)} />}
       {invite && <ImportSheet events={invite} ctx={ctx} onClose={() => setInvite(null)} />}

@@ -60,6 +60,8 @@ export function resolveTap(data: AppData, t: TapInfo, today: ISODate, now: Date 
   if (t.kind === "sofar") return { k: "panel", panel: "sofar" };
   // The morning brief: opening the app IS the brief, so a tap just lands on Today.
   if (t.kind === "morning") return { k: "none" };
+  // "All done for today": the card is already on Today.
+  if (t.kind === "dayDone") return { k: "none" };
   // The 20:00 check-in lands on Today with the "share it from Gmail" hint.
   if (t.kind === "tonight") return { k: "panel", panel: "tonight" };
   if (t.kind === "quote") return { k: "panel", panel: "quote" };

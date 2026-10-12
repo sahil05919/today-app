@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { aiEnabled, chooseAmong, interpret } from "@/lib/ai";
 import { diffDays, friendlyDate, toISO } from "@/lib/dates";
+import { isLightenIntent } from "@/lib/intentPhrases";
 import { correctTick, tickFromText, type TickResult } from "@/lib/doneRun";
 import { matchDone } from "@/lib/doneText";
 import type { ParsedCapture } from "@/lib/parse";
@@ -41,11 +42,14 @@ export function Capture({
   data,
   defaultDate,
   command,
+  onLighten,
 }: {
   ctx: ViewCtx;
   data: AppData;
   defaultDate?: ISODate;
   command?: CaptureCommand;
+  /** "work done", "I'm free", "lighten my week"…: a command, never a task. */
+  onLighten?: () => void;
 }) {
   const [text, setText] = useState("");
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -58,7 +62,9 @@ export function Capture({
   const seq = useRef(0);
 
   // Live preview: the same pipeline that runs on Enter (rules, your learned fixes, a sensible time).
-  const parsed = useMemo(() => (text.trim() ? understand(text, data, new Date()) : null), [text, data]);
+  // Commands are recognised first, offline, before any task capture (so they can never be saved as a task).
+  const intent = isLightenIntent(text);
+  const parsed = useMemo(() => (text.trim() && !isLightenIntent(text) ? understand(text, data, new Date()) : null), [text, data]);
 
   // The mic only exists where voice can work (and only if you haven't hidden it in Settings).
   const hideMic = ctx.profile.hideMic;
@@ -175,6 +181,10 @@ export function Capture({
   };
 
   const save = async (value: string) => {
+    if (isLightenIntent(value)) {
+      onLighten?.();
+      return;
+    }
     const now = new Date();
     const rules = understand(value, getData(), now);
     if (!rules.title && rules.kind !== "grocery") return;
@@ -239,6 +249,11 @@ export function Capture({
           }}
         />
       )}
+      {intent && !voiceOpen && (
+        <p className="mb-2 rounded-xl bg-accent-soft px-3 py-2 text-sm font-medium" role="status">
+          ✨ That's a request, not a task: Enter opens Lighten my week.
+        </p>
+      )}
       {parsed && !voiceOpen && (
         <div className="mb-2">
           <ParsePreview parsed={parsed} today={ctx.today} defaultDate={defaultDate} areas={ctx.profile.areas} />
@@ -247,6 +262,11 @@ export function Capture({
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (intent) {
+            setText("");
+            onLighten?.();
+            return;
+          }
           if (!parsed) return;
           const value = text;
           setText("");
@@ -280,7 +300,7 @@ export function Capture({
         )}
         <button
           type="submit"
-          disabled={!parsed}
+          disabled={!parsed && !intent}
           aria-label="Add"
           aria-busy={busy}
           className={`flex h-12 w-12 items-center justify-center rounded-xl bg-accent text-accent-ink transition disabled:opacity-30 ${busy ? "animate-pulse" : ""}`}

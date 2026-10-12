@@ -43,6 +43,7 @@ import { catchUpTask, snapshotsDue } from "./weekly";
 import { applyReschedule, carryMissed, rescheduleNow, undoReschedule, type Dest, type RescheduleChoice, type RescheduleTarget } from "./reschedule";
 import { canTakeOffDay } from "./offday";
 import { withLetter } from "./letters";
+import { applyPull, lighterLine, type PullCandidate } from "./lighten";
 import type { AppData, Bill, BoredIdea, CheckResult, EventMark, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
@@ -463,6 +464,19 @@ export const actions = {
   /** The morning self-check: its quiet fixes and its result are saved together. */
   recordCheck(data: AppData, result: CheckResult) {
     commit({ ...data, settings: { ...data.settings, lastCheck: result } });
+  },
+
+  /**
+   * "Lighten my week": moves the picked items to today (a move, not a copy; a session keeps its number and weekly count) and
+   * logs each as "pulled forward". Returns the toast text and an Undo.
+   */
+  pullForward(picks: PullCandidate[], now: Date = new Date()): { message: string; undo: () => void } | null {
+    const d = ensure();
+    const r = applyPull(d, picks, now);
+    if (!r.events.length) return null;
+    // The history gets one "pulled" entry per item (not the generic "rescheduled" ones a plain diff would add).
+    commit({ ...r.data, history: [...(d.history ?? []), ...r.events] }, { history: false });
+    return { message: lighterLine(r.byDay, toISO(now)), undo: () => commit(d, { history: false }) };
   },
 
   /** Saves the weekly snapshots that are due (finished weeks, Friday's "Week so far", Sunday's "Your week"). */

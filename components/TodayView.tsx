@@ -23,6 +23,7 @@ import { NextDays } from "./NextDays";
 import { RescheduleSheet } from "./RescheduleSheet";
 import { friendlyNudge } from "@/lib/gentle";
 import { CheckCard, type CheckAction } from "./CheckCard";
+import { DayDoneCard } from "./DayDoneCard";
 import { ProgressHeader } from "./ProgressHeader";
 import { ShareHint } from "./ShareHint";
 import { ShortfallCard, ShortfallSheet } from "./ShortfallCard";
@@ -235,6 +236,7 @@ export function TodayView({
   return (
     <div className="space-y-4">
       <ProgressHeader data={data} tl={tl} today={ctx.today} />
+      <DayDoneCard data={data} tl={tl} ctx={ctx} now={now} onLighten={() => openPanel("lighten")} />
       <NextUpCard tl={tl} item={item} data={data} ctx={ctx} nowMin={nowMin} goal={goal} onOpen={open} onReschedule={reschedule} onGoals={() => openPanel("goals")} />
 
       {homeNote && (

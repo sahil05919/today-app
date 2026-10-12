@@ -25,7 +25,7 @@ import type { AppData, ISODate, Profile, Task } from "../types";
  * Pure and offline, so it's easy to test; `native.ts` turns the result into real Android notifications.
  */
 /** "morning" is the brief, "tonight" the 20:00 check-in, "wrap" the end of day, "life" a life-admin item still open at 19:00, "eventprep" the lead-up to a shift or booking. */
-export type NotifKind = "morning" | "checkin" | "wrap" | "reminder" | "slot" | "session" | "chore" | "nudge" | "event" | "bill" | "review" | "sofar" | "timer" | "quote" | "tonight" | "life" | "eventprep";
+export type NotifKind = "morning" | "checkin" | "wrap" | "reminder" | "slot" | "session" | "chore" | "nudge" | "event" | "bill" | "review" | "sofar" | "timer" | "quote" | "tonight" | "life" | "eventprep" | "dayDone";
 
 export interface PlannedNotification {
   /** Stable key, e.g. "morning:2026-10-07". Same key = same notification across reschedules. */

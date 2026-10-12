@@ -172,7 +172,7 @@ function cleanSeries(v: any): Series[] | undefined {
   return out;
 }
 
-const HIST_KINDS = ["done", "skipped", "missed", "rescheduled", "reopened"];
+const HIST_KINDS = ["done", "skipped", "missed", "rescheduled", "reopened", "pulled"];
 const HIST_TYPES = ["session", "task", "event", "bill", "routine"];
 
 function cleanHistory(v: any): HistoryEvent[] | undefined {
