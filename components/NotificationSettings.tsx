@@ -4,12 +4,11 @@ import { batteryUnrestricted, openBatterySettings } from "@/lib/nativeBridge";
 import {
   getStatus,
   openExactAlarmSettings,
-  rescheduleAll,
   requestPermission,
   sendTest,
   type NotifStatus,
 } from "@/lib/notifications/native";
-import { getData } from "@/lib/store";
+import { requestSync } from "@/lib/syncPipeline";
 import type { Profile } from "@/lib/types";
 import { btn, type ViewCtx } from "./ui";
 
@@ -128,7 +127,7 @@ export function NotificationSettings({
               onClick={async () => {
                 const r = await requestPermission();
                 await refresh();
-                if (r === "granted") rescheduleAll(getData(), { force: true });
+                if (r === "granted") requestSync("manual", { force: true });
                 else ctx.notify("Notifications are off. You can turn them on in Android's app settings.");
               }}
             >

@@ -1,7 +1,7 @@
 import { isISO, toISO } from "./dates";
 import { downloadText } from "./ics";
 import { withDefaults } from "./profile";
-import { backfillHistory } from "./history";
+import { backfillHistory, MAX_HISTORY } from "./history";
 import { upgradeRecurring } from "./series";
 import { cleanupData } from "./cleanup";
 import type {
@@ -560,6 +560,9 @@ function cleanProfile(p: any): Profile {
       calendarSync: bool(p.calendarSync),
       calendarWrite: bool(p.calendarWrite),
       writeCalendarId: typeof p.writeCalendarId === "string" && /^\d{1,12}$/.test(p.writeCalendarId) ? p.writeCalendarId : undefined,
+      planMirror: bool(p.planMirror),
+      planCalendarId: typeof p.planCalendarId === "string" && /^\d{1,12}$/.test(p.planCalendarId) ? p.planCalendarId : undefined,
+      inboxCalendarId: typeof p.inboxCalendarId === "string" && /^\d{1,12}$/.test(p.inboxCalendarId) ? p.inboxCalendarId : undefined,
       officeDays: days(p.officeDays),
       slots: Array.isArray(p.slots)
         ? p.slots
@@ -688,6 +691,8 @@ export function migrate(raw: unknown): AppData {
       calmDate: isISO(s.calmDate) ? s.calmDate : undefined,
       lastCheck: cleanCheck(s.lastCheck),
       checkDismissed: isISO(s.checkDismissed) ? s.checkDismissed : undefined,
+      compactedDate: isISO(s.compactedDate) ? s.compactedDate : undefined,
+      compactFailedAt: num(s.compactFailedAt),
       shortDismissed: s.shortDismissed && isISO(s.shortDismissed.week) && Array.isArray(s.shortDismissed.areas) ? { week: s.shortDismissed.week, areas: s.shortDismissed.areas.filter((a: unknown) => typeof a === "string").slice(0, 20) } : undefined,
       sofarWeek: isISO(s.sofarWeek) ? s.sofarWeek : undefined,
       focus: s.focus && isISO(s.focus.week) && Array.isArray(s.focus.areas) ? { week: s.focus.week, areas: s.focus.areas.filter((a: unknown) => typeof a === "string").slice(0, 4) } : undefined,

@@ -5,7 +5,7 @@ import { eventMarkKey } from "../lib/fixed";
 import { blockSpan, rippleNote, setBlock, skipBlock } from "../lib/ripple";
 import { plannedForDay, planSessions } from "../lib/schedule";
 import { seedIfNeeded } from "../lib/seed";
-import { actions, getData, KEY, localStorageAdapter } from "../lib/store";
+import { actions, flushNow, getData, KEY, localStorageAdapter } from "../lib/store";
 import { buildTimeline } from "../lib/timeline";
 import { toHHMM } from "../lib/profile";
 import { migrate } from "../lib/backup";
@@ -93,12 +93,13 @@ describe("C. phone calendar events: tick, hide, local time", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("a ticked event persists after a restart, and a calendar re-sync keeps the tick", () => {
+  it("a ticked event persists after a restart, and a calendar re-sync keeps the tick", async () => {
     const key = eventMarkKey(phone());
     expect(key).toBe(`77@${MON}`);
     actions.markEvent(key, { done: 1_000 });
     expect(at(getData(), MON, /Team catch-up/)!.done).toBe(true);
-    // "restart": read what was saved
+    // "restart": saving is debounced, so flush (as the app does when it goes to the background), then read what was saved
+    await flushNow();
     const reloaded = migrate(JSON.parse(store.get(KEY)!));
     expect(reloaded.eventMarks?.[key]?.done).toBe(1_000);
     expect(at(reloaded, MON, /Team catch-up/)!.done).toBe(true);

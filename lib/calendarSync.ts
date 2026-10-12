@@ -34,6 +34,6 @@ export async function syncPhoneCalendar(opts: { ask?: boolean } = {}): Promise<S
   // The events Today wrote to the calendar itself are already in Today: reading them back must not show them twice.
   const events = convertCalendarEvents(withoutOwnEvents(raw, d.events ?? []), 0);
   if (sig(events) !== sig(getData().calendarEvents)) actions.setCalendarEvents(events);
-  else actions.settings({ calendarSyncedAt: Date.now() });
+  else actions.calendarChecked();
   return "ok";
 }

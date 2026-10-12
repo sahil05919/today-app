@@ -107,9 +107,11 @@ export function TodayView({
   const s = data.settings;
   const reviewDue = now.getDay() === 0 && s.reviewWeek !== weekStart(ctx.today);
   const sofarDue = now.getDay() === 5 && ctx.profile.notify.weekSoFar && s.sofarWeek !== weekStart(ctx.today) && now.getHours() * 60 + now.getMinutes() >= toMin(ctx.profile.fridayReviewTime);
-  const balance = now.getDay() >= 3 || now.getDay() === 0 ? balanceNudge(data, ctx.today) : null;
+  // Computed once per data version (and per minute for the nudges), not on every render.
+  const nowKey = Math.floor(now.getTime() / 60_000);
+  const balance = useMemo(() => (now.getDay() >= 3 || now.getDay() === 0 ? balanceNudge(data, ctx.today) : null), [data, ctx.today, nowKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const balanceDue = !!balance && s.balanceWeek !== weekStart(ctx.today);
-  const conscience = computeNudges(data, now)[0];
+  const conscience = useMemo(() => computeNudges(data, now)[0], [data, nowKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const pile = useMemo(() => pileUp(data, ctx.today), [data, ctx.today]);
   const heavy = useMemo(() => (s.overloadSkipDate === ctx.today ? null : overload(data, now, ctx.today)), [data, ctx.today, now.getHours(), s.overloadSkipDate]); // eslint-disable-line react-hooks/exhaustive-deps
 

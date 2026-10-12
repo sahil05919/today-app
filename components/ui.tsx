@@ -1,5 +1,7 @@
 "use client";
-import { useEffect } from "react";
+import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
+import { isTopSheet, nextSheetId, registerSheet, sheetDepth, sheetStackVersion, sheetZ, subscribeSheetStack, unregisterSheet } from "@/lib/sheetStack";
 import type { ISODate, Profile, Task } from "@/lib/types";
 import { CloseIcon } from "./icons";
 
@@ -70,6 +72,28 @@ export const btn = {
 export const field =
   "w-full rounded-xl border border-line bg-bg px-3 py-2.5 text-[15px] text-ink placeholder:text-muted/70 focus:border-accent focus:outline-none";
 
+/**
+ * Registers an overlay in the sheet stack (lib/sheetStack.ts) for as long as it is mounted. Returns what it needs to draw itself:
+ * its z-index (from stack order), whether it is on top (only the top one draws a backdrop), and a ref for its root element.
+ */
+export function useSheetLayer(onClose: () => void) {
+  const idRef = useRef(0);
+  if (!idRef.current) idRef.current = nextSheetId();
+  const id = idRef.current;
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const elRef = useRef<HTMLDivElement | null>(null);
+
+  useLayoutEffect(() => {
+    registerSheet({ id, close: () => closeRef.current(), el: elRef.current });
+    return () => unregisterSheet(id);
+  }, [id]);
+
+  useSyncExternalStore(subscribeSheetStack, sheetStackVersion, () => 0);
+  const depth = sheetDepth(id);
+  return { id, ref: elRef, z: sheetZ(id), top: depth < 0 ? true : isTopSheet(id), first: depth <= 0 };
+}
+
 export function Sheet({
   title,
   onClose,
@@ -79,29 +103,26 @@ export function Sheet({
   onClose: () => void;
   children: React.ReactNode;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
+  const layer = useSheetLayer(onClose);
+  if (typeof document === "undefined") return null;
 
-  return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="anim-fade absolute inset-0 bg-black/35" onClick={onClose} />
-      <div className="anim-sheet relative flex max-h-[92dvh] w-full max-w-md flex-col rounded-t-3xl bg-surface shadow-xl sm:rounded-3xl">
-        <div className="flex items-center justify-between px-5 pb-1 pt-4">
-          <h2 className="text-base font-semibold">{title}</h2>
-          <button onClick={onClose} aria-label="Close" className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-bg">
-            <CloseIcon />
-          </button>
+  // Portalled to the body: every sheet is a direct child of it, so the stack order alone decides which is in front.
+  return createPortal(
+    <>
+      <div ref={layer.ref} style={{ zIndex: layer.z }} className="fixed inset-0 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label={title} data-sheet={layer.id}>
+        {/* One backdrop, and it belongs to the top sheet. */}
+        {layer.top && <div data-backdrop className={`${layer.first ? "anim-fade " : ""}absolute inset-0 bg-black/35`} onClick={onClose} />}
+        <div className={`${layer.first ? "anim-sheet " : ""}relative flex max-h-[92dvh] w-full max-w-md flex-col rounded-t-3xl bg-surface shadow-xl sm:rounded-3xl`}>
+          <div className="flex items-center justify-between px-5 pb-1 pt-4">
+            <h2 className="text-base font-semibold">{title}</h2>
+            <button onClick={onClose} aria-label="Close" className="-mr-2 flex h-11 w-11 items-center justify-center rounded-full text-muted hover:bg-bg">
+              <CloseIcon />
+            </button>
+          </div>
+          <div className="overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2">{children}</div>
         </div>
-        <div className="overflow-y-auto px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2">{children}</div>
       </div>
-    </div>
+    </>,
+    document.body,
   );
 }

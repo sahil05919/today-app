@@ -16,12 +16,14 @@ export interface Move {
 }
 
 const DAYS_AHEAD = 7;
+/** Each pass moves at most this many (each one costs a timeline per day tried); the rest follow on the next pass. */
+const MAX_PER_PASS = 8;
 
 export function settleOverflow(raw: AppData, now: Date = new Date()): Move[] {
   const today = toISO(now);
   const data = withRepeats(raw, today);
   const first = buildTimeline(data, today, now);
-  const candidates = first.overflow.filter((o) => !o.carried).map((o) => o.task);
+  const candidates = first.overflow.filter((o) => !o.carried).map((o) => o.task).slice(0, MAX_PER_PASS);
   if (!candidates.length) return [];
 
   const moves: Move[] = [];

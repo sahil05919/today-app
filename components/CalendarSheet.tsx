@@ -98,7 +98,8 @@ export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppDat
   const title = view === "month" ? `${MONTHS[fromISO(monthStart).getMonth()]} ${fromISO(monthStart).getFullYear()}` : `${weekdayShort(weekDays[0])} ${dayOfMonth(weekDays[0])} – ${weekdayShort(weekDays[6])} ${dayOfMonth(weekDays[6])} ${MONTHS[fromISO(weekDays[6]).getMonth()].slice(0, 3)}`;
 
   const isMissed = (it: TLItem, d: ISODate) => d < ctx.today && !it.done && !it.skipped && (it.kind === "session" || it.kind === "chore" || it.kind === "bill");
-  const selectedTl = timelines.get(selected) ?? buildTimeline(data, selected, now);
+  // The selected day is usually one of the days already built; only a day outside the shown span is built (once per data version).
+  const selectedTl = useMemo(() => timelines.get(selected) ?? buildTimeline(data, selected, now), [timelines, selected, data, now]);
 
   return (
     <Sheet title="Calendar" onClose={onClose}>

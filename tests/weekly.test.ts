@@ -4,7 +4,7 @@ import { addDays } from "../lib/dates";
 import { planNotifications } from "../lib/notifications/plan";
 import { planSessions } from "../lib/schedule";
 import { seedIfNeeded } from "../lib/seed";
-import { actions, getData } from "../lib/store";
+import { actions, flushNow, getData } from "../lib/store";
 import { resolveTap } from "../lib/tap";
 import { catchUpSuggestions, compare, focusFor, slipped, snapshotsDue, soFarText, weekStats, wins, yourWeekText } from "../lib/weekly";
 import type { AppData, SessionLog, Task } from "../lib/types";
@@ -170,9 +170,10 @@ describe("D. the history log", () => {
     expect(h.every((e) => !!e.id && e.at > 0)).toBe(true);
   });
 
-  it("is saved and survives a reload (the cleaner keeps it)", () => {
+  it("is saved and survives a reload (the cleaner keeps it)", async () => {
     const t = actions.addTask({ title: "Book dentist", due: "2026-10-16", important: false, tags: [] });
     actions.toggleDone(t.id, FRI);
+    await flushNow();
     const reloaded = migrate(JSON.parse(store.get("today:v1")!));
     expect(reloaded.history!.some((e) => e.title === "Book dentist" && e.kind === "done")).toBe(true);
   });

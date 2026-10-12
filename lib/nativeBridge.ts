@@ -1,5 +1,6 @@
 import { registerPlugin } from "@capacitor/core";
 import type { CalendarAccess, RawCalendarEvent } from "./calendar";
+import { safely, withTimeout } from "./nativeGuard";
 import { isNative } from "./platform";
 import type { WidgetAction } from "./widget";
 
@@ -42,6 +43,48 @@ export interface BackupFile {
   modified: number;
 }
 
+/** One event of the "Today – Plan" mirror, as Android's calendar wants it. */
+export interface MirrorEvent {
+  title: string;
+  /** Epoch ms. All-day events are UTC midnights (Android's rule); `end` is exclusive. */
+  start: number;
+  end: number;
+  allDay: boolean;
+  description: string;
+}
+
+/** One planned item of the mirror: its key (day + item), the day it belongs to, the event, and a signature of the event's content. */
+export interface MirrorEntry {
+  key: string;
+  day: string;
+  sig: string;
+  event: MirrorEvent;
+}
+
+export interface MirrorOp {
+  op: "insert" | "update" | "delete";
+  key: string;
+  day: string;
+  sig: string;
+  /** Present on insert and update. */
+  event?: MirrorEvent;
+  /** The day has ended: this write is the day's final state; the entry is never touched again. */
+  final?: boolean;
+}
+
+/** What Android remembers about the mirror: which calendar it writes to and the occurrence key → event id map. */
+export interface MirrorState {
+  calendarId: number | null;
+  map: Record<string, { id: number; sig: string; day: string; final?: boolean }>;
+}
+
+export interface MirrorResult {
+  inserted: number;
+  updated: number;
+  deleted: number;
+  failed: number;
+}
+
 interface TodayNativePlugin {
   consumeLaunchIntent(): Promise<{ intent?: LaunchIntent }>;
   createAlarmChannel(opts: { id: string }): Promise<void>;
@@ -49,15 +92,18 @@ interface TodayNativePlugin {
   openBatterySettings(): Promise<void>;
   calendarPermission(): Promise<{ state: "granted" | "denied" | "prompt" }>;
   requestCalendarPermission(): Promise<{ state: "granted" | "denied" | "prompt" }>;
-  queryCalendar(opts: { from: number; to: number }): Promise<{ events: RawCalendarEvent[] }>;
+  queryCalendar(opts: { from: number; to: number; excludeCalendarIds?: number[]; calendarIds?: number[] }): Promise<{ events: RawCalendarEvent[] }>;
   calendarWritePermission(): Promise<{ state: "granted" | "denied" | "prompt" }>;
   requestCalendarWritePermission(): Promise<{ state: "granted" | "denied" | "prompt" }>;
   listCalendars(): Promise<{ calendars: WritableCalendar[] }>;
   upsertCalendarEvent(opts: NativeEvent & { eventId?: number }): Promise<{ eventId: number }>;
   deleteCalendarEvent(opts: { eventId: number }): Promise<void>;
+  mirrorState(): Promise<MirrorState>;
+  mirrorApply(opts: { calendarId: number; ops: MirrorOp[]; plan: MirrorEntry[] }): Promise<MirrorResult>;
+  scheduleDailyMirror(): Promise<{ at: number }>;
   saveBackup(opts: { name: string; text: string }): Promise<{ name: string; uri: string }>;
   listBackups(): Promise<{ backups: BackupFile[] }>;
-  pruneBackups(opts: { keep: number; kind?: "weekly" | "restore" }): Promise<{ deleted: number }>;
+  pruneBackups(opts: { keep: number; kind?: "weekly" | "restore" | "history" }): Promise<{ deleted: number }>;
   readBackup(opts: { uri: string }): Promise<{ text: string }>;
   shareBackup(opts: { uri: string }): Promise<void>;
   backupStatus(): Promise<{ lastAt: number; count: number; nextAt: number }>;
@@ -75,20 +121,21 @@ interface TodayNativePlugin {
 /** Our own small Android plugin (android/.../TodayNativePlugin.java). Only exists in the app. */
 const TodayNative = registerPlugin<TodayNativePlugin>("TodayNative");
 
+/**
+ * Every call below goes through `safely`: it gets 5 seconds, and a hang or a rejection is logged (Settings → Health → Recent
+ * errors) and answered with the fallback, so the screen never waits on the phone.
+ */
+
 /** Calls `onIntent` for a share/shortcut/invite that opened the app, now and whenever a new one arrives. */
 export function listenForLaunchIntents(onIntent: (i: LaunchIntent) => void): () => void {
   if (!isNative()) return () => {};
   let handle: { remove: () => void } | undefined;
   let gone = false;
-  TodayNative.consumeLaunchIntent()
-    .then((r) => r.intent && !gone && onIntent(r.intent))
-    .catch(() => {});
-  TodayNative.addListener("launchIntent", (i) => {
-    TodayNative.consumeLaunchIntent().catch(() => {});
+  void safely("consumeLaunchIntent", () => TodayNative.consumeLaunchIntent(), {} as { intent?: LaunchIntent }).then((r) => r.intent && !gone && onIntent(r.intent));
+  void safely("addListener(launchIntent)", () => TodayNative.addListener("launchIntent", (i) => {
+    void safely("consumeLaunchIntent", () => TodayNative.consumeLaunchIntent(), {} as { intent?: LaunchIntent });
     onIntent(i);
-  })
-    .then((h) => (gone ? h.remove() : (handle = h)))
-    .catch(() => {});
+  }), null).then((h) => (gone ? h?.remove() : (handle = h ?? undefined)));
   return () => {
     gone = true;
     handle?.remove();
@@ -98,175 +145,136 @@ export function listenForLaunchIntents(onIntent: (i: LaunchIntent) => void): () 
 /** Creates the alarm-sound notification channel. false when it couldn't be made (older app build, or not Android). */
 export async function createAlarmChannel(id: string): Promise<boolean> {
   if (!isNative()) return false;
-  try {
-    await TodayNative.createAlarmChannel({ id });
-    return true;
-  } catch {
-    return false;
-  }
+  return safely("createAlarmChannel", async () => (await TodayNative.createAlarmChannel({ id }), true), false);
 }
 
 /** true = Android won't kill the app to save battery. null = not applicable (web). */
 export async function batteryUnrestricted(): Promise<boolean | null> {
   if (!isNative()) return null;
-  try {
-    return (await TodayNative.batteryStatus()).ignoring;
-  } catch {
-    return null;
-  }
+  return safely<boolean | null>("batteryStatus", async () => (await TodayNative.batteryStatus()).ignoring, null);
 }
 
 export async function openBatterySettings() {
-  if (isNative()) await TodayNative.openBatterySettings().catch(() => {});
+  if (isNative()) await safely("openBatterySettings", () => TodayNative.openBatterySettings(), undefined);
 }
 
 // ---- Phone calendar (read-only) ------------------------------------------------------------------------
 
 export async function calendarAccess(): Promise<CalendarAccess> {
   if (!isNative()) return "unsupported";
-  try {
-    return (await TodayNative.calendarPermission()).state;
-  } catch {
-    return "unsupported";
-  }
+  return safely<CalendarAccess>("calendarPermission", async () => (await TodayNative.calendarPermission()).state, "unsupported");
 }
 
-/** Android's own permission dialog. Resolves with what you chose. */
+/** Android's own permission dialog. Resolves with what you chose. (The dialog waits for you, so it is given a minute.) */
 export async function askCalendarAccess(): Promise<CalendarAccess> {
   if (!isNative()) return "unsupported";
-  try {
-    return (await TodayNative.requestCalendarPermission()).state;
-  } catch {
-    return "unsupported";
-  }
+  return safely<CalendarAccess>("requestCalendarPermission", async () => (await TodayNative.requestCalendarPermission()).state, "unsupported", 60_000);
 }
 
-/** Events between two moments, or null when it can't be read (no permission, older app build). */
-export async function readPhoneCalendar(from: number, to: number): Promise<RawCalendarEvent[] | null> {
+/**
+ * Events between two moments, or null when it can't be read (no permission, older app build).
+ * `excludeCalendarIds`: calendars that must not be read (Today's own "Today – Plan" and "Today – Inbox").
+ */
+export async function readPhoneCalendar(from: number, to: number, excludeCalendarIds?: number[]): Promise<RawCalendarEvent[] | null> {
   if (!isNative()) return null;
-  try {
-    return (await TodayNative.queryCalendar({ from, to })).events;
-  } catch {
-    return null;
-  }
+  return safely<RawCalendarEvent[] | null>("queryCalendar", async () => (await TodayNative.queryCalendar({ from, to, excludeCalendarIds })).events, null);
+}
+
+/** The events of ONE calendar (Today – Inbox, or the Plan mirror), or null when they can't be read. */
+export async function readCalendarById(calendarId: number, from: number, to: number): Promise<RawCalendarEvent[] | null> {
+  if (!isNative()) return null;
+  return safely<RawCalendarEvent[] | null>("queryCalendar(one)", async () => (await TodayNative.queryCalendar({ from, to, calendarIds: [calendarId] })).events, null);
 }
 
 // ---- Phone calendar (write) -------------------------------------------------------------------------------
 
 export async function calendarWriteAccess(): Promise<CalendarAccess> {
   if (!isNative()) return "unsupported";
-  try {
-    return (await TodayNative.calendarWritePermission()).state;
-  } catch {
-    return "unsupported";
-  }
+  return safely<CalendarAccess>("calendarWritePermission", async () => (await TodayNative.calendarWritePermission()).state, "unsupported");
 }
 
 export async function askCalendarWriteAccess(): Promise<CalendarAccess> {
   if (!isNative()) return "unsupported";
-  try {
-    return (await TodayNative.requestCalendarWritePermission()).state;
-  } catch {
-    return "unsupported";
-  }
+  return safely<CalendarAccess>("requestCalendarWritePermission", async () => (await TodayNative.requestCalendarWritePermission()).state, "unsupported", 60_000);
 }
 
 /** The calendars Today can write to (null when it cannot be read: no permission, or an older app build). */
 export async function listWritableCalendars(): Promise<WritableCalendar[] | null> {
   if (!isNative()) return null;
-  try {
-    return (await TodayNative.listCalendars()).calendars;
-  } catch {
-    return null;
-  }
+  return safely<WritableCalendar[] | null>("listCalendars", async () => (await TodayNative.listCalendars()).calendars, null);
 }
 
 /** Adds the event, or updates it when its phone id is given. Resolves the phone's id of the event, or null. */
 export async function upsertPhoneEvent(e: NativeEvent & { eventId?: number }): Promise<number | null> {
   if (!isNative()) return null;
-  try {
-    return (await TodayNative.upsertCalendarEvent(e)).eventId;
-  } catch {
-    return null;
-  }
+  return safely<number | null>("upsertCalendarEvent", async () => (await TodayNative.upsertCalendarEvent(e)).eventId, null);
 }
 
 export async function deletePhoneEvent(eventId: number): Promise<boolean> {
   if (!isNative()) return false;
-  try {
-    await TodayNative.deleteCalendarEvent({ eventId });
-    return true;
-  } catch {
-    return false;
-  }
+  return safely("deleteCalendarEvent", async () => (await TodayNative.deleteCalendarEvent({ eventId }), true), false);
+}
+
+// ---- The "Today – Plan" mirror ---------------------------------------------------------------------------
+
+/** The mirror's event-id map as Android keeps it (null when it cannot be read). */
+export async function mirrorState(): Promise<MirrorState | null> {
+  if (!isNative()) return null;
+  return safely<MirrorState | null>("mirrorState", () => TodayNative.mirrorState(), null);
+}
+
+/** Applies a batch of inserts / updates / deletes to the Plan calendar in one native call, and remembers the plan for the 06:00 alarm. */
+export async function mirrorApply(calendarId: number, ops: MirrorOp[], plan: MirrorEntry[]): Promise<MirrorResult | null> {
+  if (!isNative()) return null;
+  return safely<MirrorResult | null>("mirrorApply", () => TodayNative.mirrorApply({ calendarId, ops, plan }), null, 20_000);
+}
+
+/** Arms the daily ~06:00 alarm that rolls the mirror forward even when the app is closed. */
+export async function armDailyMirror(): Promise<number | null> {
+  if (!isNative()) return null;
+  return safely<number | null>("scheduleDailyMirror", async () => (await TodayNative.scheduleDailyMirror()).at, null);
 }
 
 // ---- Backups (Documents/TodayBackups) ---------------------------------------------------------------------
 
 export async function saveBackupFile(name: string, text: string): Promise<BackupFile | null> {
   if (!isNative()) return null;
-  try {
+  // A big file, and on Android 7-9 a permission dialog may be waiting for an answer: more than the usual 5 s.
+  return safely<BackupFile | null>("saveBackup", async () => {
     const r = await TodayNative.saveBackup({ name, text });
     return { name: r.name, uri: r.uri, size: text.length, modified: Date.now() };
-  } catch {
-    return null;
-  }
+  }, null, 30_000);
 }
 
 export async function listBackupFiles(): Promise<BackupFile[]> {
   if (!isNative()) return [];
-  try {
-    return (await TodayNative.listBackups()).backups;
-  } catch {
-    return [];
-  }
+  return safely<BackupFile[]>("listBackups", async () => (await TodayNative.listBackups()).backups, []);
 }
 
-export async function pruneBackupFiles(keep: number, kind: "weekly" | "restore" = "weekly"): Promise<number> {
+export async function pruneBackupFiles(keep: number, kind: "weekly" | "restore" | "history" = "weekly"): Promise<number> {
   if (!isNative()) return 0;
-  try {
-    return (await TodayNative.pruneBackups({ keep, kind })).deleted;
-  } catch {
-    return 0;
-  }
+  return safely("pruneBackups", async () => (await TodayNative.pruneBackups({ keep, kind })).deleted, 0);
 }
 
 export async function readBackupFile(uri: string): Promise<string | null> {
   if (!isNative()) return null;
-  try {
-    return (await TodayNative.readBackup({ uri })).text;
-  } catch {
-    return null;
-  }
+  return safely<string | null>("readBackup", async () => (await TodayNative.readBackup({ uri })).text, null, 15_000);
 }
 
 export async function shareBackupFile(uri: string): Promise<boolean> {
   if (!isNative()) return false;
-  try {
-    await TodayNative.shareBackup({ uri });
-    return true;
-  } catch {
-    return false;
-  }
+  return safely("shareBackup", async () => (await TodayNative.shareBackup({ uri }), true), false);
 }
 
 export async function backupFileStatus(): Promise<{ lastAt: number; count: number; nextAt: number } | null> {
   if (!isNative()) return null;
-  try {
-    return await TodayNative.backupStatus();
-  } catch {
-    return null;
-  }
+  return safely<{ lastAt: number; count: number; nextAt: number } | null>("backupStatus", () => TodayNative.backupStatus(), null);
 }
 
 /** Arms the Sunday 21:30 alarm that writes the weekly backup, even with the app closed. */
 export async function armWeeklyBackup(): Promise<number | null> {
   if (!isNative()) return null;
-  try {
-    return (await TodayNative.scheduleWeeklyBackup()).at;
-  } catch {
-    return null;
-  }
+  return safely<number | null>("scheduleWeeklyBackup", async () => (await TodayNative.scheduleWeeklyBackup()).at, null);
 }
 
 // ---- Home-screen widget ---------------------------------------------------------------------------------
@@ -274,53 +282,41 @@ export async function armWeeklyBackup(): Promise<number | null> {
 /** Saves the widget's snapshot (JSON) and asks Android to redraw it. Fails soft: no widget, no problem. */
 export async function pushWidgetSnapshot(snapshot: string): Promise<boolean> {
   if (!isNative()) return false;
-  try {
-    await TodayNative.widgetUpdate({ snapshot });
-    return true;
-  } catch {
-    return false;
-  }
+  return safely("widgetUpdate", async () => (await TodayNative.widgetUpdate({ snapshot }), true), false);
 }
 
 /** Dones tapped on the widget since the app last looked (and clears them). */
 export async function takeWidgetActions(): Promise<WidgetAction[]> {
   if (!isNative()) return [];
-  try {
-    return (await TodayNative.widgetTakePending()).actions ?? [];
-  } catch {
-    return [];
-  }
+  return safely<WidgetAction[]>("widgetTakePending", async () => (await TodayNative.widgetTakePending()).actions ?? [], []);
 }
 
 // ---- Small things ---------------------------------------------------------------------------------------
 
 /** A short buzz. Native on Android (the WebView's own vibrate needs a tap first and is unreliable). */
 export function nativeVibrate(ms: number) {
-  if (isNative()) TodayNative.vibrate({ ms }).catch(() => {});
+  if (isNative()) void safely("vibrate", () => TodayNative.vibrate({ ms }), undefined, 2000);
 }
 
 // ---- Recording (for Gemini transcription) --------------------------------------------------------------
 
 export const recorder = {
   async permission(): Promise<"granted" | "denied" | "prompt"> {
-    try {
-      return (await TodayNative.micPermission()).state;
-    } catch {
-      return "denied";
-    }
+    return safely<"granted" | "denied" | "prompt">("micPermission", async () => (await TodayNative.micPermission()).state, "denied");
   },
   /** Starts recording; asks for the microphone first if needed. Throws a readable Error. */
   async start(maxMs = 60_000) {
     try {
-      await TodayNative.startRecording({ maxMs });
+      // The microphone dialog waits for a tap, so this one is not on the 5 s clock.
+      await withTimeout(TodayNative.startRecording({ maxMs }), "startRecording", 60_000);
     } catch (e) {
       throw new Error(String((e as { message?: string })?.message ?? e));
     }
   },
   async stop() {
-    return TodayNative.stopRecording();
+    return withTimeout(TodayNative.stopRecording(), "stopRecording", 15_000);
   },
   async cancel() {
-    await TodayNative.cancelRecording().catch(() => {});
+    await safely("cancelRecording", () => TodayNative.cancelRecording(), undefined);
   },
 };

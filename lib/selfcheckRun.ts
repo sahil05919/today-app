@@ -1,5 +1,6 @@
 import { isNative } from "./platform";
-import { getStatus, pendingIds, rescheduleAll } from "./notifications/native";
+import { getStatus, pendingIds } from "./notifications/native";
+import { requestSync } from "./syncPipeline";
 import { newestBackup } from "./backupFiles";
 import { backupFileStatus } from "./nativeBridge";
 import { runSelfCheck } from "./selfcheck";
@@ -21,6 +22,7 @@ export async function runCheck(): Promise<CheckResult> {
   const lastBackupAt = newestBackup(file, getData().settings.lastBackupAt);
   const out = runSelfCheck(getData(), now, { pendingIds: ids, notificationsOff: off, lastBackupAt });
   actions.recordCheck(out.data, out.result);
-  if (out.reschedule) await rescheduleAll(getData(), { force: true });
+  // Reminders that were missing are put back by the next sync run (never directly from here).
+  if (out.reschedule) requestSync("manual", { force: true });
   return out.result;
 }

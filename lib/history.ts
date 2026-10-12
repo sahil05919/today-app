@@ -15,7 +15,8 @@ import type { AppData, HistoryEvent, Task } from "./types";
  * Taking something back (an undo) appends a "reopened" entry; nothing is ever edited or removed, so the latest entry for a
  * key says where that item stands.
  */
-export const MAX_HISTORY = 20_000;
+/** A hard cap. The real limit is the 8-week line in lib/compact.ts; this only stops a runaway log. */
+export const MAX_HISTORY = 6_000;
 const FORTNIGHT = 14 * 86_400_000;
 
 export function newEvent(e: Omit<HistoryEvent, "id" | "at"> & { at?: number }): HistoryEvent {

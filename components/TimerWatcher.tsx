@@ -2,7 +2,6 @@
 import { useEffect, useRef, useState } from "react";
 import { cheerLine } from "@/lib/cheer";
 import { buzz } from "@/lib/haptics";
-import { rescheduleAll } from "@/lib/notifications/native";
 import { findTask } from "@/lib/series";
 import { actions, getData } from "@/lib/store";
 import { timerPhase } from "@/lib/timer";
@@ -59,11 +58,9 @@ export function TimerWatcher({ data, ctx }: { data: AppData; ctx: ViewCtx }) {
           completeTimer();
           ctxRef.current.notify(`${title} done, ${name} 🌿`);
         }
-        void rescheduleAll(getData());
       } else if (ph.phase === "auto-stop") {
         actions.stopTimer();
         ctxRef.current.notify("Timer stopped after 3 hours. Logged what you did.");
-        void rescheduleAll(getData());
       } else if (ph.phase === "still-going" && asked.current !== timer.startedAt) {
         asked.current = timer.startedAt;
         ring();

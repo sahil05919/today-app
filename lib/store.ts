@@ -3,6 +3,9 @@ import { Preferences } from "@capacitor/preferences";
 import { useSyncExternalStore } from "react";
 import { backupKeysFor, emptyData, migrate, needsUpgrade } from "./backup";
 import { addDays, toISO, todayISO } from "./dates";
+import { logError } from "./debugLog";
+import { record } from "./devTiming";
+import { safely } from "./nativeGuard";
 import { isNative } from "./platform";
 import { seedIfNeeded } from "./seed";
 import { addLog, removeLog, wrapKey } from "./sessions";
@@ -96,33 +99,110 @@ export const localStorageAdapter: StorageAdapter = {
 /** Reads the saved JSON out of Android's Preferences. Falls back to the WebView's own localStorage once. */
 async function loadNative(): Promise<AppData | null> {
   try {
-    const { value } = await Preferences.get({ key: KEY });
+    const got = await safely("Preferences.get", () => Preferences.get({ key: KEY }), null, 10_000);
+    const value = got?.value;
     if (value) {
+      lastJson = value;
       const parsed = JSON.parse(value);
       const upgrade = needsUpgrade(parsed);
       if (upgrade) {
         // Schema change: the old data is copied to its own key FIRST (an earlier backup is never overwritten).
         for (const k of backupKeysFor(parsed, { v2: BACKUP_KEY, v3: BACKUP_KEY_V3 })) {
-          const have = await Preferences.get({ key: k });
-          if (!have.value) await Preferences.set({ key: k, value });
+          const have = await safely("Preferences.get", () => Preferences.get({ key: k }), { value: null }, 10_000);
+          if (!have.value) await safely("Preferences.set", () => Preferences.set({ key: k, value }), undefined, 15_000);
         }
       }
       const data = migrate(parsed);
-      if (upgrade) await Preferences.set({ key: KEY, value: JSON.stringify(data) });
+      if (upgrade) await safely("Preferences.set", () => Preferences.set({ key: KEY, value: JSON.stringify(data) }), undefined, 15_000);
       return data;
     }
   } catch (e) {
-    console.warn("Could not read Preferences", e);
+    logError("store:load", e);
   }
   // One-time carry-over if this WebView already holds data from an earlier build.
   return localStorageAdapter.load();
 }
 
-function saveNative(data: AppData) {
-  Preferences.set({ key: KEY, value: JSON.stringify(data) }).catch((e) => console.warn("Could not save", e));
+const native = isNative();
+
+// ---- Saving: debounced, and flushed the moment the app goes to the background ------------------------------------------
+//
+// The whole data is one JSON text. Writing it on every tap (several hundred KB across the bridge) is what made taps heavy, so a
+// change only marks the data dirty and ONE write follows ~300 ms after the last change. Pause / background / page-hide flush at once.
+
+/** Quiet time after the last change before the data is written. */
+export const PERSIST_MS = 300;
+let dirty = false;
+let persistTimer: ReturnType<typeof setTimeout> | undefined;
+/** The text last written to (or read from) Android's storage: lets a resume tell "nothing new" from "changed elsewhere". */
+let lastJson: string | null = null;
+let writing: Promise<void> = Promise.resolve();
+export const persistStats = { writes: 0, lastBytes: 0, lastMs: 0 };
+
+function markDirty() {
+  dirty = true;
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => void flushNow(), PERSIST_MS);
 }
 
-const native = isNative();
+/** Writes any unsaved change now. Resolves when it is stored. Safe to call as often as you like. */
+export function flushNow(): Promise<void> {
+  clearTimeout(persistTimer);
+  if (!dirty || !state) return writing;
+  dirty = false;
+  const snapshot = state;
+  const t0 = performance.now();
+  if (!native) {
+    adapter.save(snapshot);
+    persistStats.writes++;
+    persistStats.lastMs = performance.now() - t0;
+    record("persist (web)", persistStats.lastMs);
+    return writing;
+  }
+  let json: string;
+  try {
+    json = JSON.stringify(snapshot);
+  } catch (e) {
+    logError("store:stringify", e);
+    return writing;
+  }
+  lastJson = json;
+  persistStats.writes++;
+  persistStats.lastBytes = json.length;
+  persistStats.lastMs = performance.now() - t0;
+  record(`persist stringify (${Math.round(json.length / 1024)} KB)`, persistStats.lastMs);
+  writing = writing.then(async () => {
+    const ok = await safely("Preferences.set", async () => (await Preferences.set({ key: KEY, value: json }), true), false, 15_000);
+    if (!ok) {
+      // Not stored: keep it dirty and try again shortly (a hang must never lose a change).
+      dirty = true;
+      lastJson = null;
+      clearTimeout(persistTimer);
+      persistTimer = setTimeout(() => void flushNow(), 5000);
+    }
+  });
+  return writing;
+}
+
+let flushHooked = false;
+function hookFlush() {
+  if (flushHooked || typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+  flushHooked = true;
+  const f = () => void flushNow();
+  window.addEventListener("pagehide", f);
+  window.addEventListener("beforeunload", f);
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && f());
+}
+
+/** Anything that must run after a real change (the sync pipeline: notifications, calendar mirror, widget, backup check). */
+const changeListeners = new Set<() => void>();
+export const onDataChanged = (fn: () => void) => {
+  changeListeners.add(fn);
+  return () => void changeListeners.delete(fn);
+};
+/** Goes up by one on every change and every reload: a cheap "has anything changed?" for caches and logs. */
+let version = 0;
+export const dataVersion = () => version;
 
 /** Called after an event you own is added, edited or deleted: the Android shell uses it to keep the phone calendar in step. */
 export type EventChange = "add" | "update" | "remove";
@@ -134,10 +214,7 @@ export const onEventChange = (fn: (kind: EventChange, e: FixedEvent) => void) =>
 /** Applies one-off defaults (see lib/seed.ts) to freshly loaded data and saves them if anything changed. */
 function prepare(d: AppData): AppData {
   const seeded = seedIfNeeded(d);
-  if (seeded !== d) {
-    if (native) saveNative(seeded);
-    else adapter.save(seeded);
-  }
+  if (seeded !== d) markDirty();
   return seeded;
 }
 const adapter: StorageAdapter = localStorageAdapter;
@@ -154,12 +231,16 @@ function peek(): AppData | null {
       nativeLoading = true;
       loadNative().then((d) => {
         state = prepare(d ?? emptyData());
+        version++;
+        hookFlush();
         notify();
       });
     }
     return null;
   }
   state = prepare(adapter.load() ?? emptyData());
+  version++;
+  hookFlush();
   return state;
 }
 
@@ -189,14 +270,23 @@ export function getData(): AppData {
 
 /** Re-reads storage, e.g. when the Android app comes back to the foreground. */
 export async function reloadFromStorage() {
+  // Our own unsaved changes are newer than anything in storage: write them first, never read over them.
+  await flushNow();
+  if (native) {
+    const got = await safely("Preferences.get", () => Preferences.get({ key: KEY }), null, 10_000);
+    // Nothing else wrote to storage: keep the data we have (no re-render, no side effects re-run for nothing).
+    if (!got?.value || got.value === lastJson) return;
+  }
   const d = native ? await loadNative() : adapter.load();
   if (d) {
     state = prepare(d);
+    version++;
     notify();
+    changeListeners.forEach((l) => l());
   }
 }
 
-function commit(next: AppData, opts: { history?: boolean } = {}) {
+function commit(next: AppData, opts: { history?: boolean; quiet?: boolean } = {}) {
   // Android: never write before the saved data has been read, or we'd overwrite it with an empty list.
   if (native && !state) {
     console.warn("Ignored a change made before storage finished loading");
@@ -205,9 +295,11 @@ function commit(next: AppData, opts: { history?: boolean } = {}) {
   // The history log appends whatever this change did (done, skipped, missed, rescheduled), see lib/history.ts.
   if (state && opts.history !== false) next = withHistory(state, next);
   state = next;
-  if (native) saveNative(next);
-  else adapter.save(next);
+  version++;
+  markDirty();
   notify();
+  // Bookkeeping (a "last read" time, a log) is saved and shown but does not start the sync again.
+  if (!opts.quiet) changeListeners.forEach((l) => l());
 }
 
 function subscribe(l: () => void) {
@@ -493,7 +585,7 @@ export const actions = {
 
   /** The morning self-check: its quiet fixes and its result are saved together. */
   recordCheck(data: AppData, result: CheckResult) {
-    commit({ ...data, settings: { ...data.settings, lastCheck: result } });
+    commit({ ...data, settings: { ...data.settings, lastCheck: result } }, { quiet: true });
   },
 
   /**
@@ -821,6 +913,12 @@ export const actions = {
     commit({ ...d, calendarEvents: events, settings: { ...d.settings, calendarSyncedAt: Date.now() } });
   },
 
+  /** The phone's calendar was read and nothing changed: only the "last read" time moves (no sync, no re-plan). */
+  calendarChecked() {
+    const d = ensure();
+    commit({ ...d, settings: { ...d.settings, calendarSyncedAt: Date.now() } }, { quiet: true });
+  },
+
   /** Adds events from an opened invite (.ics). */
   addImportedEvents(events: Array<Pick<FixedEvent, "title" | "date" | "start" | "end">>): FixedEvent[] {
     const d = ensure();
@@ -939,6 +1037,18 @@ export const actions = {
   settings(patch: Partial<Settings>) {
     const d = ensure();
     commit({ ...d, settings: { ...d.settings, ...patch } });
+  },
+
+  /** Like settings(), for notes the app keeps about its own work (when something was last read): saved, but it does not start a sync. */
+  bookkeeping(patch: Partial<Settings>) {
+    const d = ensure();
+    commit({ ...d, settings: { ...d.settings, ...patch } }, { quiet: true });
+  },
+
+  /** History compaction (lib/compact.ts): the old raw entries have been put in a backup file; keep the recent ones and the weekly snapshots. */
+  compact(history: AppData["history"], weeks: AppData["weeks"]) {
+    const d = ensure();
+    commit({ ...d, history, weeks }, { history: false, quiet: true });
   },
 
   /** Saves today's answer to "How are you feeling?" (one per day, last ~120 kept). */

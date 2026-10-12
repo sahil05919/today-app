@@ -14,6 +14,8 @@ import { aiEnabled } from "@/lib/ai";
 import { looksLikeBooking, parseShared, type ParsedShare } from "@/lib/shareParse";
 import { readWithGemini } from "@/lib/shareAi";
 import { dateInKey, resolveTap } from "@/lib/tap";
+import { markOpen, timed } from "@/lib/devTiming";
+import { closeAllSheets } from "@/lib/sheetStack";
 import { settleNote, settleOverflow } from "@/lib/settle";
 import { findTask, seriesOf } from "@/lib/series";
 import { weekStart } from "@/lib/stats";
@@ -147,6 +149,8 @@ export default function App() {
   useEffect(() => {
     if (!pendingTap || !data) return;
     setPendingTap(null);
+    // Everything that is open closes first (top sheet first), so the target opens on a clean screen and no backdrop is left over.
+    closeAllSheets();
     const r = resolveTap(data, pendingTap, todayISO(), new Date());
     const id = Date.now();
     if (pendingTap.start) {
@@ -217,14 +221,19 @@ export default function App() {
   // The day, as one timeline.
   const minuteKey = Math.floor(now.getTime() / 60_000);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const tl = useMemo(() => (data ? buildTimeline(data, today, new Date(minuteKey * 60_000)) : null), [data, today, minuteKey]);
+  const tl = useMemo(() => (data ? timed("planner: buildTimeline(today)", () => buildTimeline(data, today, new Date(minuteKey * 60_000))) : null), [data, today, minuteKey]);
+
+  // The first render that has data is "Today is usable": the dev timing log notes how long the page took to get here.
+  useEffect(() => {
+    if (tl) markOpen();
+  }, [tl]);
 
   // Tasks that don't fit this evening move to the next day with room, with a one-line note. (Overdue ones stay put.)
   useEffect(() => {
     if (!data) return;
     const id = setTimeout(() => {
       const d = getData();
-      const moves = settleOverflow(d, new Date());
+      const moves = timed("planner: settleOverflow", () => settleOverflow(d, new Date()));
       if (!moves.length) return;
       actions.moveTasks(moves.map((m) => ({ taskId: m.taskId, to: m.to })));
       const text = settleNote(moves);

@@ -318,6 +318,11 @@ export interface Profile {
   calendarWrite: boolean;
   /** Which calendar they go to (the phone's own id). Empty = your Google account's calendar. */
   writeCalendarId?: string;
+  /** Keep a safety copy of the next 7 days in the Google calendar named "Today – Plan" (see lib/mirror.ts). */
+  planMirror: boolean;
+  /** Which phone calendar is the Plan / Inbox one (the phone's own id). Empty = found by its name. */
+  planCalendarId?: string;
+  inboxCalendarId?: string;
   /** Weekend time of the morning "How are you feeling?" (weekdays use `morningCheckIn`). */
   morningWeekend: string;
   /** A quote notification every N days (1 = every day); 0 = off. */
@@ -615,6 +620,9 @@ export interface Settings {
   /** The morning self-check: its last result, and the day its card was set aside. */
   lastCheck?: CheckResult;
   checkDismissed?: ISODate;
+  /** History compaction (lib/compact.ts): the day it last ran, and when an archive write last failed (retry later). */
+  compactedDate?: ISODate;
+  compactFailedAt?: number;
 }
 
 export interface AppData {

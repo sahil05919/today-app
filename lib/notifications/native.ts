@@ -5,6 +5,8 @@ import { isNative } from "../platform";
 import { findTask, parseOccKey } from "../series";
 import { itemFromRef } from "../reschedule";
 import { findTimelineItem } from "../tap";
+import { logError } from "../debugLog";
+import { safely, withTimeout } from "../nativeGuard";
 import { actions, getData, whenLoaded } from "../store";
 import { applyTimerAction } from "../timerRun";
 import { hashId, planNotifications, signature, type NotifKind, type PlannedNotification } from "./plan";
@@ -74,8 +76,8 @@ const norm = (s: string): PermissionState => (s === "granted" ? "granted" : s ==
 export async function getStatus(): Promise<NotifStatus> {
   if (!isNative()) return { supported: false, permission: "denied", exact: null };
   const [p, e] = await Promise.all([
-    LocalNotifications.checkPermissions().catch(() => ({ display: "prompt" })),
-    LocalNotifications.checkExactNotificationSetting().catch(() => null),
+    safely<{ display: string }>("checkPermissions", () => LocalNotifications.checkPermissions(), { display: "prompt" }),
+    safely("checkExactNotificationSetting", () => LocalNotifications.checkExactNotificationSetting(), null),
   ]);
   return { supported: true, permission: norm(p.display), exact: e ? norm(e.exact_alarm) : null };
 }
@@ -83,52 +85,59 @@ export async function getStatus(): Promise<NotifStatus> {
 /** Android 13+ asks "Allow Today to send you notifications?" */
 export async function requestPermission(): Promise<PermissionState> {
   if (!isNative()) return "denied";
-  const r = await LocalNotifications.requestPermissions().catch(() => ({ display: "denied" }));
+  // The permission dialog waits for a tap, so it is given a minute rather than 5 seconds.
+  const r = await safely<{ display: string }>("requestPermissions", () => LocalNotifications.requestPermissions(), { display: "denied" }, 60_000);
   return norm(r.display);
 }
 
 /** Opens Android's "Alarms & reminders" screen so exact reminders can be allowed. */
 export async function openExactAlarmSettings(): Promise<PermissionState | null> {
   if (!isNative()) return null;
-  const r = await LocalNotifications.changeExactNotificationSetting().catch(() => null);
+  const r = await safely("changeExactNotificationSetting", () => LocalNotifications.changeExactNotificationSetting(), null, 60_000);
   return r ? norm(r.exact_alarm) : null;
 }
 
-let inited = false;
-/** Creates the channels and the Done / On track / +1 hour buttons. Safe to call repeatedly. */
-export async function initNotifications() {
-  if (!isNative() || inited) return;
-  inited = true;
+let initing: Promise<void> | null = null;
+/** Creates the channels and the Done / On track / +1 hour buttons. Safe to call repeatedly (everyone waits for the same run). */
+export function initNotifications(): Promise<void> {
+  if (!isNative()) return Promise.resolve();
+  return (initing ??= setUp().finally(() => {
+    // A failed set-up is tried again next time; a good one is kept.
+    if (!channelsReady) initing = null;
+  }));
+}
+let channelsReady = false;
+async function setUp() {
   try {
     // Alarm channel first: native code gives it the alarm sound. If that fails, a plain loud channel is the fallback.
     if (!(await createAlarmChannel(CH_ALARM))) {
-      await LocalNotifications.createChannel({
+      await withTimeout(LocalNotifications.createChannel({
         id: CH_ALARM,
         name: "Alarms",
         description: "Reminders you set for a specific time",
         importance: 5,
         visibility: 1,
         vibration: true,
-      });
+      }), "createChannel(alarm)");
     }
-    await LocalNotifications.createChannel({
+    await withTimeout(LocalNotifications.createChannel({
       id: CH_REMINDERS,
       name: "Reminders",
       description: "Reminders at a task's time, and the start of your planned slots",
       importance: 4,
       visibility: 1,
       vibration: true,
-    });
-    await LocalNotifications.createChannel({
+    }), "createChannel(reminders)");
+    await withTimeout(LocalNotifications.createChannel({
       id: CH_GENTLE,
       name: "Check-ins",
       description: "Morning plan, task check-ins and the evening wrap-up",
       importance: 3,
       visibility: 1,
       vibration: false,
-    });
+    }), "createChannel(checkins)");
     // Android shows at most 3 buttons. "Behind" is what happens when you tap the notification itself.
-    await LocalNotifications.registerActionTypes({
+    await withTimeout(LocalNotifications.registerActionTypes({
       types: [
         // A timed reminder behaves like a phone alarm: Done, or Reschedule +1 hour.
         {
@@ -164,10 +173,10 @@ export async function initNotifications() {
           ],
         },
       ],
-    });
+    }), "registerActionTypes");
+    channelsReady = true;
   } catch (e) {
-    console.warn("Notification setup failed", e);
-    inited = false;
+    logError("notifications:setup", e);
   }
 }
 
@@ -214,18 +223,18 @@ export function rescheduleAll(data: AppData, opts: { force?: boolean } = {}): Pr
     if (sig === lastSig && !opts.force) return plan.length;
 
     try {
-      const pending = await LocalNotifications.getPending();
+      const pending = await withTimeout(LocalNotifications.getPending(), "getPending");
       const stale = pending.notifications.filter((n) => !keep.has(n.id));
       if (stale.length) {
-        await LocalNotifications.cancel({ notifications: stale.map((n) => ({ id: n.id })) });
+        await withTimeout(LocalNotifications.cancel({ notifications: stale.map((n) => ({ id: n.id })) }), "cancel");
       }
       if (plan.length) {
         const exact = status.exact === "granted";
-        await LocalNotifications.schedule({ notifications: plan.map((n) => toSchema(n, exact)) });
+        await withTimeout(LocalNotifications.schedule({ notifications: plan.map((n) => toSchema(n, exact)) }), "schedule", 15_000);
       }
       lastSig = sig;
     } catch (e) {
-      console.warn("Could not schedule notifications", e);
+      logError("notifications:reschedule", e);
       lastSig = ""; // try again next time
     }
     return plan.length;
@@ -239,8 +248,9 @@ export function rescheduleAll(data: AppData, opts: { force?: boolean } = {}): Pr
 export async function pendingIds(): Promise<number[] | null> {
   if (!isNative()) return null;
   try {
-    return (await LocalNotifications.getPending()).notifications.map((n) => n.id);
-  } catch {
+    return (await withTimeout(LocalNotifications.getPending(), "getPending")).notifications.map((n) => n.id);
+  } catch (e) {
+    logError("notifications:pendingIds", e);
     return null;
   }
 }
@@ -256,7 +266,7 @@ export async function notifyDayDone(): Promise<boolean> {
   const date = toISO(new Date());
   const id = hashId(`dayDone:${date}`);
   keep.add(id);
-  await LocalNotifications.schedule({
+  await safely("schedule(dayDone)", () => LocalNotifications.schedule({
     notifications: [
       {
         id,
@@ -269,7 +279,7 @@ export async function notifyDayDone(): Promise<boolean> {
         extra: { kind: "dayDone", key: `dayDone:${date}`, at: Date.now() },
       },
     ],
-  });
+  }), undefined);
   return true;
 }
 
@@ -278,7 +288,7 @@ export async function sendTest(): Promise<boolean> {
   if (!isNative()) return false;
   await initNotifications();
   if ((await getStatus()).permission !== "granted") return false;
-  await LocalNotifications.schedule({
+  await safely("schedule(test)", () => LocalNotifications.schedule({
     notifications: [
       {
         id: 987654321,
@@ -289,7 +299,7 @@ export async function sendTest(): Promise<boolean> {
         smallIcon: "ic_stat_today",
       },
     ],
-  });
+  }), undefined);
   return true;
 }
 
@@ -335,7 +345,7 @@ export const markActivated = () => {
  */
 export async function listenForActions(onTap: (t: TapTarget) => void): Promise<() => void> {
   if (!isNative()) return () => {};
-  const handle = await LocalNotifications.addListener("localNotificationActionPerformed", async (e: ActionPerformed) => {
+  const handle = await safely("addListener(actions)", () => LocalNotifications.addListener("localNotificationActionPerformed", async (e: ActionPerformed) => {
     const extra = (e.notification.extra ?? {}) as { taskId?: string; kind?: TapTarget["kind"]; key?: string; ref?: string; at?: number; occ?: { id: string; date: string } };
     const { actionId } = e;
 
@@ -345,7 +355,7 @@ export async function listenForActions(onTap: (t: TapTarget) => void): Promise<(
       applyTimerAction(actionId);
       if (Date.now() - activatedAt < 5000) {
         const { App } = await import("@capacitor/app");
-        App.minimizeApp().catch(() => {});
+        void safely("minimizeApp", () => App.minimizeApp(), undefined, 2000);
       }
       return;
     }
@@ -356,7 +366,7 @@ export async function listenForActions(onTap: (t: TapTarget) => void): Promise<(
       applyCheckInAction(actionId, extra.ref);
       if (Date.now() - activatedAt < 5000) {
         const { App } = await import("@capacitor/app");
-        App.minimizeApp().catch(() => {});
+        void safely("minimizeApp", () => App.minimizeApp(), undefined, 2000);
       }
       return;
     }
@@ -383,8 +393,8 @@ export async function listenForActions(onTap: (t: TapTarget) => void): Promise<(
     // If this button press is what brought the app forward, put it back where it was.
     if (Date.now() - activatedAt < 5000) {
       const { App } = await import("@capacitor/app");
-      App.minimizeApp().catch(() => {});
+      void safely("minimizeApp", () => App.minimizeApp(), undefined, 2000);
     }
-  });
-  return () => handle.remove();
+  }), null);
+  return () => handle?.remove();
 }
