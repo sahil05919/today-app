@@ -4,7 +4,7 @@ import { capacityOf, learnedSlots, MIN_DAYS, pendingSlotShifts } from "../lib/ca
 import { addDays } from "../lib/dates";
 import { letterFor, withLetter } from "../lib/letters";
 import { overload, tickHint } from "../lib/load";
-import { seedIfNeeded } from "../lib/seed";
+import { seedEarly as seedIfNeeded } from "./_early";
 import { planSessions } from "../lib/schedule";
 import { weekStart } from "../lib/stats";
 import type { AppData, CheckInAnswer, CoachLetter, SessionLog, Task } from "../lib/types";

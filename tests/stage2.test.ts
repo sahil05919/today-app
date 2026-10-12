@@ -5,7 +5,7 @@ import { planNotifications } from "../lib/notifications/plan";
 import { parseCapture } from "../lib/parse";
 import { defaultProfile, toHHMM } from "../lib/profile";
 import { planSessions, planWeek } from "../lib/schedule";
-import { seedIfNeeded } from "../lib/seed";
+import { seedEarly as seedIfNeeded } from "./_early";
 import { weekProgress } from "../lib/sessions";
 import type { AppData, FixedEvent } from "../lib/types";
 

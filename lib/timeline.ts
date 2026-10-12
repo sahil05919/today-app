@@ -129,7 +129,8 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
   const isToday = date === todayIso;
   const isPast = date < todayIso;
   const nowMin = now.getHours() * 60 + now.getMinutes();
-  const earliest = isToday ? ceil5(nowMin + 5) : 0;
+  // Auto-placed things never start before the earliest auto-planning time (what you timed yourself stays where you put it).
+  const earliest = Math.max(isToday ? ceil5(nowMin + 5) : 0, toMin(p.earliestAuto));
   const model = buildDurationModel(data.tasks);
   const buffer = r.buffer;
 

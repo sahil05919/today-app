@@ -447,6 +447,7 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
           <div className="grid grid-cols-2 gap-3">
             <Time label="Tea / food break from" value={p.breakStart} onChange={(v) => set("breakStart", v)} />
             <Time label="Break until" value={p.breakEnd} onChange={(v) => set("breakEnd", v)} />
+            <Time label="Earliest auto-planning time" value={p.earliestAuto} onChange={(v) => set("earliestAuto", v)} />
             <Num label="Buffer between things (min)" value={p.bufferMin} min={0} max={60} onChange={(v) => set("bufferMin", v)} />
             <Num label="Evening limit (minutes)" value={p.eveningCapMin} min={30} max={480} onChange={(v) => set("eveningCapMin", v)} />
             <Num label="Office commute, each way (min)" value={p.officeCommuteMin} min={0} max={240} onChange={(v) => set("officeCommuteMin", v)} />
@@ -454,6 +455,7 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
           <Field label="Office days" hint="On these days the commute is counted and the evening is lighter. Monday by default.">
             <DayChips label="Office days" value={p.officeDays} onChange={(v) => set("officeDays", v)} />
           </Field>
+          <p className="text-xs text-muted">Nothing is planned for you before the earliest auto-planning time (11:00 by default). Things you give a time yourself stay where you put them.</p>
           <p className="text-xs text-muted">The break is kept free on weekdays. Nothing is ever planned on top of anything else, and what doesn't fit the evening moves to the next day with room.</p>
         </Section>
 

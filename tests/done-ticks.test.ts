@@ -9,7 +9,7 @@ import { computeNudges } from "../lib/nudges";
 import { planNotifications } from "../lib/notifications/plan";
 import { countLabel, streak } from "../lib/progress";
 import { planSessions, plannedForDay } from "../lib/schedule";
-import { seedIfNeeded } from "../lib/seed";
+import { seedEarly as seedIfNeeded } from "./_early";
 import { getOccurrences } from "../lib/series";
 import { weekProgress } from "../lib/sessions";
 import { actions, getData } from "../lib/store";

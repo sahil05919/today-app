@@ -4,7 +4,7 @@ import { planNotifications } from "../lib/notifications/plan";
 import { OFF_LIMIT_MESSAGE, canTakeOffDay, isOffDay, offDaysLeft, offDaysThisWeek } from "../lib/offday";
 import { dots, encouragement, streak, weeklyPercent } from "../lib/progress";
 import { planSessions } from "../lib/schedule";
-import { seedIfNeeded } from "../lib/seed";
+import { seedEarly as seedIfNeeded } from "./_early";
 import { weekProgress } from "../lib/sessions";
 import type { AppData, SessionLog } from "../lib/types";
 

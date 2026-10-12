@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addDays } from "../lib/dates";
-import { seedIfNeeded } from "../lib/seed";
+import { seedEarly as seedIfNeeded } from "./_early";
 import { actions, getData } from "../lib/store";
 import { buildTimeline } from "../lib/timeline";
 import { buildWidgetSnapshot, snapshotSignature } from "../lib/widget";

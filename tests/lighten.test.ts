@@ -3,7 +3,7 @@ import { completeTaskIn } from "../lib/done";
 import { isLightenIntent } from "../lib/intentPhrases";
 import { applyPull, calmCard, dayDoneState, freeMinutesToday, lighterLine, minutesText, pullCandidates, preTicked } from "../lib/lighten";
 import { plannedForDay } from "../lib/schedule";
-import { seedIfNeeded } from "../lib/seed";
+import { seedEarly as seedIfNeeded } from "./_early";
 import { weekProgress } from "../lib/sessions";
 import { buildTimeline } from "../lib/timeline";
 import { toISO } from "../lib/dates";

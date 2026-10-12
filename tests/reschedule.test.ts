@@ -4,7 +4,7 @@ import { completeTaskIn } from "../lib/done";
 import { planNotifications } from "../lib/notifications/plan";
 import { carryMissed, rescheduleNow, rescheduleOptions, undoReschedule } from "../lib/reschedule";
 import { planSessions, plannedForDay } from "../lib/schedule";
-import { seedIfNeeded } from "../lib/seed";
+import { seedEarly as seedIfNeeded } from "./_early";
 import { makeSeries } from "../lib/series";
 import { weekProgress } from "../lib/sessions";
 import { buildTimeline } from "../lib/timeline";
@@ -48,13 +48,14 @@ describe("B. the Reschedule options", () => {
     expect(rescheduleOptions(d, target("x"), NOW)!.options.map((o) => o.kind)).toContain("evening");
   });
 
-  it("Tomorrow morning is the first free slot in the 8–9 window", () => {
-    const free = rescheduleOptions(d, target("x"), NOW)!.options.find((o) => o.kind === "tomorrow")!;
-    expect(free.dest).toEqual({ date: addDays(TODAY, 1), time: "08:00" });
-    const busy = { ...d, events: [ev({ date: addDays(TODAY, 1), start: "07:30", end: "08:30" })] };
+  it("Tomorrow morning is the first free slot from 11:00 (the earliest auto-planning time)", () => {
+    const rule = { ...d, profile: { ...d.profile!, earliestAuto: "11:00" } };
+    const free = rescheduleOptions(rule, target("x"), NOW)!.options.find((o) => o.kind === "tomorrow")!;
+    expect(free.dest).toEqual({ date: addDays(TODAY, 1), time: "11:00" });
+    const busy = { ...rule, events: [ev({ date: addDays(TODAY, 1), start: "10:30", end: "11:30" })] };
     const o = rescheduleOptions(busy, target("x"), NOW)!.options.find((x) => x.kind === "tomorrow")!;
-    // the 10-minute buffer after the event pushes the first free slot to 08:40
-    expect(o.dest!.time).toBe("08:40");
+    // the 10-minute buffer after the event pushes the first free slot to 11:40
+    expect(o.dest!.time).toBe("11:40");
   });
 
   it("Pick date & time sets a fixed time, and the reminder follows it", () => {

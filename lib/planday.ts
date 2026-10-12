@@ -73,7 +73,7 @@ export function buildDayPlan(raw: AppData, now: Date = new Date()): DayPlan {
   const qe = toMin(p.quietEnd);
   const wake = qs > qe ? qe : 7 * 60;
   const dayEnd = qs > qe ? qs : 22 * 60;
-  const dayStart = Math.min(dayEnd, Math.max(wake, ceilTo(now.getHours() * 60 + now.getMinutes() + 5, 15)));
+  const dayStart = Math.min(dayEnd, Math.max(wake, toMin(p.earliestAuto), ceilTo(now.getHours() * 60 + now.getMinutes() + 5, 15)));
 
   const blocks: Block[] = [];
   const isWorkDay = p.workDays.includes(dow);

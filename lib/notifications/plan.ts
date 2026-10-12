@@ -156,6 +156,9 @@ function remindable(data: AppData) {
   return [...(data.events ?? []), ...tagged];
 }
 
+/** Notification kinds that are the app's own pings (not something you set a time for). They are not sent before the earliest auto-planning time. */
+const QUIET_MORNING = new Set<NotifKind>(["checkin", "nudge", "slot", "session", "chore", "bill", "life"]);
+
 export function planNotifications(raw: AppData, now: Date = new Date(), opts: { budget?: number } = {}): PlannedNotification[] {
   const today = toISO(now);
   // Repeats of the window come from getOccurrences, so the Vitamin has a 11:00 reminder on EVERY coming day.
@@ -170,6 +173,12 @@ export function planNotifications(raw: AppData, now: Date = new Date(), opts: { 
     // Judge "already passed" by the time it was meant for, before quiet hours / work hours shift it later.
     if (n.at.getTime() <= now.getTime() + 30_000) return;
     const { exactTime, work, ...rest } = n;
+    // No default check-in, nudge or session ping before the earliest auto-planning time. (Things you timed yourself, the 09:30
+    // brief, events, alarms and the lead-up to a shift are not "default" pings and stay.)
+    if (!exactTime && QUIET_MORNING.has(n.kind)) {
+      const t = applyPolicy(n.at, !!work, p);
+      if (minOfDay(t) < toMin(p.earliestAuto)) return;
+    }
     out.push({ ...rest, at: exactTime ? new Date(n.at) : applyPolicy(n.at, !!work, p), id: hashId(n.key) });
   };
 

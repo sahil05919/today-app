@@ -325,6 +325,8 @@ export interface Profile {
   /** Which phone calendar is the Plan / Inbox one (the phone's own id). Empty = found by its name. */
   planCalendarId?: string;
   inboxCalendarId?: string;
+  /** The planner never auto-places anything before this time (things you timed yourself are not moved). */
+  earliestAuto: string;
   /** Weekend time of the morning "How are you feeling?" (weekdays use `morningCheckIn`). */
   morningWeekend: string;
   /** A quote notification every N days (1 = every day); 0 = off. */

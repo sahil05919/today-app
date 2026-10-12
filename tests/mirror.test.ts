@@ -31,7 +31,7 @@ import { findTodayCalendar, normName, todayCalendarIds } from "../lib/calendarNa
 import { syncPhoneCalendar, withoutTodayCalendars } from "../lib/calendarSync";
 import { buildMirrorEntries, diffMirror, oldestOpenDay, sigOf } from "../lib/mirror";
 import { resetMirrorForTests, runMirror, type MirrorBridge } from "../lib/mirrorRun";
-import { seedIfNeeded } from "../lib/seed";
+import { seedEarly as seedIfNeeded } from "./_early";
 import { actions, getData, whenLoaded } from "../lib/store";
 import type { MirrorEntry, MirrorOp, MirrorState } from "../lib/nativeBridge";
 import type { AppData, Task } from "../lib/types";

@@ -562,6 +562,7 @@ function cleanProfile(p: any): Profile {
       calendarWrite: bool(p.calendarWrite),
       writeCalendarId: typeof p.writeCalendarId === "string" && /^\d{1,12}$/.test(p.writeCalendarId) ? p.writeCalendarId : undefined,
       planMirror: bool(p.planMirror),
+      earliestAuto: hhmm(p.earliestAuto),
       planCalendarId: typeof p.planCalendarId === "string" && /^\d{1,12}$/.test(p.planCalendarId) ? p.planCalendarId : undefined,
       inboxCalendarId: typeof p.inboxCalendarId === "string" && /^\d{1,12}$/.test(p.inboxCalendarId) ? p.inboxCalendarId : undefined,
       officeDays: days(p.officeDays),

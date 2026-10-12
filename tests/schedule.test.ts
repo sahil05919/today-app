@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { planSessions, planWeek } from "../lib/schedule";
-import { seedIfNeeded } from "../lib/seed";
+import { seedEarly as seedIfNeeded } from "./_early";
 import { nextNumber, weekProgress } from "../lib/sessions";
 import { toHHMM } from "../lib/profile";
 import type { AppData, SessionLog } from "../lib/types";

@@ -57,6 +57,7 @@ export function defaultProfile(): Profile {
     calendarSync: true,
     calendarWrite: true,
     planMirror: true,
+    earliestAuto: "11:00",
     notify: { morning: true, taskCheckIns: true, wrap: true, reminders: true, slots: true, events: true, bills: true, nudges: true, review: true, weekSoFar: true, quote: true, tonight: true, sessionNudges: true, dayDone: true },
   };
 }

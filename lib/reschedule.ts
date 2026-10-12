@@ -35,7 +35,7 @@ export interface Dest {
 export const EVENING_FROM = 18 * 60;
 /** "This evening" is not offered once it is this late. */
 export const EVENING_HIDE_AFTER = 21 * 60;
-export const MORNING_WINDOW: Span = [8 * 60, 9 * 60];
+export const MORNING_WINDOW: Span = [11 * 60, 13 * 60];
 /** "Not sure" looks at tomorrow and then up to a week ahead. */
 export const NOT_SURE_DAYS = 7;
 
@@ -93,9 +93,10 @@ export function freeSlot(data: AppData, date: ISODate, from: number, minutes: nu
   return null;
 }
 
+/** "Tomorrow morning": the first free slot from the earliest auto-planning time (11:00), within the next two hours. */
 const morningWindow = (data: AppData): Span => {
-  const slot = withDefaults(data.profile).slots.find((s) => s.id === "before");
-  return slot ? [toMin(slot.start), toMin(slot.end)] : MORNING_WINDOW;
+  const from = toMin(withDefaults(data.profile).earliestAuto);
+  return [from, from + 120];
 };
 
 // ---- Not sure: let the planner decide ---------------------------------------------------------------------------------

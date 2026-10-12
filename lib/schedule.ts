@@ -154,7 +154,9 @@ export function planWeek(raw: AppData, now: Date = new Date(), busyOverride?: Bu
       .map((id) => slots.get(id))
       .filter((s): s is Slot => !!s && s.days.includes(fromISO(d).getDay()));
   };
-  const earliest = (d: ISODate) => (d === today ? nowMin + 5 : 0);
+  // Nothing is ever auto-placed before the earliest auto-planning time (11:00 by default), on any day.
+  const autoFrom = toMin(p.earliestAuto);
+  const earliest = (d: ISODate) => Math.max(d === today ? nowMin + 5 : 0, autoFrom);
   // How far a day's evening and night slots move because of a long routine block (0 on an ordinary day).
   const rules = new Map<ISODate, ReturnType<typeof dayRules>>();
   const rulesOf = (d: ISODate) => {

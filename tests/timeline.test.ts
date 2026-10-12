@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { dayRules } from "../lib/busy";
 import { parseCapture } from "../lib/parse";
 import { toHHMM, toMin } from "../lib/profile";
-import { seedIfNeeded } from "../lib/seed";
+import { seedEarly as seedIfNeeded } from "./_early";
 import { settleOverflow } from "../lib/settle";
 import { buildTimeline, firstThing, isNight, movedNote, nextUp, type TLItem } from "../lib/timeline";
 import type { AppData, FixedEvent, Task } from "../lib/types";

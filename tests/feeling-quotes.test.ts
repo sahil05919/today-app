@@ -5,7 +5,7 @@ import { planNotifications } from "../lib/notifications/plan";
 import { isOffDay } from "../lib/offday";
 import { assignDate, isQuoteDay, quoteAtSlot, quoteForDate, quoteStateOf, QUOTE_LIBRARY, slotForDate } from "../lib/quoteBag";
 import { planSessions } from "../lib/schedule";
-import { seedIfNeeded } from "../lib/seed";
+import { seedEarly as seedIfNeeded } from "./_early";
 import { weekProgress } from "../lib/sessions";
 import { buildTimeline } from "../lib/timeline";
 import type { AppData, QuoteState, Task } from "../lib/types";

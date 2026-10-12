@@ -4,7 +4,7 @@ import { addDays } from "../lib/dates";
 import { eventMarkKey } from "../lib/fixed";
 import { blockSpan, rippleNote, setBlock, skipBlock } from "../lib/ripple";
 import { plannedForDay, planSessions } from "../lib/schedule";
-import { seedIfNeeded } from "../lib/seed";
+import { seedEarly as seedIfNeeded } from "./_early";
 import { actions, flushNow, getData, KEY, localStorageAdapter } from "../lib/store";
 import { buildTimeline } from "../lib/timeline";
 import { toHHMM } from "../lib/profile";
