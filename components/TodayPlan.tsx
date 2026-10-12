@@ -12,6 +12,7 @@ import { actions, useData } from "@/lib/store";
 import type { TLItem } from "@/lib/timeline";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
 import { completeItem, skipItem, startItem, undoItem, unskipItem } from "./itemActions";
+import { OtherRow } from "./OtherWork";
 import { btn, field, Sheet, type Panel, type ViewCtx } from "./ui";
 
 const hm = (min: number) => toHHMM(min);
@@ -314,6 +315,7 @@ export function ProgressSheet({ data, ctx, onClose, onReview }: { data: AppData;
             </li>
           );
         })}
+        <OtherRow data={data} ctx={ctx} />
       </ul>
       {onReview && (
         <button className={`${btn.soft} mt-5 min-h-12 w-full`} onClick={onReview}>

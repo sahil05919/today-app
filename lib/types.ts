@@ -325,6 +325,8 @@ export interface Profile {
   /** Which phone calendar is the Plan / Inbox one (the phone's own id). Empty = found by its name. */
   planCalendarId?: string;
   inboxCalendarId?: string;
+  /** The weekly target for "Other work", in hours (0 = no target). */
+  otherHours: number;
   /** The planner never auto-places anything before this time (things you timed yourself are not moved). */
   earliestAuto: string;
   /** Weekend time of the morning "How are you feeling?" (weekdays use `morningCheckIn`). */
@@ -538,6 +540,8 @@ export interface WeekSnapshot {
   events: { handled: number; names: string[] };
   focus: string[];
   text: string;
+  /** "Other work" that week, in minutes, and its target then. */
+  other?: { minutes: number; target: number };
 }
 
 /** Side work (the Monday check): what you star, hide and add, and what is ticked each week (Monday ISO date → source ids). */
@@ -674,6 +678,9 @@ export interface AppData {
   occurrences?: Occurrence[];
   /** Everything that was done / skipped / missed / rescheduled, append-only. */
   history?: HistoryEvent[];
+  /** Time logged by typing, and your corrections of Other sub-labels (keyed like OtherEntry.key). */
+  worklog?: WorkLog[];
+  workSubs?: Record<string, SubLabel>;
   /** Cleared stretches of days (see ClearedWindow). */
   cleared?: ClearedWindow[];
   /** Notes about the app, from "app: …" in Capture. */
@@ -707,6 +714,19 @@ export interface ClearedWindow {
   /** Minutes after midnight. */
   start: number;
   end: number;
+  at: number;
+}
+
+/** Where a piece of "Other work" belongs (guessed from its words, editable). */
+export type SubLabel = "Building" | "Chores" | "Admin" | "Learning" | "Other";
+
+/** Time you spent and told the app about ("spent 2 hrs building the app"). Counted under Other. */
+export interface WorkLog {
+  id: string;
+  date: ISODate;
+  minutes: number;
+  title: string;
+  sub: SubLabel;
   at: number;
 }
 

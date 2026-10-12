@@ -54,7 +54,9 @@ describe("D. weekly numbers", () => {
 
   it("done / target per area, and the overall percent", () => {
     expect(Object.fromEntries(s.areas.map((a) => [a.id, `${a.done}/${a.target}`]))).toMatchObject({ powerbi: "3/4", meditation: "3/3", job: "0/5", english: "4/7", walking: "2/6" });
-    expect(s.percent).toBe(Math.round(((3 + 3 + 0 + 4 + 2) / (4 + 3 + 5 + 7 + 6)) * 100));
+    // In minutes (these logs are 30 min each): every area's minutes capped at its target, plus Other (what was finished besides) against its 5 hours.
+    const capped = Math.min(3 * 30, 4 * 60) + Math.min(3 * 30, 3 * 15) + 0 + Math.min(4 * 30, 7 * 20) + Math.min(2 * 30, 6 * 35);
+    expect(s.percent).toBe(Math.round(((capped + s.other.counted) / (835 + s.other.target)) * 100));
   });
 
   it("wins are at or above target, slipped are below", () => {

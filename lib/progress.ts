@@ -1,6 +1,7 @@
 import { addDays, fromISO } from "./dates";
 import { countedByEvent, eventsOn } from "./fixed";
 import { isOffDay } from "./offday";
+import { otherWeek } from "./other";
 import { sessionAreas, weekProgress, type ProgressRow } from "./sessions";
 import type { AppData, ISODate } from "./types";
 
@@ -8,12 +9,29 @@ import type { AppData, ISODate } from "./types";
  * Progress, in the simplest possible form: one number, a few dots, a streak, one kind sentence.
  */
 
-/** "This week: 72%": sessions done against weekly targets (an area can't count past its own target). */
-export function weeklyPercent(data: AppData, today: ISODate): { pct: number; done: number; target: number } {
+/**
+ * "This week: 72%", measured in minutes. A tracked area: the minutes done against its target (sessions × length), never more than
+ * the target. Other work: the minutes done against its weekly target in hours, also capped. Overall = capped done ÷ targets.
+ * Time beyond a target is a bonus ("+2h extra 💪"): shown, but it never pushes the percentage past 100.
+ * `done` and `target` are minutes.
+ */
+export function weeklyPercent(data: AppData, today: ISODate): { pct: number; done: number; target: number; bonus: number } {
   const rows = weekProgress(data, today);
-  const target = rows.reduce((n, r) => n + r.target, 0);
-  const done = rows.reduce((n, r) => n + Math.min(r.done, r.target), 0);
-  return { pct: target ? Math.round((done / target) * 100) : 0, done, target };
+  let target = 0;
+  let done = 0;
+  let bonus = 0;
+  for (const r of rows) {
+    const t = r.target * (r.area.target?.minutes ?? 0);
+    const m = r.minutes;
+    target += t;
+    done += Math.min(m, t);
+    bonus += Math.max(0, m - t);
+  }
+  const o = otherWeek(data, today);
+  target += o.target;
+  done += o.counted;
+  bonus += o.bonus;
+  return { pct: target ? Math.round((done / target) * 100) : 0, done, target, bonus };
 }
 
 /** "3/4" while working on it, "✓ 4/4" when the target is hit, "5/4 ⭐" with extras. */

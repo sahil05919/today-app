@@ -139,6 +139,14 @@ export function diffHistory(prev: AppData, next: AppData, now: number): HistoryE
     for (const b of prev.occurrences ?? []) if (!after.has(b.key) && b.status === "done") ev("reopened", b, now);
   }
 
+  // Time you logged by typing ("spent 2 hrs building the app") is work done; taking it back reopens it.
+  if (prev.worklog !== next.worklog) {
+    const before = new Set((prev.worklog ?? []).map((w) => w.id));
+    const after = new Set((next.worklog ?? []).map((w) => w.id));
+    for (const w of next.worklog ?? []) if (!before.has(w.id)) add({ kind: "done", type: "task", key: `log:${w.id}`, title: w.title, date: w.date, createdByMe: true, at: w.at });
+    for (const w of prev.worklog ?? []) if (!after.has(w.id)) add({ kind: "reopened", type: "task", key: `log:${w.id}`, title: w.title, date: w.date, createdByMe: true });
+  }
+
   // Calendar and own events you ticked off (stored on this phone only).
   if (prev.eventMarks !== next.eventMarks) {
     const names = new Map([...(next.events ?? []), ...(next.calendarEvents ?? [])].map((e) => [eventMarkKey(e), e.title]));

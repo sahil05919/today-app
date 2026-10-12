@@ -53,7 +53,7 @@ import { withLetter } from "./letters";
 import { applyPull, lighterLine, type PullCandidate } from "./lighten";
 import { ensureLifeSeries } from "./lifeAdmin";
 import { addCustomSource, setTick, toggleHidden, toggleWeekly } from "./sideWork";
-import type { AppData, AppNote, Bill, BoredIdea, CheckResult, EventMark, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
+import type { AppData, AppNote, Bill, SubLabel, WorkLog, BoredIdea, CheckResult, EventMark, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
 /**
@@ -1096,6 +1096,27 @@ export const actions = {
   removeCleared(group: string) {
     const d = ensure();
     commit({ ...d, cleared: (d.cleared ?? []).filter((c) => c.group !== group) });
+  },
+
+  /** Time you typed in ("spent 2 hrs building the app"): saved as a done entry under Other. Returns it (for Undo). */
+  addWorkLog(entry: WorkLog): WorkLog {
+    const d = ensure();
+    commit({ ...d, worklog: [...(d.worklog ?? []), entry].slice(-1000) });
+    return entry;
+  },
+
+  removeWorkLog(id: string) {
+    const d = ensure();
+    commit({ ...d, worklog: (d.worklog ?? []).filter((w) => w.id !== id) });
+  },
+
+  /** Corrects which sub-label (Building, Chores, Admin, Learning, Other) an entry of Other work belongs to. */
+  setOtherLabel(entryKey: string, sub: SubLabel) {
+    const d = ensure();
+    if (entryKey.startsWith("log:")) {
+      const id = entryKey.slice(4);
+      commit({ ...d, worklog: (d.worklog ?? []).map((w) => (w.id === id ? { ...w, sub } : w)) });
+    } else commit({ ...d, workSubs: { ...(d.workSubs ?? {}), [entryKey]: sub } });
   },
 
   /** "app: …" in Capture: saved to Settings → App notes, never a task. Returns the note (for Undo). */

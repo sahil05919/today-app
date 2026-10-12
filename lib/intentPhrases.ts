@@ -5,6 +5,7 @@
  */
 import { isAppNote } from "./appNotes";
 import { parseClear } from "./clearParse";
+import { parseLogged } from "./workLog";
 
 const norm = (t: string) =>
   t
@@ -37,12 +38,13 @@ export function isLightenIntent(text: string): boolean {
 }
 
 /** A title that is really a command (so a task with this title is a leftover, never something to plan). */
-export const isCommandTitle = (text: string) => isLightenIntent(text) || isAppNote(text);
+export const isCommandTitle = (text: string) => isLightenIntent(text) || isAppNote(text) || parseLogged(text, new Date()) !== null || parseClear(text, new Date()) !== null;
 
 /** What a typed line means when it is not a task: "lighten" (work done, I'm free…), "app" (a note for the app: "app: …"). */
-export type Intent = "lighten" | "app" | "clear";
+export type Intent = "lighten" | "app" | "clear" | "log";
 export function intentOf(text: string): Intent | null {
   if (isAppNote(text)) return "app";
   if (parseClear(text, new Date()) !== null) return "clear";
+  if (parseLogged(text, new Date()) !== null) return "log";
   return isLightenIntent(text) ? "lighten" : null;
 }

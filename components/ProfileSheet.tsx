@@ -448,6 +448,7 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
             <Time label="Tea / food break from" value={p.breakStart} onChange={(v) => set("breakStart", v)} />
             <Time label="Break until" value={p.breakEnd} onChange={(v) => set("breakEnd", v)} />
             <Time label="Earliest auto-planning time" value={p.earliestAuto} onChange={(v) => set("earliestAuto", v)} />
+            <Num label="Other work target (hours a week, 0 = none)" value={p.otherHours} min={0} max={40} onChange={(v) => set("otherHours", v)} />
             <Num label="Buffer between things (min)" value={p.bufferMin} min={0} max={60} onChange={(v) => set("bufferMin", v)} />
             <Num label="Evening limit (minutes)" value={p.eveningCapMin} min={30} max={480} onChange={(v) => set("eveningCapMin", v)} />
             <Num label="Office commute, each way (min)" value={p.officeCommuteMin} min={0} max={240} onChange={(v) => set("officeCommuteMin", v)} />

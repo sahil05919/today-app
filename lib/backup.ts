@@ -173,6 +173,7 @@ function cleanSeries(v: any): Series[] | undefined {
   return out;
 }
 
+const SUB_LABELS = ["Building", "Chores", "Admin", "Learning", "Other"];
 const HIST_KINDS = ["done", "skipped", "missed", "rescheduled", "reopened", "pulled", "cleared"];
 const HIST_TYPES = ["session", "task", "event", "bill", "routine"];
 
@@ -236,6 +237,7 @@ function cleanWeeks(v: any): WeekSnapshot[] | undefined {
       events: { handled: Number.isFinite(w.events?.handled) ? w.events.handled : 0, names: Array.isArray(w.events?.names) ? w.events.names.filter((x: unknown) => typeof x === "string").slice(0, 40).map((x: string) => x.slice(0, 80)) : [] },
       focus: Array.isArray(w.focus) ? w.focus.filter((x: unknown) => typeof x === "string").slice(0, 4) : [],
       text: String(w.text ?? "").slice(0, 3000),
+      other: Number.isFinite(w.other?.minutes) ? { minutes: Math.max(0, Math.round(w.other.minutes)), target: Number.isFinite(w.other.target) ? Math.max(0, Math.round(w.other.target)) : 0 } : undefined,
     }));
 }
 
@@ -563,6 +565,7 @@ function cleanProfile(p: any): Profile {
       writeCalendarId: typeof p.writeCalendarId === "string" && /^\d{1,12}$/.test(p.writeCalendarId) ? p.writeCalendarId : undefined,
       planMirror: bool(p.planMirror),
       earliestAuto: hhmm(p.earliestAuto),
+      otherHours: n(p.otherHours, 0, 40),
       planCalendarId: typeof p.planCalendarId === "string" && /^\d{1,12}$/.test(p.planCalendarId) ? p.planCalendarId : undefined,
       inboxCalendarId: typeof p.inboxCalendarId === "string" && /^\d{1,12}$/.test(p.inboxCalendarId) ? p.inboxCalendarId : undefined,
       officeDays: days(p.officeDays),
@@ -628,6 +631,16 @@ export function migrate(raw: unknown): AppData {
     occurrences: cleanOccurrences(r.occurrences),
     history: cleanHistory(r.history),
     sideWork: cleanSideWork(r.sideWork),
+    worklog: Array.isArray(r.worklog)
+      ? r.worklog
+          .filter((w: any) => w && isISO(w.date) && Number.isFinite(w.minutes) && w.minutes > 0 && typeof w.title === "string")
+          .slice(-1000)
+          .map((w: any) => ({ id: str(w.id, 64) || crypto.randomUUID(), date: w.date, minutes: Math.min(960, Math.round(w.minutes)), title: w.title.slice(0, 80), sub: SUB_LABELS.includes(w.sub) ? w.sub : "Other", at: num(w.at) ?? Date.now() }))
+      : undefined,
+    workSubs:
+      r.workSubs && typeof r.workSubs === "object"
+        ? (Object.fromEntries(Object.entries(r.workSubs).filter(([k, v]) => k.length < 120 && SUB_LABELS.includes(v as string)).slice(-500)) as Record<string, any>)
+        : undefined,
     cleared: Array.isArray(r.cleared)
       ? r.cleared
           .filter((c: any) => c && isISO(c.date) && Number.isFinite(c.start) && Number.isFinite(c.end) && c.end > c.start)

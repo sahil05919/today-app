@@ -14,7 +14,9 @@ const base = (over: Partial<AppData> = {}): AppData => withoutLife(seedIfNeeded(
 /** These tests are not about life admin: the seeded pack is taken out so it cannot take up room in their days. */
 const withoutLife = (d: AppData): AppData => ({ ...d, series: (d.series ?? []).filter((s) => !s.lifeId) });
 
-const log = (areaId: string, date: string, n = 1): SessionLog => ({ id: `${areaId}${date}${n}`, areaId, date, minutes: 30, n, at: new Date(date + "T19:00:00").getTime(), source: "checkin" });
+// A session is logged at its area's own length (that is what the app does), so the minutes-based percentage is exact.
+const AREA_MIN: Record<string, number> = { powerbi: 60, meditation: 15, job: 40, english: 20, walking: 35 };
+const log = (areaId: string, date: string, n = 1): SessionLog => ({ id: `${areaId}${date}${n}`, areaId, date, minutes: AREA_MIN[areaId] ?? 30, n, at: new Date(date + "T19:00:00").getTime(), source: "checkin" });
 const count = (plan: ReturnType<typeof planSessions>, id: string) => plan.filter((s) => s.areaId === id && !s.done).length;
 const hm = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
@@ -93,24 +95,30 @@ describe("an off day lightens the day and spreads the rest", () => {
 });
 
 describe("progress: one glance", () => {
-  it("one number: sessions done against the weekly targets", () => {
-    expect(weeklyPercent(base(), "2026-10-07")).toEqual({ pct: 0, done: 0, target: 25 });
+  // Minutes: 4×60 + 3×15 + 5×40 + 7×20 + 6×35 = 835 for the tracked areas, plus Other's 5 hours (300) = 1135.
+  it("one number, in minutes: every area against its target, Other included", () => {
+    expect(weeklyPercent(base(), "2026-10-07")).toEqual({ pct: 0, done: 0, target: 1135, bonus: 0 });
     const d = base({ sessions: [log("powerbi", "2026-10-05"), log("powerbi", "2026-10-06", 2), log("powerbi", "2026-10-07", 3)] });
-    expect(weeklyPercent(d, "2026-10-07")).toEqual({ pct: 12, done: 3, target: 25 });
+    expect(weeklyPercent(d, "2026-10-07")).toEqual({ pct: 16, done: 180, target: 1135, bonus: 0 });
   });
 
-  it("an area can't count past its own target", () => {
+  it("an area can't count past its own target; the extra is a bonus and never pushes the percentage up", () => {
     const many = ["05", "06", "07", "08", "09", "10"].map((x, i) => log("powerbi", `2026-10-${x}`, i + 1));
-    expect(weeklyPercent(base({ sessions: many }), "2026-10-10").done).toBe(4);
+    const p = weeklyPercent(base({ sessions: many }), "2026-10-10");
+    expect(p.done).toBe(240);
+    expect(p.bonus).toBe(120);
   });
 
-  it("a whole week of targets is 100%", () => {
+  it("a whole week of targets, plus Other's 5 hours, is 100% (and more never passes it)", () => {
     const rows = weekProgress(base(), "2026-10-07");
     const sessions: SessionLog[] = [];
     rows.forEach((r) => {
       for (let i = 0; i < r.target; i++) sessions.push(log(r.area.id, `2026-10-${String(5 + i).padStart(2, "0")}`, i + 1));
     });
-    expect(weeklyPercent(base({ sessions }), "2026-10-11").pct).toBe(100);
+    const week = base({ sessions });
+    expect(weeklyPercent(week, "2026-10-11").pct).toBe(Math.round((835 / 1135) * 100)); // Other not done yet
+    const full = { ...week, worklog: [{ id: "w1", date: "2026-10-08", minutes: 420, title: "Building app", sub: "Building" as const, at: 1 }] };
+    expect(weeklyPercent(full, "2026-10-11")).toMatchObject({ pct: 100, bonus: 120 });
   });
 
   it("dots: ●●●○ for 3 of 4", () => {
@@ -168,7 +176,8 @@ describe("one encouraging line a day", () => {
     rows.forEach((r) => {
       for (let i = 0; i < r.target; i++) sessions.push(log(r.area.id, `2026-10-${String(5 + i).padStart(2, "0")}`, i + 1));
     });
-    expect(encouragement(base({ sessions }), "2026-10-11")).toMatch(/week|done|target/i);
+    const done = { ...base({ sessions }), worklog: [{ id: "w1", date: "2026-10-08", minutes: 300, title: "Building app", sub: "Building" as const, at: 1 }] };
+    expect(encouragement(done, "2026-10-11")).toMatch(/week|done|target/i);
   });
   it("never nags", () => {
     const d = base();

@@ -4,6 +4,8 @@ import { aiEnabled, chooseAmong, interpret } from "@/lib/ai";
 import { diffDays, friendlyDate, toISO } from "@/lib/dates";
 import { appNoteText } from "@/lib/appNotes";
 import { clearSuggestions, parseClear } from "@/lib/clearParse";
+import { fmtMinutes } from "@/lib/other";
+import { parseLogged, toWorkLog } from "@/lib/workLog";
 import { intentOf } from "@/lib/intentPhrases";
 import { correctTick, tickFromText, type TickResult } from "@/lib/doneRun";
 import { matchDone } from "@/lib/doneText";
@@ -71,6 +73,20 @@ export function Capture({
   const intent = intentOf(text);
   const typed = useDeferredValue(text);
   const parsed = useMemo(() => (typed.trim() && !intentOf(typed) ? understand(typed, data, new Date()) : null), [typed, data]);
+
+  /** "spent 2 hrs building the app": time already spent, saved as done under Other (or as a session when it names a tracked area). */
+  const saveLogged = (value: string) => {
+    const l = parseLogged(value, new Date(), getData());
+    if (!l) return;
+    const area = l.areaId ? ctx.profile.areas.find((a) => a.id === l.areaId) : undefined;
+    if (area) {
+      const s = actions.addSession(area.id, l.date);
+      if (s) ctx.notify(`Logged ${area.name} session ✓`, () => actions.removeSession(s.id));
+      return;
+    }
+    const w = actions.addWorkLog(toWorkLog(l));
+    ctx.notify(`Logged ${fmtMinutes(w.minutes)} — ${w.title} ✓`, () => actions.removeWorkLog(w.id));
+  };
 
   /** "clear until 7pm": an action, never a task. A window it understood goes to the preview; otherwise the range picker opens, prefilled. */
   const startClear = (value: string) => {
@@ -205,6 +221,7 @@ export function Capture({
     const kind = intentOf(value);
     if (kind === "app") return saveAppNote(value);
     if (kind === "clear") return startClear(value);
+    if (kind === "log") return saveLogged(value);
     if (kind === "lighten") {
       onLighten?.();
       return;
@@ -276,7 +293,7 @@ export function Capture({
       )}
       {intent && !voiceOpen && (
         <p className="mb-2 rounded-xl bg-accent-soft px-3 py-2 text-sm font-medium" role="status">
-          {intent === "clear" ? "✨ That's a request, not a task: Enter shows what clearing it would move." : intent === "app" ? `✨ That's a request, not a task: Enter saves it to App notes (“${appNoteText(text).slice(0, 60)}”).` : "✨ That's a request, not a task: Enter opens Lighten my week."}
+          {intent === "clear" ? "✨ That's a request, not a task: Enter shows what clearing it would move." : intent === "log" ? "✨ That's time you already spent: Enter logs it as done (under Other)." : intent === "app" ? `✨ That's a request, not a task: Enter saves it to App notes (“${appNoteText(text).slice(0, 60)}”).` : "✨ That's a request, not a task: Enter opens Lighten my week."}
         </p>
       )}
       {parsed && !voiceOpen && (
@@ -304,6 +321,12 @@ export function Capture({
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (intent === "log") {
+            const value = text;
+            setText("");
+            saveLogged(value);
+            return;
+          }
           if (intent === "clear") {
             const value = text;
             setText("");

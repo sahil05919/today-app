@@ -4,6 +4,8 @@ import { latestByKey } from "./history";
 import { toMin, withDefaults } from "./profile";
 import { planWeek, SESSION_CAP } from "./schedule";
 import { getOccurrences, withRepeats } from "./series";
+import { otherLine, otherWeek, type OtherWeek } from "./other";
+import { weeklyPercent } from "./progress";
 import { weekProgress } from "./sessions";
 import { weekStart } from "./stats";
 import type { AppData, HistoryEvent, ISODate, Task, WeekSnapshot } from "./types";
@@ -45,6 +47,8 @@ export interface WeekStats {
   pulled: number;
   /** All sessions: done (capped at each target) over all targets, 0–100. */
   percent: number;
+  /** "Other work" that week (minutes, target, breakdown). */
+  other: OtherWeek;
 }
 
 const dayOf = (ms: number) => toISO(new Date(ms));
@@ -106,7 +110,9 @@ export function weekStats(data: AppData, week: ISODate, today: ISODate = toISO(n
     moved: count("rescheduled"),
     // Each pull counts (a later tick of the same item must not hide it).
     pulled: new Set(events.filter((e) => e.kind === "pulled").map((e) => `${e.key}|${e.date}`)).size,
-    percent: target ? Math.round((got / target) * 100) : 0,
+    // Measured in minutes, the same as the number on Today: tracked areas and Other, each capped at its own target.
+    percent: weeklyPercent(data, current ? today : end).pct,
+    other: otherWeek(data, start),
   };
 }
 
@@ -232,6 +238,7 @@ export function soFarText(s: WeekStats, name: string, suggestions: CatchUp[]): T
   else if (s.areas.length) lines.push("Nothing is behind. You are right on target.");
   if (suggestions.length) lines.push(`If you would like to close the gap, a light weekend could take ${list(suggestions.map((c) => `${c.name} on ${c.label.replace("Add to ", "")}`))}. Nothing is added unless you tap.`);
   else if (behindRows.length) lines.push("The weekend stays light. Whatever is left simply rolls into next week's plan.");
+  if (s.other.minutes || s.other.target) lines.push(`${otherLine(s.other)}.`);
   if (s.pulled) lines.push(pulledLine(s.pulled));
   return { headline, lines };
 }
@@ -255,6 +262,7 @@ export function yourWeekText(s: WeekStats, prev: WeekStats, name: string): Text 
   if (sl.length) lines.push(`Slipped: ${shortList(sl.sort((a, b) => b.target - b.done - (a.target - a.done)))}.`);
   lines.push(`You added ${s.own.added}, finished ${s.own.finished}${s.own.names.length ? `: ${list(s.own.names.slice(0, 6))}${s.own.names.length > 6 ? ` and ${s.own.names.length - 6} more` : ""}` : ""}.`);
   if (s.events.handled) lines.push(`Calendar events handled: ${list(s.events.names.slice(0, 5))}.`);
+  if (s.other.minutes || s.other.target) lines.push(`${otherLine(s.other)}.`);
   if (s.pulled) lines.push(pulledLine(s.pulled));
   const moves = compare(s, prev).filter((c) => c.arrow !== "=");
   if (moves.length) lines.push(`Against last week: ${moves.map((c) => `${c.name} ${c.arrow}`).join(", ")}.`);
@@ -279,6 +287,7 @@ export function snapshotOf(data: AppData, week: ISODate, kind: WeekSnapshot["kin
     own: { added: s.own.added, finished: s.own.finished, names: s.own.names.slice(0, 40) },
     events: { handled: s.events.handled, names: s.events.names.slice(0, 40) },
     focus: kind === "your-week" ? focusFor(s).map((a) => a.id) : [],
+    other: { minutes: s.other.minutes, target: s.other.target },
     text: [t.headline, ...t.lines].join("\n"),
   };
 }
