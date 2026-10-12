@@ -22,7 +22,7 @@ export function LetterCard({ data, today }: { data: AppData; today: ISODate }) {
   }
   return (
     <section aria-label="Your week in a letter" className="rounded-2xl bg-accent-soft p-4">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-accent">Your week in a letter</h3>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-accent">A note from your coach</h3>
       <div className="space-y-2.5 text-[15px] leading-relaxed">
         {letter.text.split(/\n{2,}/).map((para, i) => (
           <p key={i} className="whitespace-pre-line break-words">

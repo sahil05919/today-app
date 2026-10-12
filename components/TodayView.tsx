@@ -7,6 +7,7 @@ import { overload } from "@/lib/load";
 import { computeNudges, nudgeKey } from "@/lib/nudges";
 import { paceStatus } from "@/lib/pace";
 import { pileUp } from "@/lib/pileup";
+import { toMin } from "@/lib/profile";
 import { weeklyPercent } from "@/lib/progress";
 import { actions } from "@/lib/store";
 import { weekStart } from "@/lib/stats";
@@ -89,6 +90,7 @@ export function TodayView({
 
   const s = data.settings;
   const reviewDue = now.getDay() === 0 && s.reviewWeek !== weekStart(ctx.today);
+  const sofarDue = now.getDay() === 5 && ctx.profile.notify.weekSoFar && s.sofarWeek !== weekStart(ctx.today) && now.getHours() * 60 + now.getMinutes() >= toMin(ctx.profile.fridayReviewTime);
   const balance = now.getDay() >= 3 || now.getDay() === 0 ? balanceNudge(data, ctx.today) : null;
   const balanceDue = !!balance && s.balanceWeek !== weekStart(ctx.today);
   const conscience = computeNudges(data, now)[0];
@@ -155,7 +157,9 @@ export function TodayView({
       </div>
     );
   } else if (reviewDue) {
-    banner = <Nudge emoji="🗓️" title="Sunday review" body="See your week and decide what's still pending." action="Review" onAction={() => openPanel("review")} />;
+    banner = <Nudge emoji="🗓️" title="Your week" body="Wins, what slipped, and a focus for next week." action="Review" onAction={() => openPanel("review")} />;
+  } else if (sofarDue) {
+    banner = <Nudge emoji="📊" title="Week so far" body="Where you stand, and a light weekend plan if you want one." action="See it" onAction={() => openPanel("sofar")} />;
   } else if (conscience && data.profile?.notify.nudges !== false) {
     banner = (
       <div className="rounded-2xl bg-accent-soft p-3.5">

@@ -349,7 +349,8 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
             <Time label="Quote time" value={p.quoteTime} onChange={(v) => set("quoteTime", v)} />
             <Time label="End-of-day check" value={p.eveningWrap} onChange={(v) => set("eveningWrap", v)} />
             <Time label="Daily nudge" value={p.nudgeTime} onChange={(v) => set("nudgeTime", v)} />
-            <Time label="Sunday review" value={p.reviewTime} onChange={(v) => set("reviewTime", v)} />
+            <Time label="Friday “Week so far”" value={p.fridayReviewTime} onChange={(v) => set("fridayReviewTime", v)} />
+            <Time label="Sunday “Your week”" value={p.reviewTime} onChange={(v) => set("reviewTime", v)} />
             <Num label="Event heads-up (min before)" value={p.eventLeadMin} min={0} max={1440} onChange={(v) => set("eventLeadMin", v)} />
             <span />
             <Time label="Quiet from" value={p.quietStart} onChange={(v) => set("quietStart", v)} />

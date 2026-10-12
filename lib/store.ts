@@ -22,6 +22,7 @@ import {
   findTask,
   isOccId,
   makeSeries,
+  parseOccKey,
   restoreSnapshot,
   setOccSkipped,
   snapshotOf,
@@ -32,10 +33,11 @@ import {
 } from "./series";
 import { billKey } from "./bills";
 import { forget, learnFix, learnItem } from "./learn";
-import { taskEvent } from "./history";
+import { taskEvent, withHistory } from "./history";
 import { type BlockId } from "./busy";
 import { withMark } from "./fixed";
 import { BLOCK_LABEL, blockSpan, rippleNote, setBlock as applyBlock, skipBlock as applySkipBlock, tickBlock, type Scope } from "./ripple";
+import { catchUpTask, snapshotsDue } from "./weekly";
 import { applyReschedule, carryMissed, rescheduleNow, undoReschedule, type Dest, type RescheduleChoice, type RescheduleTarget } from "./reschedule";
 import { canTakeOffDay } from "./offday";
 import { withLetter } from "./letters";
@@ -178,12 +180,14 @@ export async function reloadFromStorage() {
   }
 }
 
-function commit(next: AppData) {
+function commit(next: AppData, opts: { history?: boolean } = {}) {
   // Android: never write before the saved data has been read, or we'd overwrite it with an empty list.
   if (native && !state) {
     console.warn("Ignored a change made before storage finished loading");
     return;
   }
+  // The history log appends whatever this change did (done, skipped, missed, rescheduled), see lib/history.ts.
+  if (state && opts.history !== false) next = withHistory(state, next);
   state = next;
   if (native) saveNative(next);
   else adapter.save(next);
@@ -282,9 +286,21 @@ export const actions = {
     mapTask(id, (t) => withPostponeCount(t, { due, dueTime: due ? dueTime : undefined }));
   },
 
+  /** Takes back a task that was just added (the Undo on "Added"). A repeat is removed as a whole, not just its first day. */
+  undoAdd(id: string) {
+    const d = ensure();
+    const o = parseOccKey(id);
+    if (o && !d.tasks.some((t) => t.id === id) && (d.series ?? []).some((s) => s.id === o.seriesId)) {
+      commit({ ...d, series: (d.series ?? []).filter((s) => s.id !== o.seriesId), occurrences: (d.occurrences ?? []).filter((r) => r.seriesId !== o.seriesId) });
+      return;
+    }
+    actions.remove(id);
+  },
+
   /** Puts a deleted task back (for Undo). */
   restore(task: Task) {
     const d = ensure();
+    if (isOccId(task.id) && !d.tasks.some((t) => t.id === task.id)) return commit(setOccSkipped(d, task.id, false));
     if (!d.tasks.some((t) => t.id === task.id)) commit({ ...d, tasks: [task, ...d.tasks] });
   },
 
@@ -402,6 +418,30 @@ export const actions = {
     const d = ensure();
     const next = carryMissed(sweepMissed(d, toISO(now)), now);
     if (next !== d) commit(next);
+  },
+
+  // --- The weekly review (see lib/weekly.ts) ----------------------------------------------------------------------
+  /** "Add to Sat" / "Add to Sun": one catch-up session, added only because you tapped. Returns an Undo. */
+  addCatchUp(c: { areaId: string; date: ISODate; minutes: number }, now: Date = new Date()): (() => void) | null {
+    const d = ensure();
+    const t = catchUpTask(d, c, now);
+    if (!t) return null;
+    commit({ ...d, tasks: [t, ...d.tasks] });
+    return () => actions.remove(t.id);
+  },
+
+  /** "Apply focus": next week's plan gives these areas first pick of the days. */
+  applyFocus(week: ISODate, areas: string[]) {
+    actions.settings({ focus: areas.length ? { week, areas } : undefined });
+  },
+
+  /** Saves the weekly snapshots that are due (finished weeks, Friday's "Week so far", Sunday's "Your week"). */
+  saveWeeks(now: Date = new Date()) {
+    const d = ensure();
+    const due = snapshotsDue(d, now);
+    if (!due.length) return;
+    const keys = new Set(due.map((w) => `${w.week}|${w.kind}`));
+    commit({ ...d, weeks: [...(d.weeks ?? []).filter((w) => !keys.has(`${w.week}|${w.kind}`)), ...due].sort((a, b) => a.week.localeCompare(b.week)).slice(-60) });
   },
 
   /**
@@ -843,6 +883,6 @@ export const actions = {
   },
 
   replaceAll(data: AppData) {
-    commit(data);
+    commit(data, { history: false });
   },
 };

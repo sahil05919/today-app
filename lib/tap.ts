@@ -21,7 +21,7 @@ export type TapResolution =
   | { k: "checkin"; taskId: string }
   | { k: "item"; it: TLItem; date: ISODate }
   | { k: "event"; e: FixedEvent }
-  | { k: "panel"; panel: "review" | "evening" | "feeling" | "quote" | "progress" }
+  | { k: "panel"; panel: "review" | "sofar" | "evening" | "feeling" | "quote" | "progress" }
   | { k: "gone"; message: string }
   | { k: "none" };
 
@@ -57,6 +57,7 @@ export const findEvent = (data: AppData, id: string): FixedEvent | undefined => 
 export function resolveTap(data: AppData, t: TapInfo, today: ISODate, now: Date = new Date()): TapResolution {
   if (t.kind === "wrap") return { k: "panel", panel: "evening" };
   if (t.kind === "review") return { k: "panel", panel: "review" };
+  if (t.kind === "sofar") return { k: "panel", panel: "sofar" };
   if (t.kind === "morning") return { k: "panel", panel: "feeling" };
   if (t.kind === "quote") return { k: "panel", panel: "quote" };
   if (t.kind === "nudge") return { k: "panel", panel: "progress" };

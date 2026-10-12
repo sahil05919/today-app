@@ -40,7 +40,8 @@ export function defaultProfile(): Profile {
     shortcuts: [],
     eventLeadMin: 60,
     nudgeTime: "21:00",
-    reviewTime: "18:30",
+    reviewTime: "21:00",
+    fridayReviewTime: "21:00",
     breakStart: "17:00",
     breakEnd: "18:00",
     bufferMin: 10,
@@ -50,7 +51,7 @@ export function defaultProfile(): Profile {
     wakeTime: "06:00",
     hideMic: false,
     calendarSync: true,
-    notify: { morning: true, taskCheckIns: true, wrap: true, reminders: true, slots: true, events: true, bills: true, nudges: true, review: true },
+    notify: { morning: true, taskCheckIns: true, wrap: true, reminders: true, slots: true, events: true, bills: true, nudges: true, review: true, weekSoFar: true },
   };
 }
 

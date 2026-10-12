@@ -234,7 +234,7 @@ describe("Sunday review", () => {
     const d = seeded({}, MON);
     const list = planNotifications(d, new Date(2026, 9, 9, 7, 0));
     const r = list.find((n) => n.key === "review:2026-10-11")!;
-    expect([r.kind, hm(r.at)]).toEqual(["review", "18:30"]);
+    expect([r.kind, hm(r.at)]).toEqual(["review", "21:00"]);
     const done = planNotifications({ ...d, settings: { ...d.settings, reviewWeek: "2026-10-05" } }, new Date(2026, 9, 9, 7, 0));
     expect(done.some((n) => n.key === "review:2026-10-11")).toBe(false);
   });

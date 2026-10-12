@@ -284,8 +284,10 @@ export interface Profile {
   eventLeadMin: number;
   /** When the daily "conscience" nudge (empty day, neglected area, behind target) is sent. */
   nudgeTime: string;
-  /** Sunday weekly review reminder. */
+  /** Sunday "Your week" review reminder (default 21:00). */
   reviewTime: string;
+  /** Friday "Week so far" reminder (default 21:00). */
+  fridayReviewTime: string;
   /** A protected tea / food break on weekdays; nothing is planned inside it. */
   breakStart: string;
   breakEnd: string;
@@ -318,7 +320,10 @@ export interface Profile {
     bills: boolean;
     /** Empty-day, neglected-area and behind-target nudges. */
     nudges: boolean;
+    /** Sunday "Your week". */
     review: boolean;
+    /** Friday "Week so far". */
+    weekSoFar: boolean;
   };
 }
 
@@ -533,6 +538,10 @@ export interface Settings {
   slotShifts?: Record<string, string>;
   /** The one-time "allow exact reminders" prompt has been shown. */
   exactAsked?: boolean;
+  /** Monday (ISO) of the week whose Friday "Week so far" was opened or dismissed. */
+  sofarWeek?: ISODate;
+  /** "Apply focus": these areas get earlier, first-pick slots in that week's plan. */
+  focus?: { week: ISODate; areas: string[] };
   /** Weekly targets already celebrated ("<Monday>:<areaId>"), so it happens once. */
   celebrated?: string[];
   /** The latest "target reached" card on Today, until it is answered. */

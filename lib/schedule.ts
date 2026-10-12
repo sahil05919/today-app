@@ -183,6 +183,8 @@ export function planSessions(raw: AppData, now: Date = new Date(), busyOverride?
     return false;
   };
 
+  const focus = new Set(data.settings.focus?.week === week[0] ? data.settings.focus.areas : []);
+
   // Plan the tightest areas first so flexible ones fill what's left.
   const needs = areas
     .map((a) => {
@@ -194,11 +196,13 @@ export function planSessions(raw: AppData, now: Date = new Date(), busyOverride?
       return { a, days, remaining, tight: days.length ? remaining / days.length : 0 };
     })
     .filter((x) => x.remaining > 0)
-    .sort((x, y) => y.tight - x.tight || (x.a.target!.order ?? 5) - (y.a.target!.order ?? 5));
+    // "Apply focus" (Your week → Focus for next week): those areas are placed first, before the others fill the days.
+    .sort((x, y) => Number(focus.has(y.a.id)) - Number(focus.has(x.a.id)) || y.tight - x.tight || (x.a.target!.order ?? 5) - (y.a.target!.order ?? 5));
 
   for (const { a, days, remaining } of needs) {
     // Evenly spaced picks across the days that are left, e.g. 4 of 5 weekdays, or Mon / Wed / Fri.
-    const picks = Array.from({ length: remaining }, (_, i) => days[Math.floor(((i + 0.5) * days.length) / remaining)]);
+    // A focus area takes the earliest days of the week instead, so it is not left to the end.
+    const picks = focus.has(a.id) ? days.slice(0, remaining) : Array.from({ length: remaining }, (_, i) => days[Math.floor(((i + 0.5) * days.length) / remaining)]);
     const used = new Set<ISODate>();
     for (const day of picks) {
       if (tryPlace(a, day)) {

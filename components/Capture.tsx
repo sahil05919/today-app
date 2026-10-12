@@ -141,7 +141,7 @@ export function Capture({
       source,
       note: planNote(d, task.due, task.title),
       teach: p.kind === "note" ? undefined : (teachSuggestion(p, d) ?? undefined),
-      undo: () => actions.remove(task.id),
+      undo: () => actions.undoAdd(task.id),
     };
   };
 
@@ -168,7 +168,7 @@ export function Capture({
         asTask: () => {
           if (t.receipt) actions.undoDone(t.receipt);
           const task = actions.addTask(understand(value.replace(/(done|kiya)/gi, "").trim() || value, getData(), new Date()), defaultDate);
-          setResult({ id: ++seq.current, kind: "task", title: task.title, taskId: task.id, source, undo: () => actions.remove(task.id) });
+          setResult({ id: ++seq.current, kind: "task", title: task.title, taskId: task.id, source, undo: () => actions.undoAdd(task.id) });
         },
       },
     };

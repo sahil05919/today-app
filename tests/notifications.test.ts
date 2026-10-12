@@ -153,7 +153,7 @@ describe("planNotifications", () => {
     );
     expect(list.some((n) => n.kind === "reminder")).toBe(false);
     const off = planNotifications(
-      data([task({ due: "2026-10-06", dueTime: "20:00" })], { rhythm: [], quoteEvery: 0, notify: { morning: false, taskCheckIns: false, wrap: false, reminders: false, slots: false, events: false, bills: false, nudges: false, review: false } }),
+      data([task({ due: "2026-10-06", dueTime: "20:00" })], { rhythm: [], quoteEvery: 0, notify: { morning: false, taskCheckIns: false, wrap: false, reminders: false, slots: false, events: false, bills: false, nudges: false, review: false, weekSoFar: false } }),
       NOW,
     );
     expect(off).toHaveLength(0);

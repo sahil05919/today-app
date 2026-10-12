@@ -1,13 +1,14 @@
 "use client";
 import { btn, Sheet, type Panel } from "./ui";
 
-/** Five things and a few kind words. Backup and appearance live inside Settings. */
+/** A few things and some kind words. Backup and appearance live inside Settings. */
 export function MenuSheet({ onClose, onPanel }: { onClose: () => void; onPanel: (p: Panel) => void }) {
   const items: Array<[Panel, string, string]> = [
     ["calendar", "📅", "Calendar"],
     ["shopping", "🛒", "Shopping list"],
     ["bills", "💳", "Bills & chores"],
     ["goals", "🎯", "Must-haves"],
+    ["reviews", "🗓️", "Weekly review"],
     ["quotes", "💛", "Quotes"],
   ];
   return (

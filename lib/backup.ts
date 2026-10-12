@@ -1,6 +1,7 @@
 import { isISO, toISO } from "./dates";
 import { downloadText } from "./ics";
 import { withDefaults } from "./profile";
+import { backfillHistory } from "./history";
 import { upgradeRecurring } from "./series";
 import type {
   AppData,
@@ -507,6 +508,7 @@ function cleanProfile(p: any): Profile {
       eventLeadMin: n(p.eventLeadMin, 0, 1440),
       nudgeTime: hhmm(p.nudgeTime),
       reviewTime: hhmm(p.reviewTime),
+      fridayReviewTime: hhmm(p.fridayReviewTime),
       breakStart: hhmm(p.breakStart),
       breakEnd: hhmm(p.breakEnd),
       bufferMin: n(p.bufferMin, 0, 60),
@@ -555,6 +557,7 @@ function cleanProfile(p: any): Profile {
               bills: bool(p.notify.bills),
               nudges: bool(p.notify.nudges),
               review: bool(p.notify.review),
+              weekSoFar: bool(p.notify.weekSoFar),
             }) as Profile["notify"])
           : undefined,
     }),
@@ -633,6 +636,8 @@ export function migrate(raw: unknown): AppData {
           ? (Object.fromEntries(Object.entries(s.snoozes).filter(([k, v]) => typeof v === "number" && v > 0 && k.length < 90).slice(0, 300)) as Record<string, number>)
           : undefined,
       exactAsked: s.exactAsked === true ? true : undefined,
+      sofarWeek: isISO(s.sofarWeek) ? s.sofarWeek : undefined,
+      focus: s.focus && isISO(s.focus.week) && Array.isArray(s.focus.areas) ? { week: s.focus.week, areas: s.focus.areas.filter((a: unknown) => typeof a === "string").slice(0, 4) } : undefined,
       planDate: isISO(s.planDate) ? s.planDate : undefined,
       wrapDate: isISO(s.wrapDate) ? s.wrapDate : undefined,
       reviewWeek: isISO(s.reviewWeek) ? s.reviewWeek : undefined,
@@ -642,7 +647,14 @@ export function migrate(raw: unknown): AppData {
     },
   };
   // Repeats used to be "finishing one creates the next". They are series now (lossless, and a no-op once converted).
-  return upgradeRecurring(out);
+  let upgraded = upgradeRecurring(out);
+  if (needsUpgrade(raw)) {
+    // The weekly review's history starts from what the older data already holds for this week.
+    if (!upgraded.history) upgraded = { ...upgraded, history: backfillHistory(upgraded) };
+    // The Sunday review used to default to 18:30; the new default for both reviews is 21:00. A changed time is left alone.
+    if (upgraded.profile && upgraded.profile.reviewTime === "18:30") upgraded = { ...upgraded, profile: { ...upgraded.profile, reviewTime: "21:00" } };
+  }
+  return upgraded;
 }
 
 /** True for data saved by an older build (before repeats became series): the raw copy must be backed up first. */

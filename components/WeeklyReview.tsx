@@ -1,9 +1,9 @@
 "use client";
 import { useMemo } from "react";
-import { addDays, dayOfMonth, formatMinutes, friendlyDate, weekdayShort } from "@/lib/dates";
+import { addDays, dayOfMonth, friendlyDate, weekdayShort } from "@/lib/dates";
 import { withRepeats } from "@/lib/series";
 import { actions } from "@/lib/store";
-import { bestDay, buildDurationModel, completionRate, estimateAccuracy, weekStart, weekSummary } from "@/lib/stats";
+import { bestDay, buildDurationModel, completionRate, estimateAccuracy, weekStart } from "@/lib/stats";
 import { billReminders } from "@/lib/bills";
 import { fromISO } from "@/lib/dates";
 import { firstDayWithRoom, pendingForReview } from "@/lib/pileup";
@@ -11,6 +11,7 @@ import { planSessions } from "@/lib/schedule";
 import { weekProgress } from "@/lib/sessions";
 import type { AppData, Task } from "@/lib/types";
 import { LetterCard } from "./LetterCard";
+import { YourWeekBody } from "./WeekSummary";
 import { btn, Chip, Sheet, type ViewCtx } from "./ui";
 
 /**
@@ -19,7 +20,6 @@ import { btn, Chip, Sheet, type ViewCtx } from "./ui";
  */
 export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewCtx; onClose: () => void }) {
   const tasks = useMemo(() => withRepeats(data, ctx.today).tasks, [data, ctx.today]);
-  const sum = useMemo(() => weekSummary(tasks, ctx.today), [tasks, ctx.today]);
   const nextMonday = addDays(weekStart(ctx.today), 7);
   const nextDays = Array.from({ length: 7 }, (_, i) => addDays(nextMonday, i));
   const open = tasks.filter((t) => t.status === "open");
@@ -47,9 +47,9 @@ export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewC
     ctx.notify(`${t.title}: ${friendlyDate(day, ctx.today).toLowerCase()}`);
   };
   const drop = (t: Task) => {
-    const copy = t;
-    actions.remove(t.id);
-    ctx.notify("Let go. One less thing.", () => actions.restore(copy));
+    // Skipping works for every kind (a repeat's day, a carried session, an ordinary task) and gives back an Undo.
+    const undo = actions.skipTask(t.id);
+    if (undo) ctx.notify("Let go. One less thing.", undo);
   };
 
   const assign = (t: Task, date: string) => {
@@ -59,30 +59,8 @@ export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewC
   return (
     <Sheet title="Your week" onClose={close}>
       <div className="space-y-6">
+        <YourWeekBody data={data} ctx={ctx} />
         <LetterCard data={data} today={ctx.today} />
-        {progress.length > 0 && (
-          <section>
-            <h3 className="mb-2 text-sm font-semibold">Sessions this week</h3>
-            <ul className="space-y-1.5">
-              {progress.map((r) => {
-                const met = r.done >= r.target;
-                return (
-                  <li key={r.area.id} className="flex items-center gap-2 text-[15px]">
-                    <span aria-hidden="true">{r.area.emoji}</span>
-                    <span className="min-w-0 flex-1 truncate">{r.area.name}</span>
-                    <span className={`tabular-nums ${met ? "font-semibold text-accent" : "text-muted"}`}>
-                      {met ? "✓ " : ""}
-                      {r.done} of {r.target}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-            {progress.some((r) => r.done < r.target) && (
-              <p className="mt-2 text-xs text-muted">Short of a target? That's information, not failure. Next week re-plans around what actually fits.</p>
-            )}
-          </section>
-        )}
 
         {(progress.length > 0 || nextEvents.length > 0 || nextBills.length > 0) && (
           <section>
@@ -115,29 +93,6 @@ export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewC
             )}
           </section>
         )}
-
-        <section>
-          <h3 className="mb-2 text-sm font-semibold">Done this week</h3>
-          {sum.done.length ? (
-            <>
-              <p className="text-sm text-muted">
-                {sum.done.length} {sum.done.length === 1 ? "thing" : "things"} finished
-                {sum.minutes ? `, ${formatMinutes(sum.minutes)} of tracked focus` : ""}. That counts.
-              </p>
-              <ul className="mt-2 space-y-1 text-[15px]">
-                {sum.done.slice(0, 5).map((t) => (
-                  <li key={t.id} className="flex gap-2">
-                    <span className="text-accent">✓</span>
-                    <span className="truncate">{t.title}</span>
-                  </li>
-                ))}
-                {sum.done.length > 5 && <li className="text-sm text-muted">…and {sum.done.length - 5} more</li>}
-              </ul>
-            </>
-          ) : (
-            <p className="text-sm text-muted">Nothing ticked off yet this week, and that's fine. A fresh week is coming.</p>
-          )}
-        </section>
 
         <section>
           <h3 className="mb-1 text-sm font-semibold">Still pending{pending.length ? ` · ${pending.length}` : ""}</h3>

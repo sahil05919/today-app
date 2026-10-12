@@ -23,7 +23,7 @@ import type { AppData, ISODate, Profile, Task } from "../types";
  * Works out every notification the app should have scheduled, as plain data.
  * Pure and offline, so it's easy to test; `native.ts` turns the result into real Android notifications.
  */
-export type NotifKind = "morning" | "checkin" | "wrap" | "reminder" | "slot" | "session" | "chore" | "nudge" | "event" | "bill" | "review" | "timer" | "quote";
+export type NotifKind = "morning" | "checkin" | "wrap" | "reminder" | "slot" | "session" | "chore" | "nudge" | "event" | "bill" | "review" | "sofar" | "timer" | "quote";
 
 export interface PlannedNotification {
   /** Stable key, e.g. "morning:2026-10-07". Same key = same notification across reschedules. */
@@ -263,8 +263,21 @@ export function planNotifications(raw: AppData, now: Date = new Date()): Planned
         key: `review:${day}`,
         at: at(day, p.reviewTime),
         kind: "review",
-        title: "Sunday review",
-        body: `Your week in a letter is ready, ${name}.`,
+        title: "Your week",
+        body: `Your week is ready, ${name}: wins, what slipped, and a focus for next week.`,
+        actions: false,
+        exact: false,
+      });
+    }
+
+    // --- Friday: "Week so far" (done / target, what is behind, light weekend catch-ups you can accept) ---
+    if (p.notify.weekSoFar && dow === 5 && data.settings.sofarWeek !== weekStart(day)) {
+      push({
+        key: `sofar:${day}`,
+        at: at(day, p.fridayReviewTime),
+        kind: "sofar",
+        title: "Week so far",
+        body: `See where your week stands, ${name}. A light weekend can close any gap, if you want.`,
         actions: false,
         exact: false,
       });

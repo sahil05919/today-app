@@ -8,7 +8,7 @@ import { applyOccTask, findTask, isOccId, recordOf, withRepeats } from "./series
 import { choreKey, entryFor, sessionKey } from "./sessions";
 import { weekStart } from "./stats";
 import { buildTimeline, type TLItem } from "./timeline";
-import type { AppData, DayEntry, ISODate, Occurrence, Task, TaskOrigin } from "./types";
+import type { AppData, DayEntry, ISODate, Occurrence, Task } from "./types";
 
 /**
  * Reschedule: the one way to move something. It replaces Snooze everywhere.

@@ -12,6 +12,7 @@ import { isQuoteDay, quoteStateOf } from "@/lib/quoteBag";
 import { dateInKey, resolveTap } from "@/lib/tap";
 import { settleNote, settleOverflow } from "@/lib/settle";
 import { findTask } from "@/lib/series";
+import { weekStart } from "@/lib/stats";
 import { actions, getData, useData } from "@/lib/store";
 import { buildTimeline, firstThing, isNight } from "@/lib/timeline";
 import type { ISODate, Task } from "@/lib/types";
@@ -38,6 +39,7 @@ import { TaskSheet } from "./TaskSheet";
 import { TimerBar } from "./TimerBar";
 import { TimerWatcher } from "./TimerWatcher";
 import { TodayView, type OpenRequest } from "./TodayView";
+import { ReviewsSheet, WeekSoFarSheet } from "./ReviewsSheet";
 import { WeeklyReview } from "./WeeklyReview";
 import { WhenSheet } from "./WhenSheet";
 import { type Panel, type ViewCtx } from "./ui";
@@ -201,6 +203,12 @@ export default function App() {
     if (loaded && sunday) void ensureLetter();
   }, [loaded, sunday, today]);
 
+  // The weekly snapshots (finished weeks, Friday's "Week so far", Sunday's "Your week") are saved as they come due.
+  const quarter = Math.floor(minuteKey / 15);
+  useEffect(() => {
+    if (loaded) actions.saveWeeks();
+  }, [loaded, today, quarter]);
+
   // Each new day (and on start): older unresolved repeats are logged as missed; only the latest carries forward.
   useEffect(() => {
     if (loaded) actions.sweep();
@@ -319,6 +327,8 @@ export default function App() {
       {panel === "adjust" && <AdjustSheet data={data} ctx={ctx} onClose={closePanel} />}
       {panel === "ideas" && <IdeasSheet data={data} ctx={ctx} onClose={closePanel} />}
       {panel === "review" && <WeeklyReview data={data} ctx={ctx} onClose={closePanel} />}
+      {panel === "sofar" && <WeekSoFarSheet data={data} ctx={ctx} onClose={closePanel} onDone={() => actions.settings({ sofarWeek: weekStart(today) })} />}
+      {panel === "reviews" && <ReviewsSheet data={data} ctx={ctx} onClose={closePanel} openPanel={setPanel} />}
       {panel === "feeling" && <FeelingSheet data={data} ctx={ctx} onClose={closePanel} />}
       {panel === "quotes" && <QuotesSheet onClose={closePanel} />}
       {panel === "quote" && <QuoteCard date={quoteDate} onClose={closePanel} />}

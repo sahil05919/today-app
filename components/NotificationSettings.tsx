@@ -22,7 +22,8 @@ const TOGGLES: [keyof Profile["notify"], string, string][] = [
   ["events", "Fixed events", "A heads-up before they start"],
   ["bills", "Bills & chores", "Rent, card, clean room, grocery run"],
   ["nudges", "Gentle nudges", "Empty day, neglected area, behind target"],
-  ["review", "Sunday review", "A reminder to look back and plan ahead"],
+  ["weekSoFar", "Friday “Week so far”", "Where you stand, and light weekend catch-ups only if you tap"],
+  ["review", "Sunday “Your week”", "Wins, what slipped, your own tasks and a focus for next week"],
 ];
 
 /** Android-only: notification permissions, exact alarms and battery optimisation, with plain-English help. */
