@@ -53,7 +53,7 @@ import { withLetter } from "./letters";
 import { applyPull, lighterLine, type PullCandidate } from "./lighten";
 import { ensureLifeSeries } from "./lifeAdmin";
 import { addCustomSource, setTick, toggleHidden, toggleWeekly } from "./sideWork";
-import type { AppData, AppNote, Bill, SubLabel, WorkLog, BoredIdea, CheckResult, EventMark, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
+import type { AppData, AppNote, Bill, Learning, SubLabel, WorkLog, BoredIdea, CheckResult, EventMark, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
 /**
@@ -1098,6 +1098,34 @@ export const actions = {
   removeCleared(group: string) {
     const d = ensure();
     commit({ ...d, cleared: (d.cleared ?? []).filter((c) => c.group !== group) });
+  },
+
+  // --- The learning log (lib/learning.ts) ---
+  addLearning(areaId: string, text: string, date: ISODate = todayISO(), now: Date = new Date()): Learning | null {
+    const clean = text.replace(/\s+/g, " ").trim().slice(0, 500);
+    if (!clean) return null;
+    const d = ensure();
+    const l: Learning = { id: uid(), date, areaId, text: clean, at: now.getTime() };
+    commit({ ...d, learnings: [...(d.learnings ?? []), l].slice(-500) });
+    return l;
+  },
+
+  updateLearning(id: string, text: string) {
+    const d = ensure();
+    const clean = text.replace(/\s+/g, " ").trim().slice(0, 500);
+    if (clean) commit({ ...d, learnings: (d.learnings ?? []).map((l) => (l.id === id ? { ...l, text: clean } : l)) });
+  },
+
+  removeLearning(id: string) {
+    const d = ensure();
+    commit({ ...d, learnings: (d.learnings ?? []).filter((l) => l.id !== id) });
+  },
+
+  /** The post was shared: those learnings are "used" and no longer count towards the next post. */
+  markLearningsUsed(ids: string[], now: Date = new Date()) {
+    const d = ensure();
+    const set = new Set(ids);
+    commit({ ...d, learnings: (d.learnings ?? []).map((l) => (set.has(l.id) ? { ...l, usedAt: now.getTime() } : l)) });
   },
 
   /** Time you typed in ("spent 2 hrs building the app"): saved as a done entry under Other. Returns it (for Undo). */

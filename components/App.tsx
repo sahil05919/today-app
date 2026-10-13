@@ -26,7 +26,7 @@ import { dayDoneState } from "@/lib/lighten";
 import { notifyDayDone } from "@/lib/notifications/native";
 import { actions, getData, useData } from "@/lib/store";
 import { buildTimeline, firstThing, isNight } from "@/lib/timeline";
-import type { ISODate, Task } from "@/lib/types";
+import type { ISODate, SessionLog, Task } from "@/lib/types";
 import { AdjustSheet } from "./AdjustSheet";
 import { AlarmRinger } from "./AlarmRinger";
 import { CalendarSheet } from "./CalendarSheet";
@@ -36,6 +36,8 @@ import { CheckIn } from "./CheckIn";
 import { EveningWrap } from "./EveningWrap";
 import { IdeasSheet } from "./IdeasSheet";
 import { BackupsSheet } from "./BackupSettings";
+import { LearningLogSheet, LearningPrompt } from "./Learning";
+import { learnPromptFor } from "@/lib/learning";
 import { LightenSheet } from "./LightenSheet";
 import { ShareEventSheet } from "./ShareEventSheet";
 import { SideWorkSheet } from "./SideWorkSheet";
@@ -111,6 +113,9 @@ export default function App() {
   const [share, setShare] = useState<ParsedShare | null>(null);
   const [invite, setInvite] = useState<IcsEvent[] | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // "What did you learn?": right after a session of a chosen area is done (not on load, not for backfilled days). A prompt, not a notification.
+  const [learnFor, setLearnFor] = useState<SessionLog | null>(null);
+  const seenSessions = useRef<{ list: SessionLog[] } | null>(null);
 
   const notify = useCallback((msg: string, undo?: () => void) => {
     setToast({ msg, undo });
@@ -223,6 +228,17 @@ export default function App() {
   const minuteKey = Math.floor(now.getTime() / 60_000);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const tl = useMemo(() => (data ? timed("planner: buildTimeline(today)", () => buildTimeline(data, today, new Date(minuteKey * 60_000))) : null), [data, today, minuteKey]);
+
+  const sessionsNow = data?.sessions;
+  useEffect(() => {
+    if (!data) return;
+    const before = seenSessions.current;
+    seenSessions.current = { list: data.sessions ?? [] };
+    if (!before) return; // the first look at the data: nothing in it is new
+    const l = learnPromptFor(before.list, data.sessions, data, new Date());
+    if (l) setLearnFor(l);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionsNow]);
 
   // Tasks the Gmail add-on sent (lib/inboxRun.ts): say so once, then forget it.
   const addedFromGmail = data?.settings.inboxAdded;
@@ -426,6 +442,8 @@ export default function App() {
       {panel === "reviews" && <ReviewsSheet data={data} ctx={ctx} onClose={closePanel} openPanel={setPanel} />}
       {panel === "feeling" && <FeelingSheet data={data} ctx={ctx} onClose={closePanel} />}
       {panel === "quotes" && <QuotesSheet onClose={closePanel} />}
+      {panel === "learning" && <LearningLogSheet data={data} ctx={ctx} onClose={closePanel} />}
+      {learnFor && <LearningPrompt log={learnFor} data={data} ctx={ctx} onClose={() => setLearnFor(null)} />}
       {panel === "quote" && <QuoteCard date={quoteDate} onClose={closePanel} />}
       {panel === "evening" && <EveningWrap data={data} ctx={ctx} onClose={closePanel} />}
       {panel === "backups" && <BackupsSheet data={data} ctx={ctx} onClose={closePanel} />}

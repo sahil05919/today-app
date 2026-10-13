@@ -353,6 +353,28 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
           <LifeAdminSettings data={data} />
         </Section>
 
+        <Section title="Learning log" hint="Which areas ask “What did you learn?”">
+          <p className="text-sm text-muted">After a session of these areas is done, the app asks for one line (inside the app, never a notification).</p>
+          <div className="flex flex-wrap gap-2">
+            {p.areas
+              .filter((a) => a.target)
+              .map((a) => {
+                const on = (p.learnAreas ?? ["powerbi"]).includes(a.id);
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => set("learnAreas", on ? (p.learnAreas ?? ["powerbi"]).filter((x) => x !== a.id) : [...(p.learnAreas ?? ["powerbi"]), a.id])}
+                    className={`min-h-11 rounded-full border px-3.5 text-sm font-medium ${on ? "border-accent bg-accent-soft text-accent" : "border-line text-muted"}`}
+                  >
+                    {a.emoji} {a.name}
+                  </button>
+                );
+              })}
+          </div>
+        </Section>
+
         <Section title="App notes" hint={`${(data.notes ?? []).length} about the app`}>
           <AppNotes data={data} ctx={ctx} />
         </Section>

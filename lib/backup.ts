@@ -568,6 +568,9 @@ function cleanProfile(p: any): Profile {
       otherHours: n(p.otherHours, 0, 40),
       capacityItems: n(p.capacityItems, 0, 20),
       wakeLeadMin: n(p.wakeLeadMin, 0, 600),
+      learnAreas: Array.isArray(p.learnAreas) ? p.learnAreas.filter((x: unknown) => typeof x === "string").slice(0, 20).map((x: string) => x.slice(0, 40)) : undefined,
+      shareWeek: bool(p.shareWeek),
+      buddyName: typeof p.buddyName === "string" ? p.buddyName.trim().slice(0, 40) || undefined : undefined,
       planCalendarId: typeof p.planCalendarId === "string" && /^\d{1,12}$/.test(p.planCalendarId) ? p.planCalendarId : undefined,
       inboxCalendarId: typeof p.inboxCalendarId === "string" && /^\d{1,12}$/.test(p.inboxCalendarId) ? p.inboxCalendarId : undefined,
       officeDays: days(p.officeDays),
@@ -633,6 +636,12 @@ export function migrate(raw: unknown): AppData {
     occurrences: cleanOccurrences(r.occurrences),
     history: cleanHistory(r.history),
     sideWork: cleanSideWork(r.sideWork),
+    learnings: Array.isArray(r.learnings)
+      ? r.learnings
+          .filter((l: any) => l && isISO(l.date) && typeof l.text === "string" && l.text.trim() && typeof l.areaId === "string")
+          .slice(-500)
+          .map((l: any) => ({ id: str(l.id, 64) || crypto.randomUUID(), date: l.date, areaId: l.areaId.slice(0, 40), text: l.text.trim().slice(0, 500), at: num(l.at) ?? Date.now(), usedAt: num(l.usedAt) }))
+      : undefined,
     worklog: Array.isArray(r.worklog)
       ? r.worklog
           .filter((w: any) => w && isISO(w.date) && Number.isFinite(w.minutes) && w.minutes > 0 && typeof w.title === "string")

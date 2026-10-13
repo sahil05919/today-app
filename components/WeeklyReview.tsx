@@ -10,6 +10,7 @@ import { firstDayWithRoom, pendingForReview } from "@/lib/pileup";
 import { planSessions } from "@/lib/schedule";
 import { weekProgress } from "@/lib/sessions";
 import type { AppData, Task } from "@/lib/types";
+import { LearningCard } from "./Learning";
 import { LetterCard } from "./LetterCard";
 import { YourWeekBody } from "./WeekSummary";
 import { btn, Chip, Sheet, type ViewCtx } from "./ui";
@@ -60,6 +61,7 @@ export function WeeklyReview({ data, ctx, onClose }: { data: AppData; ctx: ViewC
     <Sheet title="Your week" onClose={close}>
       <div className="space-y-6">
         <YourWeekBody data={data} ctx={ctx} />
+        <LearningCard data={data} ctx={ctx} />
         <LetterCard data={data} today={ctx.today} />
 
         {(progress.length > 0 || nextEvents.length > 0 || nextBills.length > 0) && (

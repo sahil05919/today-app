@@ -61,6 +61,7 @@ export function defaultProfile(): Profile {
     otherHours: 5,
     capacityItems: 0,
     wakeLeadMin: 90,
+    shareWeek: true,
     notify: { morning: true, taskCheckIns: true, wrap: true, reminders: true, slots: true, events: true, bills: true, nudges: true, review: true, weekSoFar: true, quote: true, tonight: true, sessionNudges: true, dayDone: true },
   };
 }

@@ -325,6 +325,11 @@ export interface Profile {
   /** Which phone calendar is the Plan / Inbox one (the phone's own id). Empty = found by its name. */
   planCalendarId?: string;
   inboxCalendarId?: string;
+  /** The areas that ask "What did you learn?" after a session (default: Power BI only). */
+  learnAreas?: string[];
+  /** Accountability share: the Sunday "Share my week" button, and an optional buddy name for "Hey Rahul, my week:". */
+  shareWeek: boolean;
+  buddyName?: string;
   /** How long before an early start (before 08:00) the "Set alarm" button rings, in minutes. */
   wakeLeadMin: number;
   /** Items the planner puts in a day: 0 = Auto (learned from what you really finish, see lib/dayCapacity.ts), or a number. */
@@ -684,6 +689,8 @@ export interface AppData {
   occurrences?: Occurrence[];
   /** Everything that was done / skipped / missed / rescheduled, append-only. */
   history?: HistoryEvent[];
+  /** The learning log (see lib/learning.ts). */
+  learnings?: Learning[];
   /** Time logged by typing, and your corrections of Other sub-labels (keyed like OtherEntry.key). */
   worklog?: WorkLog[];
   workSubs?: Record<string, SubLabel>;
@@ -721,6 +728,16 @@ export interface ClearedWindow {
   start: number;
   end: number;
   at: number;
+}
+
+/** One line about what you learned after a session ("What did you learn?"). Used = it went into a post. */
+export interface Learning {
+  id: string;
+  date: ISODate;
+  areaId: string;
+  text: string;
+  at: number;
+  usedAt?: number;
 }
 
 /** Where a piece of "Other work" belongs (guessed from its words, editable). */

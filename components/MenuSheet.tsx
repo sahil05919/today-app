@@ -9,6 +9,8 @@ export function MenuSheet({ onClose, onPanel }: { onClose: () => void; onPanel: 
     ["bills", "💳", "Bills & chores"],
     ["goals", "🎯", "Must-haves"],
     ["reviews", "🗓️", "Weekly review"],
+    ["learning", "📓", "Learning log"],
+    ["winjar", "🏆", "Win jar"],
     ["quotes", "💛", "Quotes"],
   ];
   return (

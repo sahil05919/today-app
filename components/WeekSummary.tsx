@@ -4,6 +4,7 @@ import { addDays, fromISO, rangeLabel } from "@/lib/dates";
 import { actions } from "@/lib/store";
 import { weekStart } from "@/lib/stats";
 import { behind, catchUpSuggestions, compare, focusFor, slipped, soFarText, weekStats, wins, yourWeekText, type AreaRow, type WeekStats } from "@/lib/weekly";
+import { otherLine } from "@/lib/other";
 import type { AppData, ISODate, WeekSnapshot } from "@/lib/types";
 import { btn, Chip, type ViewCtx } from "./ui";
 
@@ -154,6 +155,7 @@ export function YourWeekBody({ data, ctx }: { data: AppData; ctx: ViewCtx }) {
         <section aria-label="Sessions this week">
           <AreaBars rows={stats.areas} arrows={arrows} />
           <p className="mt-2 text-xs text-muted">↑ ↓ compare with last week.</p>
+          {(stats.other.minutes > 0 || stats.other.target > 0) && <p className="mt-2 text-[15px] font-semibold">🧩 {otherLine(stats.other)}</p>}
         </section>
       )}
 
