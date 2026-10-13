@@ -5,7 +5,7 @@ import { isTopSheet, nextSheetId, registerSheet, sheetDepth, sheetStackVersion, 
 import type { ISODate, Profile, Task } from "@/lib/types";
 import { CloseIcon } from "./icons";
 
-export type Panel = "menu" | "calendar" | "shopping" | "bills" | "goals" | "me" | "adjust" | "ideas" | "review" | "sofar" | "reviews" | "evening" | "feeling" | "quote" | "quotes" | "lighten" | "backups" | "learning" | "winjar";
+export type Panel = "menu" | "calendar" | "shopping" | "bills" | "goals" | "me" | "adjust" | "ideas" | "review" | "sofar" | "reviews" | "evening" | "feeling" | "quote" | "quotes" | "lighten" | "backups" | "learning" | "winjar" | "search";
 
 /** Shared context passed down to every view. */
 export interface ViewCtx {

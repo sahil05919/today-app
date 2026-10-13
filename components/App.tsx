@@ -42,11 +42,12 @@ import { LearningLogSheet, LearningPrompt } from "./Learning";
 import { learnPromptFor } from "@/lib/learning";
 import { LightenSheet } from "./LightenSheet";
 import { WinJarSheet } from "./WinJar";
+import { SearchSheet } from "./SearchSheet";
 import { ShareEventSheet } from "./ShareEventSheet";
 import { SideWorkSheet } from "./SideWorkSheet";
 import { ImportSheet } from "./ImportSheet";
 import { BillsSheet, GoalsSheet, ShoppingSheet } from "./ListSheets";
-import { CalendarIcon, MenuIcon } from "./icons";
+import { CalendarIcon, MenuIcon, SearchIcon } from "./icons";
 import { MenuSheet } from "./MenuSheet";
 import { NativeShell } from "./NativeShell";
 import { QuoteCard, QuotesSheet } from "./QuoteCard";
@@ -379,6 +380,9 @@ export default function App() {
           <p className="text-sm text-muted">{evening && !night ? eveningLine(profile.name, tl.summary.done, tl.summary.total) : longDate(now)}</p>
         </div>
         <div className="-mr-2 flex shrink-0 items-center">
+          <button onClick={() => setPanel("search")} aria-label="Search" className="flex h-12 w-12 items-center justify-center rounded-full text-muted hover:bg-surface">
+            <SearchIcon width={24} height={24} />
+          </button>
           <button
             onClick={() => {
               setCalendarDay(undefined);
@@ -453,6 +457,7 @@ export default function App() {
       {panel === "reviews" && <ReviewsSheet data={data} ctx={ctx} onClose={closePanel} openPanel={setPanel} />}
       {panel === "feeling" && <FeelingSheet data={data} ctx={ctx} onClose={closePanel} />}
       {panel === "quotes" && <QuotesSheet onClose={closePanel} />}
+      {panel === "search" && <SearchSheet data={data} ctx={ctx} onClose={closePanel} openPanel={setPanel} />}
       {panel === "winjar" && <WinJarSheet data={data} ctx={ctx} onClose={closePanel} />}
       {panel === "learning" && <LearningLogSheet data={data} ctx={ctx} onClose={closePanel} />}
       {learnFor && <LearningPrompt log={learnFor} data={data} ctx={ctx} onClose={() => setLearnFor(null)} />}

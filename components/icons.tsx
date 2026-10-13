@@ -91,3 +91,9 @@ export const StopIcon = (p: SVGProps<SVGSVGElement>) => (
     <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" />
   </Svg>
 );
+export const SearchIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Svg {...p}>
+    <circle cx="10.5" cy="10.5" r="6" />
+    <path d="M15 15l5 5" />
+  </Svg>
+);

@@ -4,6 +4,7 @@ import { btn, Sheet, type Panel } from "./ui";
 /** A few things and some kind words. Backup and appearance live inside Settings. */
 export function MenuSheet({ onClose, onPanel }: { onClose: () => void; onPanel: (p: Panel) => void }) {
   const items: Array<[Panel, string, string]> = [
+    ["search", "🔎", "Search"],
     ["calendar", "📅", "Calendar"],
     ["shopping", "🛒", "Shopping list"],
     ["bills", "💳", "Bills & chores"],
