@@ -12,6 +12,7 @@ import { isOffDay } from "../offday";
 import { eveningLine } from "../cheer";
 import { behindAreaRows } from "../pileup";
 import { briefFor, quoteMinute, tonightBody } from "../brief";
+import { checkinLine } from "../autoLog";
 import { applyBudget } from "./budget";
 import { plannedForDay } from "../schedule";
 import { isQuoteDay, quoteForDate, quoteLine, quoteStateOf } from "../quoteBag";
@@ -375,7 +376,7 @@ export function planNotifications(raw: AppData, now: Date = new Date(), opts: { 
 
     // --- Evening check-in 20:00: what is left tonight, and a nudge to share anything from email ------------------------
     if (p.notify.tonight !== false) {
-      push({ key: `tonight:${day}`, at: at(day, p.checkinTime), kind: "tonight", title: "Tonight", body: tonightBody(timelineOf(day), digestLine(data, day)), actions: false, exact: false });
+      push({ key: `tonight:${day}`, at: at(day, p.checkinTime), kind: "tonight", title: "Tonight", body: tonightBody(timelineOf(day), digestLine(data, day), day === toISO(now) ? checkinLine(data, day) : null), actions: false, exact: false });
     }
 
     // --- Task check-ins: "Due Friday, where are you?" -----------------------

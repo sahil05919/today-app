@@ -5,6 +5,7 @@ import { btn, Sheet, type Panel } from "./ui";
 export function MenuSheet({ onClose, onPanel }: { onClose: () => void; onPanel: (p: Panel) => void }) {
   const items: Array<[Panel, string, string]> = [
     ["search", "🔎", "Search"],
+    ["appdid", "🤖", "What the app did"],
     ["calendar", "📅", "Calendar"],
     ["shopping", "🛒", "Shopping list"],
     ["bills", "💳", "Bills & chores"],

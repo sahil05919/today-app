@@ -2,7 +2,7 @@ import { toISO } from "./dates";
 import { withDefaults } from "./profile";
 import type { ParsedCapture } from "./parse";
 import { understand } from "./understand";
-import type { AppData, ISODate } from "./types";
+import type { AppData, ISODate, ItemSource } from "./types";
 
 /**
  * The contract with the Gmail add-on and its nightly script (Google Apps Script, written separately). They talk to the app ONLY
@@ -43,7 +43,11 @@ export interface InboxTask {
   duration?: number;
   important: boolean;
   source?: string;
+  /** What kind of email it came from: the script can say `kind: star | shift | interview | bill | booking` (default: a plain task). */
+  src: ItemSource;
 }
+
+const SOURCE_OF_KIND: Record<string, ItemSource> = { star: "gmail-star", starred: "gmail-star", task: "gmail-task", shift: "gmail-shift", interview: "gmail-interview", bill: "gmail-bill", booking: "gmail-booking" };
 
 const lines = (s?: string) => (s ?? "").replace(/\r/g, "").split("\n").map((l) => l.trim());
 
@@ -84,6 +88,7 @@ export function parseTaskEvent(e: InboxEvent, data: AppData): InboxTask | null {
     duration: Number.isFinite(duration) && duration > 0 && duration <= 600 ? duration : undefined,
     important: /^(yes|y|true|1|high)$/i.test(f.important ?? ""),
     source: f.source?.slice(0, 200),
+    src: SOURCE_OF_KIND[(f.kind ?? "").toLowerCase().trim()] ?? "gmail-task",
   };
 }
 
@@ -104,6 +109,7 @@ export function captureFor(t: InboxTask, data: AppData, now: Date): ParsedCaptur
     estimateMin: t.duration ?? guess.estimateMin,
     notes: t.source ? `From Gmail: ${t.source}` : guess.notes,
     recur: undefined,
+    src: t.src,
   };
 }
 

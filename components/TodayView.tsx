@@ -16,6 +16,7 @@ import { nextUp, type TLItem, type Timeline } from "@/lib/timeline";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
 import { BlockSheet } from "./BlockSheet";
 import { CalendarEventInfo } from "./CalendarSheet";
+import { AppDidChip } from "./AppDid";
 import { CatchUpCard } from "./CatchUpCard";
 import { ClearedSheet } from "./ClearSheet";
 import { FreedCard } from "./FreedCard";
@@ -242,6 +243,7 @@ export function TodayView({
   return (
     <div className="space-y-4">
       <ProgressHeader data={data} tl={tl} today={ctx.today} />
+      <AppDidChip data={data} now={now} onOpen={() => openPanel("appdid")} />
       <DayDoneCard data={data} tl={tl} ctx={ctx} now={now} onLighten={() => openPanel("lighten")} />
       <NextUpCard tl={tl} item={item} data={data} ctx={ctx} nowMin={nowMin} goal={goal} onOpen={open} onReschedule={reschedule} onGoals={() => openPanel("goals")} />
 

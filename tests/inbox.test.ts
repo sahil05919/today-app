@@ -30,7 +30,7 @@ describe("TASK: events", () => {
 
   it("with none: only the title and the date", () => {
     const t = parseTaskEvent({ eventId: 8, title: "TASK: Book dentist", date: "2026-10-15" }, d)!;
-    expect(t).toEqual({ eventId: 8, title: "Book dentist", due: "2026-10-15", area: undefined, time: undefined, duration: undefined, important: false, source: undefined });
+    expect(t).toEqual({ eventId: 8, title: "Book dentist", due: "2026-10-15", area: undefined, time: undefined, duration: undefined, important: false, source: undefined, src: "gmail-task" });
   });
 
   it("is forgiving about case, spaces and junk values; an unknown area is left to the classifier", () => {

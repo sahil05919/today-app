@@ -39,6 +39,7 @@ import {
 } from "./series";
 import { billKey } from "./bills";
 import { applyMoves } from "./moves";
+import { appendAuto, carriedBetween, itemOf, lifeAdminToday, markAllSeen, markRemoved, markSeen, movesBetween, newCalendarEntries, type NewAuto } from "./autoLog";
 import { applyClear, clearedEvent, clearedToast } from "./clear";
 import type { ClearWindow } from "./clearParse";
 import { dictionaryHits } from "./catDict";
@@ -586,7 +587,8 @@ export const actions = {
    */
   sweep(now: Date = new Date()) {
     const d = ensure();
-    const next = carryMissed(sweepMissed(d, toISO(now)), now);
+    const swept = carryMissed(sweepMissed(d, toISO(now)), now);
+    const next = swept === d ? d : appendAuto(swept, carriedBetween(d, swept, `sweep:${toISO(now)}`));
     if (next !== d) commit(next);
   },
 
@@ -619,7 +621,7 @@ export const actions = {
     const r = applyPull(d, picks, now);
     if (!r.events.length) return null;
     // The history gets one "pulled" entry per item (not the generic "rescheduled" ones a plain diff would add).
-    commit({ ...r.data, history: [...(d.history ?? []), ...r.events] }, { history: false });
+    commit(appendAuto({ ...r.data, history: [...(d.history ?? []), ...r.events] }, movesBetween(d, r.data, "planner-pull", uid(), "pulled")), { history: false });
     return { message: lighterLine(r.byDay, toISO(now)), undo: () => commit(d, { history: false }) };
   },
 
@@ -731,8 +733,11 @@ export const actions = {
    * Moves tasks to other days without counting it as a snooze (the app did it to keep the evening light,
    * or you accepted a catch-up plan).
    */
-  moveTasks(moves: Array<{ taskId: string; to: ISODate; time?: string }>) {
-    commit(applyMoves(ensure(), moves));
+  /** `auto`: the app moved them by itself (not you), so each move is listed in "What the app did", one group per re-plan. */
+  moveTasks(moves: Array<{ taskId: string; to: ISODate; time?: string }>, auto?: { group: string }) {
+    const d = ensure();
+    const next = applyMoves(d, moves);
+    commit(auto ? appendAuto(next, movesBetween(d, next, "planner-move", auto.group)) : next);
   },
 
   /** Returns false when the focus list is full. */
@@ -919,7 +924,9 @@ export const actions = {
   /** Replaces the read-only mirror of the phone's calendar. */
   setCalendarEvents(events: FixedEvent[]) {
     const d = ensure();
-    commit({ ...d, calendarEvents: events, settings: { ...d.settings, calendarSyncedAt: Date.now() } });
+    // New events in your phone calendar are listed in "What the app did" (the very first read only learns what is already there).
+    const fresh = newCalendarEntries(d.settings.calSeen, events, todayISO());
+    commit(appendAuto({ ...d, calendarEvents: events, settings: { ...d.settings, calendarSyncedAt: Date.now(), calSeen: fresh.seen } }, fresh.entries));
   },
 
   /** The phone's calendar was read and nothing changed: only the "last read" time moves (no sync, no re-plan). */
@@ -1141,7 +1148,7 @@ export const actions = {
     const d = ensure();
     const group = uid();
     const r = applyClear(d, windows, choose, now, group);
-    commit(r.data);
+    commit(appendAuto(r.data, movesBetween(d, r.data, "planner-move", group)));
     // A cleared window is its own kind of entry (moved is not skipped, see the weekly review).
     const c = ensure();
     commit({ ...c, history: [...(c.history ?? []), clearedEvent(group, label, windows, now.getTime())] }, { history: false });
@@ -1214,6 +1221,74 @@ export const actions = {
   removeAppNote(id: string) {
     const d = ensure();
     commit({ ...d, notes: (d.notes ?? []).filter((n) => n.id !== id) });
+  },
+
+  // --- What the app did (lib/autoLog.ts) -----------------------------------------------------------------------------------
+  /** Lists things the app did by itself. Each item once. */
+  logAuto(list: NewAuto[], now: number = Date.now()) {
+    const d = ensure();
+    const next = appendAuto(d, list, now);
+    if (next !== d) commit(next, { history: false });
+  },
+
+  /** The first time life-admin items (laundry, haircut…) are on their day, they are listed. */
+  scanLifeAdmin(today: ISODate = todayISO()) {
+    const d = ensure();
+    const next = appendAuto(d, lifeAdminToday(d, today));
+    if (next !== d) commit(next, { history: false });
+  },
+
+  seeAuto(ids: string[]) {
+    const d = ensure();
+    const next = markSeen(d, ids);
+    if (next !== d) commit(next, { history: false });
+  },
+
+  seeAllAuto(now: Date = new Date()) {
+    const d = ensure();
+    const next = markAllSeen(d, now);
+    if (next !== d) commit(next, { history: false });
+  },
+
+  /**
+   * "Remove" on something the app added: the task is deleted, a repeat day skipped, a calendar event hidden here, the digest dismissed.
+   * Returns the Undo, or null when the item is already gone.
+   */
+  removeAuto(ids: string[]): (() => void) | null {
+    const before = ensure();
+    let d = before;
+    const entries = (d.auto ?? []).filter((e) => ids.includes(e.id) && e.kind === "added");
+    if (!entries.length) return null;
+    for (const e of entries) {
+      const it = itemOf(e);
+      if (!it) continue;
+      if (it.kind === "task") d = { ...d, tasks: d.tasks.filter((t) => t.id !== it.id) };
+      else if (it.kind === "occ") d = setOccSkipped(d, it.id, true);
+      else if (it.kind === "digest") d = { ...d, settings: { ...d.settings, digestDismissed: it.id } };
+      else if (it.kind === "event") {
+        const own = (d.events ?? []).find((x) => `${x.calId ?? x.id}@${x.date}` === it.id);
+        d = own ? { ...d, events: (d.events ?? []).filter((x) => x !== own) } : { ...d, eventMarks: { ...(d.eventMarks ?? {}), [it.id]: { ...(d.eventMarks?.[it.id] ?? {}), hidden: true } } };
+      }
+    }
+    commit(markRemoved(d, entries.map((e) => e.id)));
+    return () => commit(before);
+  },
+
+  /** "Undo move": the item goes back to where it was, if it has not been moved again since. Returns the Undo, or null. */
+  undoAutoMoves(ids: string[]): (() => void) | null {
+    const before = ensure();
+    const entries = (before.auto ?? []).filter((e) => ids.includes(e.id) && (e.kind === "moved" || e.kind === "pulled") && e.from && e.to);
+    const back: Array<{ taskId: string; to: ISODate; time?: string }> = [];
+    for (const e of entries) {
+      const it = itemOf(e);
+      if (!it || (it.kind !== "task" && it.kind !== "occ")) continue;
+      const t = findTask(before, it.id);
+      if (!t || t.status !== "open" || t.due !== e.to!.date) continue;
+      back.push({ taskId: it.id, to: e.from!.date, time: e.from!.time });
+    }
+    if (!back.length) return null;
+    commit(markRemoved(applyMoves(before, back), entries.map((e) => e.id)));
+    return () => commit(before);
   },
 
   replaceAll(data: AppData) {

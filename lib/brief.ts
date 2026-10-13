@@ -44,7 +44,12 @@ export function briefFor(data: AppData, day: ISODate, tl: Timeline, name: string
 }
 
 /** "Tonight: Job Prep, English Reading. Anything from email to add?" */
-export function tonightBody(tl: Timeline, digest?: string | null): string {
+export function tonightBody(tl: Timeline, digest?: string | null, appDid?: string | null): string {
+  const base = tonightBase(tl, digest);
+  return appDid ? `${base} ${appDid}` : base;
+}
+
+function tonightBase(tl: Timeline, digest?: string | null): string {
   const left = tl.items
     .filter((x) => actionable(x) && !x.done && !x.skipped && x.kind !== "calendar" && x.kind !== "event" && x.end > 17 * 60)
     .map((x) => x.title.replace(/ · session \d+$| session \d+$/, ""));

@@ -3,6 +3,7 @@ import { rememberCalendar } from "./calendarPick";
 import type { CalendarAccess, RawCalendarEvent } from "./calendar";
 import { toISO } from "./dates";
 import { logError } from "./debugLog";
+import { digestEntry } from "./autoLog";
 import { captureFor, parseTaskEvent, todaysDigest, type InboxEvent } from "./inbox";
 import { calendarAccess, deletePhoneEvent, listWritableCalendars, readCalendarById, type WritableCalendar } from "./nativeBridge";
 import { isNative } from "./platform";
@@ -62,7 +63,9 @@ export async function importInbox(now: Date = new Date(), bridge: InboxBridge = 
     const d = getData();
     if (!(d.settings.inboxSeen ?? []).includes(id)) {
       try {
-        actions.addTask(captureFor(t, d, now));
+        const made = actions.addTask(captureFor(t, d, now));
+        // Listed in "What the app did", with where it came from (lib/autoLog.ts).
+        actions.logAuto([{ src: t.src, kind: "added", key: `task:${made.id}`, title: made.title, date: made.due }]);
         // Remembered in the same breath as the task is made (saved together), so a retry can never import it twice.
         actions.bookkeeping({ inboxSeen: [...(getData().settings.inboxSeen ?? []), id].slice(-300) });
         added++;
@@ -83,5 +86,10 @@ export async function importInbox(now: Date = new Date(), bridge: InboxBridge = 
   const digest = todaysDigest(events, today);
   const cur = getData().settings.digest;
   if (JSON.stringify(digest ?? null) !== JSON.stringify(cur ?? null)) actions.settings({ digest: digest ?? undefined });
+  const listed = digestEntry(getData());
+  if (listed) {
+    actions.logAuto([listed]);
+    actions.bookkeeping({ digestLogged: listed.date });
+  }
   return { added, digest: !!digest, status: "ok" };
 }

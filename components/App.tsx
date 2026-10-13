@@ -42,6 +42,7 @@ import { LearningLogSheet, LearningPrompt } from "./Learning";
 import { learnPromptFor } from "@/lib/learning";
 import { LightenSheet } from "./LightenSheet";
 import { WinJarSheet } from "./WinJar";
+import { AppDidSheet } from "./AppDid";
 import { SearchSheet } from "./SearchSheet";
 import { ShareEventSheet } from "./ShareEventSheet";
 import { SideWorkSheet } from "./SideWorkSheet";
@@ -272,7 +273,7 @@ export default function App() {
       const d = getData();
       const moves = timed("planner: settleOverflow", () => settleOverflow(d, new Date()));
       if (!moves.length) return;
-      actions.moveTasks(moves.map((m) => ({ taskId: m.taskId, to: m.to })));
+      actions.moveTasks(moves.map((m) => ({ taskId: m.taskId, to: m.to })), { group: `replan:${Date.now()}` });
       const text = settleNote(moves);
       if (text) setHomeNote({ text, day: todayISO() });
     }, 700);
@@ -328,6 +329,11 @@ export default function App() {
     actions.settings({ dayDoneDate: today });
     if (withDefaults(data.profile).notify.dayDone !== false) void notifyDayDone();
   }, [data, tl, today, minuteKey]);
+
+  // Life-admin items that are on today (laundry, haircut…) are listed in "What the app did", once.
+  useEffect(() => {
+    if (loaded) actions.scanLifeAdmin(today);
+  }, [loaded, today]);
 
   // Each new day (and on start): older unresolved repeats are logged as missed; only the latest carries forward.
   useEffect(() => {
@@ -457,6 +463,7 @@ export default function App() {
       {panel === "reviews" && <ReviewsSheet data={data} ctx={ctx} onClose={closePanel} openPanel={setPanel} />}
       {panel === "feeling" && <FeelingSheet data={data} ctx={ctx} onClose={closePanel} />}
       {panel === "quotes" && <QuotesSheet onClose={closePanel} />}
+      {panel === "appdid" && <AppDidSheet data={data} ctx={ctx} now={now} onClose={closePanel} />}
       {panel === "search" && <SearchSheet data={data} ctx={ctx} onClose={closePanel} openPanel={setPanel} />}
       {panel === "winjar" && <WinJarSheet data={data} ctx={ctx} onClose={closePanel} />}
       {panel === "learning" && <LearningLogSheet data={data} ctx={ctx} onClose={closePanel} />}
