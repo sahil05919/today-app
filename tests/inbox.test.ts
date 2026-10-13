@@ -134,10 +134,13 @@ describe("importing from Today – Inbox", () => {
     expect(getData().settings.digest).toBeUndefined();
   });
 
-  it("with no Inbox calendar it says so and changes nothing", async () => {
+  it("with no Inbox calendar it says so, searches the other calendars, and imports nothing that is not a TASK:", async () => {
     const b = bridge();
     b.calendars = async () => [];
-    expect((await importInbox(NOW, b, true)).status).toBe("no-calendar");
+    b.readAll = async () => [{ id: "5:1", eventId: 5, title: "Dentist", begin: Date.UTC(2026, 9, 14), end: Date.UTC(2026, 9, 15), allDay: true, calendarId: 1 }] as never;
+    const r = await importInbox(NOW, b, true);
+    expect(r).toMatchObject({ status: "ok", added: 0 });
+    expect(r.check.calendar).toBe("scanned");
     expect(getData().tasks.some((t) => t.title.includes("Pinnacle"))).toBe(false);
   });
 });

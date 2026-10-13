@@ -455,10 +455,14 @@ public class TodayNativePlugin extends Plugin {
         calendarWritePermission(call);
     }
 
-    /** The calendars an event can be written to: { calendars: [{ id, name, account, accountType, primary }] }. */
+    /**
+     * Every calendar on the phone: { calendars: [{ id, name, account, accountType, primary, writable, visible, sync }] }. Listing needs
+     * only the READ permission (the Gmail Inbox import has no other), so it must not wait for the write permission; "writable" says
+     * whether an event can be added.
+     */
     @PluginMethod
     public void listCalendars(PluginCall call) {
-        if (getPermissionState("calendarWrite") != PermissionState.GRANTED) {
+        if (getPermissionState("calendar") != PermissionState.GRANTED && getPermissionState("calendarWrite") != PermissionState.GRANTED) {
             call.reject("Calendar permission is not granted");
             return;
         }
@@ -471,13 +475,16 @@ public class TodayNativePlugin extends Plugin {
                 CalendarContract.Calendars.ACCOUNT_NAME,
                 CalendarContract.Calendars.ACCOUNT_TYPE,
                 CalendarContract.Calendars.OWNER_ACCOUNT,
-                CalendarContract.Calendars.IS_PRIMARY
+                CalendarContract.Calendars.IS_PRIMARY,
+                CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
+                CalendarContract.Calendars.VISIBLE,
+                CalendarContract.Calendars.SYNC_EVENTS
             };
             c = getContext().getContentResolver().query(
                 CalendarContract.Calendars.CONTENT_URI,
                 projection,
-                CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL + " >= ?",
-                new String[] { String.valueOf(CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR) },
+                null,
+                null,
                 CalendarContract.Calendars.ACCOUNT_NAME + " ASC"
             );
             while (c != null && c.moveToNext()) {
@@ -489,6 +496,9 @@ public class TodayNativePlugin extends Plugin {
                 String owner = c.getString(4);
                 // The account's own calendar: its owner is the account, or it says it is the primary one.
                 o.put("primary", c.getInt(5) == 1 || (owner != null && owner.equals(c.getString(2))));
+                o.put("writable", c.getInt(6) >= CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR);
+                o.put("visible", c.getInt(7) == 1);
+                o.put("sync", c.getInt(8) == 1);
                 list.put(o);
             }
             JSObject r = new JSObject();

@@ -14,6 +14,7 @@ vi.mock("../lib/nativeBridge", async (importOriginal) => ({
   calendarAccess: async () => "granted",
   askCalendarAccess: async () => "granted",
   listWritableCalendars: async () => phoneCalendars,
+  listAllCalendars: async () => phoneCalendars,
   readPhoneCalendar: async (_f: number, _t: number, excluded?: number[]) => {
     reads.push({ excluded });
     return [

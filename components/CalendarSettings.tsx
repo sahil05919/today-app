@@ -5,6 +5,8 @@ import { syncPhoneCalendar } from "@/lib/calendarSync";
 import { askCalendarAccess, askCalendarWriteAccess, calendarAccess, calendarWriteAccess, listWritableCalendars, type WritableCalendar } from "@/lib/nativeBridge";
 import { pickDefaultCalendar } from "@/lib/calendarWrite";
 import { findTodayCalendar, INBOX_HELP, INBOX_NAME, PICK_PLAN, PLAN_HELP, PLAN_NAME } from "@/lib/calendarNames";
+import { inboxStatusLines } from "@/lib/inbox";
+import { checkInboxNow } from "@/lib/inboxRun";
 import { useData } from "@/lib/store";
 import { isNative } from "@/lib/platform";
 import type { Profile } from "@/lib/types";
@@ -57,6 +59,16 @@ export function CalendarSettings({ p, set, syncedAt, ctx }: { p: Profile; set: <
     setBusy(false);
   };
   const target = calendars.find((c) => String(c.id) === p.writeCalendarId) ?? pickDefaultCalendar(calendars);
+
+  const checkInbox = async () => {
+    setBusy(true);
+    setMsg("");
+    const r = await checkInboxNow();
+    setAccess(await calendarAccess());
+    setWriteAccess(await calendarWriteAccess());
+    setMsg(r.status === "ok" ? (r.added ? `${r.added} ${r.added === 1 ? "task" : "tasks"} added from Gmail.` : "Checked. Nothing new.") : "");
+    setBusy(false);
+  };
 
   const sync = async () => {
     setBusy(true);
@@ -143,6 +155,22 @@ export function CalendarSettings({ p, set, syncedAt, ctx }: { p: Profile; set: <
               </select>
             </label>
           )}
+        </div>
+      )}
+      {native && (
+        <div className="space-y-2 rounded-2xl border border-line p-3">
+          <p className="text-sm font-medium">Gmail inbox</p>
+          <p className="text-xs text-muted">The Gmail add-on sends tasks as all-day “TASK: …” events in a calendar named “{INBOX_NAME}”. Today picks them up when it opens and when you come back to it.</p>
+          <ul className="space-y-0.5 text-sm" role="status">
+            {inboxStatusLines(data?.settings.inboxCheck).map((l, i) => (
+              <li key={i} className={i === 0 ? "text-muted" : ""}>
+                {l}
+              </li>
+            ))}
+          </ul>
+          <button type="button" className={`${btn.soft} min-h-11 w-full`} disabled={busy} onClick={checkInbox}>
+            {busy ? "Checking…" : "Check Gmail inbox now"}
+          </button>
         </div>
       )}
       {native && (

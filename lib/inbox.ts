@@ -2,7 +2,7 @@ import { toISO } from "./dates";
 import { withDefaults } from "./profile";
 import type { ParsedCapture } from "./parse";
 import { understand } from "./understand";
-import type { AppData, ISODate, ItemSource } from "./types";
+import type { AppData, InboxCheck, ISODate, ItemSource } from "./types";
 
 /**
  * The contract with the Gmail add-on and its nightly script (Google Apps Script, written separately). They talk to the app ONLY
@@ -163,3 +163,20 @@ export function digestLine(data: AppData, day: ISODate): string | null {
 
 /** "1 task added from Gmail" / "3 tasks added from Gmail". */
 export const addedLine = (n: number) => `${n} ${n === 1 ? "task" : "tasks"} added from Gmail`;
+
+/** The status lines for Settings → Calendar → Check Gmail inbox now. */
+export function inboxStatusLines(c: InboxCheck | undefined, name = "Today – Inbox"): string[] {
+  if (!c) return ["Not checked yet. It runs when the app opens and when you come back to it."];
+  const time = new Date(c.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  if (c.status === "no-permission") return [`Last check ${time}: Android is not allowing calendar access, so nothing could be read.`];
+  if (c.status === "error") return [`Last check ${time}: the calendar could not be read. See Health → Recent errors.`];
+  const cal =
+    c.calendar === "found"
+      ? `Calendar “${c.calendarName ?? name}”: found${c.synced === false ? ", but this phone is not syncing it (switch it on in the Google Calendar app)" : ""}`
+      : c.calendar === "scanned"
+        ? `Calendar “${name}”: not found by name, so I searched all your calendars for TASK: events`
+        : `Calendar “${name}”: not found`;
+  const lines = [`Last check ${time}`, cal, `TASK events found: ${c.found} · imported now: ${c.imported}${c.digests ? ` · digests: ${c.digests}` : ""}`];
+  if (c.removeFailed) lines.push(`${c.removeFailed} imported ${c.removeFailed === 1 ? "event was" : "events were"} not deleted from the Inbox (that needs permission to change your calendar). They are not imported twice.`);
+  return lines;
+}

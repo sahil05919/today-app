@@ -666,6 +666,8 @@ export interface Settings {
   clashDismissed?: string[];
   /** Phone-calendar events already seen ("<calId>@<date>"), so only a genuinely new one is listed in "What the app did". */
   calSeen?: string[];
+  /** The last look at "Today – Inbox" (lib/inboxRun.ts): shown in Settings → Calendar. */
+  inboxCheck?: InboxCheck;
   /** The digest last listed in "What the app did" (its `digestKey`), so each is listed once. */
   digestLogged?: string;
   mirror?: { at: number; status: "ok" | "off" | "no-calendar" | "not-google" | "pick-calendar" | "no-permission" | "error" | "unsupported"; calendar?: string; written?: number };
@@ -837,4 +839,20 @@ export interface Category {
   sub: SubLabel;
   conf: Confidence;
   how: CatHow;
+}
+
+/** What the last check of the "Today – Inbox" calendar found (Settings → Calendar → Check Gmail inbox now). */
+export interface InboxCheck {
+  at: number;
+  status: "ok" | "no-permission" | "error";
+  /** "found" = the Inbox calendar; "scanned" = it was not found by name, so every calendar was searched for TASK: / DIGEST: events; "missing" = nothing could be read. */
+  calendar: "found" | "scanned" | "missing";
+  calendarName?: string;
+  /** The phone is not syncing that calendar's events (they would never arrive). */
+  synced?: boolean;
+  /** TASK: events seen, tasks made from them now, DIGEST: events seen, imported events that could not be deleted from the Inbox. */
+  found: number;
+  imported: number;
+  digests: number;
+  removeFailed: number;
 }

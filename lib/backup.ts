@@ -22,6 +22,7 @@ import type {
   FixedEvent,
   GroceryItem,
   HistoryEvent,
+  InboxCheck,
   LearnedRule,
   UserWord,
   MonthGoals,
@@ -181,6 +182,12 @@ const SUB_LABELS = ["Building", "Chores", "Admin", "Learning", "Other"];
 const CONFIDENCES = ["high", "medium", "low"];
 const CAT_HOWS = ["explicit", "inherited", "learned", "dictionary", "gemini", "fallback"];
 const SOURCES = ["me", "gmail-star", "gmail-task", "gmail-shift", "gmail-interview", "gmail-bill", "gmail-booking", "gmail-digest", "phone-calendar", "planner-move", "planner-pull", "life-admin", "recurring"];
+
+function cleanInboxCheck(v: any): InboxCheck | undefined {
+  if (!v || typeof v !== "object" || !Number.isFinite(v.at) || !["ok", "no-permission", "error"].includes(v.status) || !["found", "scanned", "missing"].includes(v.calendar)) return undefined;
+  const n = (x: unknown) => (Number.isFinite(x) && (x as number) >= 0 ? Math.min(9999, Math.round(x as number)) : 0);
+  return { at: v.at, status: v.status, calendar: v.calendar, calendarName: str(v.calendarName, 80), synced: typeof v.synced === "boolean" ? v.synced : undefined, found: n(v.found), imported: n(v.imported), digests: n(v.digests), removeFailed: n(v.removeFailed) };
+}
 
 function cleanPicks(v: any): AppData["catPicks"] {
   if (!v || typeof v !== "object") return undefined;
@@ -792,6 +799,7 @@ export function migrate(raw: unknown): AppData {
           : undefined,
       digestDismissed: str(s.digestDismissed, 120),
       inboxAdded: s.inboxAdded && Number.isFinite(s.inboxAdded.n) && Number.isFinite(s.inboxAdded.at) ? { n: Math.min(99, Math.max(1, Math.round(s.inboxAdded.n))), at: s.inboxAdded.at } : undefined,
+      inboxCheck: cleanInboxCheck(s.inboxCheck),
       calSeen: Array.isArray(s.calSeen) ? s.calSeen.filter((x: unknown) => typeof x === "string" && x.length < 100).slice(-1500) : undefined,
       digestLogged: str(s.digestLogged, 120),
       clashDismissed: Array.isArray(s.clashDismissed) ? s.clashDismissed.filter((x: unknown) => typeof x === "string" && x.length < 120).slice(-100) : undefined,

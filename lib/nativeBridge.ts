@@ -24,6 +24,11 @@ export interface WritableCalendar {
   accountType: string;
   /** The account's own calendar. */
   primary: boolean;
+  /** An event can be added to it. (Missing in older builds, which only listed writable calendars.) */
+  writable?: boolean;
+  /** Shown in the phone's calendar app / syncing its events. */
+  visible?: boolean;
+  sync?: boolean;
 }
 
 /** An event as the Android calendar wants it (epoch ms). */
@@ -200,10 +205,16 @@ export async function askCalendarWriteAccess(): Promise<CalendarAccess> {
   return safely<CalendarAccess>("requestCalendarWritePermission", async () => (await TodayNative.requestCalendarWritePermission()).state, "unsupported", 60_000);
 }
 
-/** The calendars Today can write to (null when it cannot be read: no permission, or an older app build). */
-export async function listWritableCalendars(): Promise<WritableCalendar[] | null> {
+/** Every calendar on the phone, writable or not (null when it cannot be read: no permission, or an older app build). Needs only read access. */
+export async function listAllCalendars(): Promise<WritableCalendar[] | null> {
   if (!isNative()) return null;
   return safely<WritableCalendar[] | null>("listCalendars", async () => (await TodayNative.listCalendars()).calendars, null);
+}
+
+/** The calendars Today can write to (null when they cannot be listed). */
+export async function listWritableCalendars(): Promise<WritableCalendar[] | null> {
+  const all = await listAllCalendars();
+  return all ? all.filter((c) => c.writable !== false) : null;
 }
 
 /** Adds the event, or updates it when its phone id is given. Resolves the phone's id of the event, or null. */

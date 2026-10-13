@@ -1,4 +1,4 @@
-import { askCalendarAccess, calendarAccess, listWritableCalendars, readPhoneCalendar } from "./nativeBridge";
+import { askCalendarAccess, calendarAccess, listAllCalendars, readPhoneCalendar } from "./nativeBridge";
 import { MIRROR_NOTE, todayCalendarIds } from "./calendarNames";
 import { withoutOwnEvents } from "./calendarWrite";
 import { calendarAsked, convertCalendarEvents, markCalendarAsked, syncWindow } from "./calendar";
@@ -42,7 +42,7 @@ export async function syncPhoneCalendar(opts: { ask?: boolean } = {}): Promise<S
   if (access !== "granted") return "no-permission";
   const { from, to } = syncWindow();
   // Today – Plan / Today – Inbox are found by name and excluded from the read.
-  const ownIds = todayCalendarIds(await listWritableCalendars());
+  const ownIds = todayCalendarIds(await listAllCalendars());
   const read = await readPhoneCalendar(from, to, ownIds);
   if (!read) return "error";
   const raw = withoutTodayCalendars(read, ownIds);
