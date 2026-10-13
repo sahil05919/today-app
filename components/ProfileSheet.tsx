@@ -11,6 +11,7 @@ import { NotificationSettings } from "./NotificationSettings";
 import { RepeatingTasks } from "./RepeatingTasks";
 import { BackupSettings } from "./BackupSettings";
 import { HealthSettings } from "./HealthSettings";
+import { capacityLine } from "@/lib/dayCapacity";
 import { AppNotes } from "./AppNotes";
 import { LifeAdminSettings } from "./LifeAdminSettings";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
@@ -448,6 +449,7 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
             <Time label="Tea / food break from" value={p.breakStart} onChange={(v) => set("breakStart", v)} />
             <Time label="Break until" value={p.breakEnd} onChange={(v) => set("breakEnd", v)} />
             <Time label="Earliest auto-planning time" value={p.earliestAuto} onChange={(v) => set("earliestAuto", v)} />
+            <Num label="Items a day (0 = Auto)" value={p.capacityItems} min={0} max={20} onChange={(v) => set("capacityItems", v)} />
             <Num label="Other work target (hours a week, 0 = none)" value={p.otherHours} min={0} max={40} onChange={(v) => set("otherHours", v)} />
             <Num label="Buffer between things (min)" value={p.bufferMin} min={0} max={60} onChange={(v) => set("bufferMin", v)} />
             <Num label="Evening limit (minutes)" value={p.eveningCapMin} min={30} max={480} onChange={(v) => set("eveningCapMin", v)} />
@@ -456,6 +458,7 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
           <Field label="Office days" hint="On these days the commute is counted and the evening is lighter. Monday by default.">
             <DayChips label="Office days" value={p.officeDays} onChange={(v) => set("officeDays", v)} />
           </Field>
+          <p className="text-xs text-muted" role="status">{capacityLine(data, ctx.today)}</p>
           <p className="text-xs text-muted">Nothing is planned for you before the earliest auto-planning time (11:00 by default). Things you give a time yourself stay where you put them.</p>
           <p className="text-xs text-muted">The break is kept free on weekdays. Nothing is ever planned on top of anything else, and what doesn't fit the evening moves to the next day with room.</p>
         </Section>

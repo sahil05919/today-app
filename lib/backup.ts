@@ -566,6 +566,7 @@ function cleanProfile(p: any): Profile {
       planMirror: bool(p.planMirror),
       earliestAuto: hhmm(p.earliestAuto),
       otherHours: n(p.otherHours, 0, 40),
+      capacityItems: n(p.capacityItems, 0, 20),
       planCalendarId: typeof p.planCalendarId === "string" && /^\d{1,12}$/.test(p.planCalendarId) ? p.planCalendarId : undefined,
       inboxCalendarId: typeof p.inboxCalendarId === "string" && /^\d{1,12}$/.test(p.inboxCalendarId) ? p.inboxCalendarId : undefined,
       officeDays: days(p.officeDays),

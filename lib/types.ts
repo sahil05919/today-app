@@ -325,6 +325,8 @@ export interface Profile {
   /** Which phone calendar is the Plan / Inbox one (the phone's own id). Empty = found by its name. */
   planCalendarId?: string;
   inboxCalendarId?: string;
+  /** Items the planner puts in a day: 0 = Auto (learned from what you really finish, see lib/dayCapacity.ts), or a number. */
+  capacityItems: number;
   /** The weekly target for "Other work", in hours (0 = no target). */
   otherHours: number;
   /** The planner never auto-places anything before this time (things you timed yourself are not moved). */

@@ -1,4 +1,5 @@
 import { billsOnDay } from "./bills";
+import { capFor } from "./dayCapacity";
 import { dayRules, planningBusy, timedDuration, type BlockId, type DayRules, type Span } from "./busy";
 import { addDays, fromISO, toISO } from "./dates";
 import { nextStep, remainingMinutes } from "./estimate";
@@ -367,10 +368,26 @@ export function buildTimeline(raw: AppData, date: ISODate, now: Date = new Date(
     // free gap, and if the evening is full it simply goes a little past the cap.
     const lifeSeries = new Set((data.series ?? []).filter((s) => s.lifeId).map((s) => s.id));
     const isLife = (t: Task) => !!t.seriesId && lifeSeries.has(t.seriesId);
+    const lifeIds = new Set(data.tasks.filter(isLife).map((t) => t.id));
+
+    // What I really finish in a day: past it, more tasks wait for a lighter day (overdue ones and life admin are never held back).
+    const cap = capFor(raw, date, realToday);
+    const flexLoad = () => {
+      // Sessions and the tasks the planner chose (plus ones finished today). Bills, chores and life admin have their own days.
+      const flex = items.filter((x) => !x.muted && !x.allDay && !x.skipped && (x.kind === "session" || (x.kind === "task" && (!x.fixed || x.done) && !lifeIds.has(x.taskId ?? ""))));
+      return { n: flex.length, min: flex.reduce((m, x) => m + Math.max(0, x.end - x.start), 0) };
+    };
 
     for (const { t, carried: isCarried } of queue) {
       // Parked by "Adjust my day": it waits until that day.
       if (t.hideUntil && t.hideUntil > date) continue;
+      if (cap && !isCarried && !isLife(t)) {
+        const load = flexLoad();
+        if (load.n >= cap.items || load.min + taskBlock(t, model).minutes > cap.minutes) {
+          overflow.push({ task: t, carried: false });
+          continue;
+        }
+      }
       const { minutes, partial } = taskBlock(t, model);
       const windows = wins({ work: isWorkTask(t) });
       // A snoozed task ("in an hour") doesn't start before then.

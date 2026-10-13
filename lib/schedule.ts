@@ -1,4 +1,5 @@
 import { addDays, fromISO, toISO } from "./dates";
+import { capFor } from "./dayCapacity";
 import { dayRules, fixedSpans, LATEST_END, overlapMinutes, planningBusy } from "./busy";
 import { learnedSlots, orderSlots } from "./capacity";
 import { countedByEvent } from "./fixed";
@@ -190,7 +191,13 @@ export function planWeek(raw: AppData, now: Date = new Date(), busyOverride?: Bu
 
   const itemsOn = (d: ISODate) => [...cells.entries()].filter(([k]) => k.startsWith(d)).reduce((n, [, items]) => n + items.length, 0);
 
+  // What I really finish in a day (lib/dayCapacity.ts): a day never gets more flexible items or minutes than that. null = still learning.
+  const capOf = (d: ISODate) => capFor(raw, d, today);
+  const doneOn1 = (d: ISODate) => logs.filter((l) => l.date === d);
+
   const tryPlace = (a: Area, d: ISODate): boolean => {
+    const real = capOf(d);
+    if (real && (itemsOn(d) + doneOn1(d).length >= real.items || dayMinutes(d) + doneOn1(d).reduce((n, l) => n + l.minutes, 0) + a.target!.minutes > real.minutes)) return false;
     // Off day: at most ONE session, and a short one. The rest of the week absorbs everything else.
     if (isOffDay(data, d) && (itemsOn(d) >= 1 || a.target!.minutes > OFF_DAY_MAX_MIN || logs.some((l) => l.date === d))) return false;
     const cap = isWeekend(d) ? WEEKEND_CAP : WEEKDAY_CAP;
@@ -286,6 +293,8 @@ export function planWeek(raw: AppData, now: Date = new Date(), busyOverride?: Bu
     const minutes = a.target!.minutes;
     if (isOffDay(data, d) && (minutes > OFF_DAY_MAX_MIN || logs.some((l) => l.date === d))) return null;
     if (minutesOn(d) + minutes > (isWeekend(d) ? RELAXED_WEEKEND_CAP : RELAXED_WEEKDAY_CAP)) return null;
+    const real = capOf(d);
+    if (real && (placed.filter((x) => x.date === d).length + doneOn1(d).length >= real.items || minutesOn(d) + minutes > real.minutes)) return null;
     const r = rulesOf(d);
     const roomInEvening = eveningMinutes(d) + minutes <= r.eveningCap * RELAXED_EVENING;
     const ok = (ws: Array<[number, number]>) => ws.find(([s, e]) => e - s >= minutes && (s < r.eveningStart || roomInEvening));

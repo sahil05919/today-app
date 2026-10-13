@@ -28,10 +28,14 @@ export function settleOverflow(raw: AppData, now: Date = new Date()): Move[] {
 
   const moves: Move[] = [];
   let work = data;
+  const pending = new Set(first.overflow.filter((o) => !o.carried).map((o) => o.task.id));
   for (const t of candidates) {
+    pending.delete(t.id);
     for (let i = 1; i <= DAYS_AHEAD; i++) {
       const day = addDays(today, i);
-      const trial: AppData = { ...work, tasks: work.tasks.map((x): Task => (x.id === t.id ? { ...x, due: day, dueTime: undefined } : x)) };
+      // Today's other flexible tasks (the ones placed today and the ones still waiting) are left out of the trial: by that morning they are
+      // done, or have been settled themselves; counted as "carried over" they would use up the day's room and capacity before this one.
+      const trial: AppData = { ...work, tasks: work.tasks.filter((x) => !pending.has(x.id) && !(x.id !== t.id && x.status === "open" && x.due === today && !x.dueTime)).map((x): Task => (x.id === t.id ? { ...x, due: day, dueTime: undefined } : x)) };
       // Judge the target day as it will be on that morning (nothing before "now" is lost).
       const tl = buildTimeline(trial, day, fromISO(day));
       if (!tl.overflow.some((o) => o.task.id === t.id)) {
