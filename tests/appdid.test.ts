@@ -5,6 +5,7 @@ vi.mock("@capacitor/preferences", () => ({ Preferences: { get: async () => ({ va
 
 import { emptyData } from "../lib/backup";
 import { autoRows, carriedBetween, chipCount, checkinLine, dueChanges, lifeAdminToday, newCalendarEntries, rowText } from "../lib/autoLog";
+import { digestKey } from "../lib/inbox";
 import { importInbox, type InboxBridge } from "../lib/inboxRun";
 import { planNotifications } from "../lib/notifications/plan";
 import { seedIfNeeded } from "../lib/seed";
@@ -70,7 +71,12 @@ describe("3. every source is tagged where the item is made", () => {
     await importInbox(NOW, bridge(), true);
     const d = getData().auto!.filter((e) => e.src === "gmail-digest");
     expect(d).toHaveLength(1);
-    expect(d[0]).toMatchObject({ key: `digest:${TODAY}`, title: "2 emails need you" });
+    expect(d[0]).toMatchObject({ title: "2 emails need you" });
+    expect(d[0].key.startsWith(`digest:${TODAY}|2|`)).toBe(true);
+    // A later digest the same day (the script ran again with a new email) is a second entry.
+    raw = [allDay(9, "DIGEST: 3 emails need you", TODAY, "• A — B — c\n• D — E — f\n• G — H — i")];
+    await importInbox(NOW, bridge(), true);
+    expect(getData().auto!.filter((e) => e.src === "gmail-digest")).toHaveLength(2);
   });
 
   it("new phone-calendar events are listed (the first read only learns), #today-remind ones are labelled", () => {
@@ -173,11 +179,11 @@ describe("3. the home chip, the sheet and the check-in", () => {
 
   it("Remove on a calendar event hides it here; on the digest dismisses it", () => {
     const ev = calEvent("9", "Dentist", "2026-10-16");
-    actions.replaceAll(base({ calendarEvents: [ev], settings: { ...base().settings, digest: { date: TODAY, title: "2 emails need you", items: ["a", "b"] } }, auto: [{ ...entry("ev", nowMs), src: "phone-calendar" as const, key: "event:9@2026-10-16" }, { ...entry("dg", nowMs), src: "gmail-digest" as const, key: `digest:${TODAY}` }] }));
+    actions.replaceAll(base({ calendarEvents: [ev], settings: { ...base().settings, digest: { date: TODAY, title: "2 emails need you", items: ["a", "b"] } }, auto: [{ ...entry("ev", nowMs), src: "phone-calendar" as const, key: "event:9@2026-10-16" }, { ...entry("dg", nowMs), src: "gmail-digest" as const, key: `digest:${digestKey({ date: TODAY, title: "2 emails need you", items: ["a", "b"] })}` }] }));
     actions.removeAuto(["ev"]);
     expect(getData().eventMarks?.["9@2026-10-16"]?.hidden).toBe(true);
     actions.removeAuto(["dg"]);
-    expect(getData().settings.digestDismissed).toBe(TODAY);
+    expect(getData().settings.digestDismissed).toBe(digestKey({ date: TODAY, title: "2 emails need you", items: ["a", "b"] }));
   });
 
   it("Undo move puts the item back, unless it has moved again", () => {

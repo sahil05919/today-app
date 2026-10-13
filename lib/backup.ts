@@ -790,10 +790,10 @@ export function migrate(raw: unknown): AppData {
         s.digest && isISO(s.digest.date) && Array.isArray(s.digest.items)
           ? { date: s.digest.date, title: String(s.digest.title ?? "").slice(0, 120), items: s.digest.items.filter((x: unknown) => typeof x === "string").slice(0, 30).map((x: string) => x.slice(0, 300)) }
           : undefined,
-      digestDismissed: isISO(s.digestDismissed) ? s.digestDismissed : undefined,
+      digestDismissed: str(s.digestDismissed, 120),
       inboxAdded: s.inboxAdded && Number.isFinite(s.inboxAdded.n) && Number.isFinite(s.inboxAdded.at) ? { n: Math.min(99, Math.max(1, Math.round(s.inboxAdded.n))), at: s.inboxAdded.at } : undefined,
       calSeen: Array.isArray(s.calSeen) ? s.calSeen.filter((x: unknown) => typeof x === "string" && x.length < 100).slice(-1500) : undefined,
-      digestLogged: isISO(s.digestLogged) ? s.digestLogged : undefined,
+      digestLogged: str(s.digestLogged, 120),
       clashDismissed: Array.isArray(s.clashDismissed) ? s.clashDismissed.filter((x: unknown) => typeof x === "string" && x.length < 120).slice(-100) : undefined,
       alarmsSet:
         s.alarmsSet && typeof s.alarmsSet === "object"

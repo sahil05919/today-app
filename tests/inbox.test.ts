@@ -5,7 +5,7 @@ vi.mock("@capacitor/preferences", () => ({ Preferences: { get: async () => ({ va
 
 import { emptyData } from "../lib/backup";
 import { convertCalendarEvents } from "../lib/calendar";
-import { addedLine, digestCard, digestLine, noteFields, parseDigest, parseTaskEvent, todaysDigest } from "../lib/inbox";
+import { addedLine, digestCard, digestKey, digestLine, noteFields, parseDigest, parseTaskEvent, todaysDigest } from "../lib/inbox";
 import { importInbox, type InboxBridge } from "../lib/inboxRun";
 import { planNotifications } from "../lib/notifications/plan";
 import { remindClashes } from "../lib/remindClash";
@@ -63,13 +63,20 @@ describe("DIGEST: events", () => {
     expect(todaysDigest([ev("2026-10-11", "• old"), ev("2026-10-12", text)], "2026-10-12")?.items).toHaveLength(3);
   });
 
-  it("the card shows from 19:00 only, until dismissed, only for today; the evening check-in mentions it", () => {
+  it("the card shows as soon as today's digest exists (any time), once per digest, only for today; the evening check-in mentions it", () => {
     const withDigest = base({ settings: { ...base().settings, digest: parseDigest(ev("2026-10-12", text))! } });
-    expect(digestCard(withDigest, new Date(2026, 9, 12, 18, 59))).toBeNull();
+    expect(digestCard(withDigest, new Date(2026, 9, 12, 8, 0))?.items).toHaveLength(3); // a midday digest from the script is shown at once
+    expect(digestCard(withDigest, new Date(2026, 9, 12, 12, 30))?.items).toHaveLength(3);
     expect(digestCard(withDigest, new Date(2026, 9, 12, 19, 0))?.items).toHaveLength(3);
     expect(digestCard(withDigest, new Date(2026, 9, 13, 19, 30))).toBeNull(); // yesterday's digest is not shown tomorrow
     const dismissed = { ...withDigest, settings: { ...withDigest.settings, digestDismissed: "2026-10-12" } };
     expect(digestCard(dismissed, new Date(2026, 9, 12, 20, 0))).toBeNull();
+    // Dismissing THIS digest does not hide a different one the same day.
+    const mine = withDigest.settings.digest!;
+    const byKey = { ...withDigest, settings: { ...withDigest.settings, digestDismissed: digestKey(mine) } };
+    expect(digestCard(byKey, new Date(2026, 9, 12, 13, 0))).toBeNull();
+    const later = { ...byKey, settings: { ...byKey.settings, digest: { ...mine, items: [...mine.items, "• New — Mail — reply"] } } };
+    expect(digestCard(later, new Date(2026, 9, 12, 13, 0))?.items).toHaveLength(4);
     expect(digestLine(withDigest, "2026-10-12")).toBe("3 emails need you");
     const tonight = planNotifications(withDigest, NOW).find((n) => n.kind === "tonight" && n.key === "tonight:2026-10-12");
     expect(tonight?.body).toMatch(/3 emails need you\.$/);

@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { friendlyDate } from "@/lib/dates";
-import { digestCard } from "@/lib/inbox";
+import { digestCard, digestKey } from "@/lib/inbox";
 import { remindClashes } from "@/lib/remindClash";
 import { toHHMM } from "@/lib/profile";
 import { actions } from "@/lib/store";
@@ -25,7 +25,7 @@ export function DigestCard({ data, now }: { data: AppData; now: Date }) {
             <span className="block text-sm text-muted">{d.title}{open ? "" : " · tap to see"}</span>
           </span>
         </button>
-        <button onClick={() => actions.settings({ digestDismissed: d.date })} aria-label="Dismiss" className="-mr-1 min-h-9 px-2 text-muted">
+        <button onClick={() => actions.settings({ digestDismissed: digestKey(d) })} aria-label="Dismiss" className="-mr-1 min-h-9 px-2 text-muted">
           ✕
         </button>
       </div>

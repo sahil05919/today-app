@@ -12,8 +12,9 @@ import type { AppData, ISODate, ItemSource } from "./types";
  *    TASK: <title>      the event's date is the due date. The notes may have these lines (all optional):
  *                         area: Job   ·   time: 14:00   ·   duration: 20   ·   important: yes   ·   source: <email subject>
  *                       The app imports each one ONCE as a normal task, remembers the event id, and deletes the event from the Inbox.
- *    DIGEST: <title>    on today's date at 20:00. The notes have one email per line:  • Sender — Subject — reason
- *                       The app shows an "Emails that need you" card from 19:00. It never deletes digests (the script cleans up).
+ *    DIGEST: <title>    on today's date (the script may write one at midday and another in the evening). The notes have one email per line:
+ *                         • Sender — Subject — reason
+ *                       The app shows an "Emails that need you" card as soon as one exists for today. It never deletes digests (the script cleans up).
  *
  *  Events the add-on adds to your MAIN calendar (shifts, bookings) carry  #today-remind  in their notes: they get the same
  *  treatment as an event shared from Gmail (reminders 2 days before 19:00, the evening before 21:00, 1 hour before; a clash
@@ -22,8 +23,6 @@ import type { AppData, ISODate, ItemSource } from "./types";
 export const TASK_PREFIX = "TASK:";
 export const DIGEST_PREFIX = "DIGEST:";
 export { REMIND_TAG } from "./calendarNames";
-/** The digest card (and its line in the evening check-in) appears from this time. */
-export const DIGEST_FROM = "19:00";
 
 export interface InboxEvent {
   /** The phone's id of the event (to import it once). */
@@ -138,20 +137,27 @@ export function todaysDigest(events: InboxEvent[], today: ISODate): Digest | nul
   return mine.length ? mine[mine.length - 1] : null;
 }
 
-const minOf = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+/** Identifies ONE digest (its day and its content), so dismissing the midday one does not hide a new evening one. */
+export function digestKey(d: Digest): string {
+  let h = 0;
+  for (const ch of d.items.join("\n")) h = (Math.imul(h, 31) + ch.charCodeAt(0)) >>> 0;
+  return `${d.date}|${d.items.length}|${h.toString(36)}`;
+}
 
-/** The card: from 19:00, today's digest only, until it is dismissed. */
+/** Dismissed? A dismissal is per digest. (Older saves stored just the day, which still hides that whole day.) */
+export const digestDismissed = (data: AppData, d: Digest): boolean => data.settings.digestDismissed === d.date || data.settings.digestDismissed === digestKey(d);
+
+/** The card: today's digest, as soon as there is one (no waiting for the evening), until it is dismissed. */
 export function digestCard(data: AppData, now: Date): Digest | null {
   const d = data.settings.digest;
-  const today = toISO(now);
-  if (!d || d.date !== today || data.settings.digestDismissed === today || !d.items.length) return null;
-  return now.getHours() * 60 + now.getMinutes() >= minOf(DIGEST_FROM) ? d : null;
+  if (!d || d.date !== toISO(now) || !d.items.length || digestDismissed(data, d)) return null;
+  return d;
 }
 
 /** For the 20:00 check-in: "3 emails need you" (the digest's own count), or null when there is no digest for that day. */
 export function digestLine(data: AppData, day: ISODate): string | null {
   const d = data.settings.digest;
-  if (!d || d.date !== day || data.settings.digestDismissed === day || !d.items.length) return null;
+  if (!d || d.date !== day || !d.items.length || digestDismissed(data, d)) return null;
   return d.items.length === 1 ? "1 email needs you" : `${d.items.length} emails need you`;
 }
 

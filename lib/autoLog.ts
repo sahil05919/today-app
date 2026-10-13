@@ -1,6 +1,7 @@
 import { addDays, toISO } from "./dates";
 import { eventMarkKey } from "./fixed";
 import { eventSource } from "./entries";
+import { digestKey } from "./inbox";
 import { getOccurrences } from "./series";
 import type { AppData, AutoEntry, FixedEvent, ISODate, ItemSource, Task } from "./types";
 
@@ -107,11 +108,12 @@ export function lifeAdminToday(data: AppData, today: ISODate): NewAuto[] {
     .map((o) => ({ src: "life-admin" as const, kind: "added" as const, key: `occ:${o.key}`, title: o.task.title, date: today }));
 }
 
-/** A DIGEST: from the Gmail script, listed once. */
+/** A DIGEST: from the Gmail script, listed once per digest (a midday one and a later evening one are two). */
 export function digestEntry(data: AppData): NewAuto | null {
   const d = data.settings.digest;
-  if (!d || !d.items.length || data.settings.digestLogged === d.date) return null;
-  return { src: "gmail-digest", kind: "added", key: `digest:${d.date}`, title: d.title, date: d.date };
+  if (!d || !d.items.length) return null;
+  const key = digestKey(d);
+  return data.settings.digestLogged === key ? null : { src: "gmail-digest", kind: "added", key: `digest:${key}`, title: d.title, date: d.date };
 }
 
 // ---- Reading the list ---------------------------------------------------------------------------------------------------------------------

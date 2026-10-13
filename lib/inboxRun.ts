@@ -89,7 +89,7 @@ export async function importInbox(now: Date = new Date(), bridge: InboxBridge = 
   const listed = digestEntry(getData());
   if (listed) {
     actions.logAuto([listed]);
-    actions.bookkeeping({ digestLogged: listed.date });
+    actions.bookkeeping({ digestLogged: listed.key.slice("digest:".length) });
   }
   return { added, digest: !!digest, status: "ok" };
 }

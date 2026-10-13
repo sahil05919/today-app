@@ -659,14 +659,15 @@ export interface Settings {
   /** Gmail add-on (lib/inbox.ts): TASK: events already imported (never twice), today's DIGEST, whether its card was dismissed, tasks added since the toast. */
   inboxSeen?: string[];
   digest?: { date: ISODate; title: string; items: string[] };
-  digestDismissed?: ISODate;
+  /** The digest that was dismissed (lib/inbox.ts `digestKey`; older saves hold just the day). */
+  digestDismissed?: string;
   inboxAdded?: { n: number; at: number };
   /** Event ids whose "clashes with work" card was answered. */
   clashDismissed?: string[];
   /** Phone-calendar events already seen ("<calId>@<date>"), so only a genuinely new one is listed in "What the app did". */
   calSeen?: string[];
-  /** The day a Gmail digest was last listed in "What the app did" (once per digest). */
-  digestLogged?: ISODate;
+  /** The digest last listed in "What the app did" (its `digestKey`), so each is listed once. */
+  digestLogged?: string;
   mirror?: { at: number; status: "ok" | "off" | "no-calendar" | "not-google" | "pick-calendar" | "no-permission" | "error" | "unsupported"; calendar?: string; written?: number };
 }
 

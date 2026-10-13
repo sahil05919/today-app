@@ -39,6 +39,7 @@ import {
 } from "./series";
 import { billKey } from "./bills";
 import { applyMoves } from "./moves";
+import { digestKey } from "./inbox";
 import { appendAuto, carriedBetween, itemOf, lifeAdminToday, markAllSeen, markRemoved, markSeen, movesBetween, newCalendarEntries, type NewAuto } from "./autoLog";
 import { applyClear, clearedEvent, clearedToast } from "./clear";
 import type { ClearWindow } from "./clearParse";
@@ -1264,7 +1265,7 @@ export const actions = {
       if (!it) continue;
       if (it.kind === "task") d = { ...d, tasks: d.tasks.filter((t) => t.id !== it.id) };
       else if (it.kind === "occ") d = setOccSkipped(d, it.id, true);
-      else if (it.kind === "digest") d = { ...d, settings: { ...d.settings, digestDismissed: it.id } };
+      else if (it.kind === "digest") d = d.settings.digest && digestKey(d.settings.digest) === it.id ? { ...d, settings: { ...d.settings, digestDismissed: digestKey(d.settings.digest) } } : d;
       else if (it.kind === "event") {
         const own = (d.events ?? []).find((x) => `${x.calId ?? x.id}@${x.date}` === it.id);
         d = own ? { ...d, events: (d.events ?? []).filter((x) => x !== own) } : { ...d, eventMarks: { ...(d.eventMarks ?? {}), [it.id]: { ...(d.eventMarks?.[it.id] ?? {}), hidden: true } } };
