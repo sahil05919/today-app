@@ -353,6 +353,18 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
           <LifeAdminSettings data={data} />
         </Section>
 
+        <Section title="Accountability" hint="Share my week on Sunday">
+          <label className="flex min-h-10 items-center gap-2 text-sm">
+            <input type="checkbox" checked={p.shareWeek} onChange={(e) => set("shareWeek", e.target.checked)} className="h-5 w-5 accent-[var(--accent)]" />
+            Show “Share my week” on the Sunday review
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted">Buddy's name (optional, used as “Hey Rahul, my week:”)</span>
+            <input value={p.buddyName ?? ""} onChange={(e) => set("buddyName", e.target.value || undefined)} className={field} placeholder="Rahul" maxLength={40} />
+          </label>
+          <p className="text-xs text-muted">Nothing is ever sent for you: the button only opens your phone's share sheet (WhatsApp, Messages…).</p>
+        </Section>
+
         <Section title="Learning log" hint="Which areas ask “What did you learn?”">
           <p className="text-sm text-muted">After a session of these areas is done, the app asks for one line (inside the app, never a notification).</p>
           <div className="flex flex-wrap gap-2">

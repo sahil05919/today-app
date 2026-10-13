@@ -5,6 +5,8 @@ import { actions } from "@/lib/store";
 import { weekStart } from "@/lib/stats";
 import { behind, catchUpSuggestions, compare, focusFor, slipped, soFarText, weekStats, wins, yourWeekText, type AreaRow, type WeekStats } from "@/lib/weekly";
 import { otherLine } from "@/lib/other";
+import { shareText } from "@/lib/shareText";
+import { weekShareText } from "@/lib/shareWeek";
 import type { AppData, ISODate, WeekSnapshot } from "@/lib/types";
 import { btn, Chip, type ViewCtx } from "./ui";
 
@@ -147,9 +149,21 @@ export function YourWeekBody({ data, ctx }: { data: AppData; ctx: ViewCtx }) {
   const nextWeek = addDays(stats.week, 7);
   const applied = data.settings.focus?.week === nextWeek && focus.length > 0 && focus.every((a) => data.settings.focus!.areas.includes(a.id));
 
+  const share = async () => {
+    const r = await shareText(weekShareText(stats, ctx.profile.buddyName), "My week");
+    if (r === "copied") ctx.notify("Copied. Paste it into WhatsApp");
+    else if (r === "failed") ctx.notify("Couldn't share it on this device");
+  };
+
   return (
     <div className="space-y-5">
       <p className="text-lg font-semibold leading-snug">{text.headline}</p>
+
+      {ctx.profile.shareWeek !== false && (
+        <button className="min-h-11 w-full rounded-xl bg-accent-soft px-4 text-sm font-semibold text-accent" onClick={share}>
+          📤 Share my week
+        </button>
+      )}
 
       {stats.areas.length > 0 && (
         <section aria-label="Sessions this week">
