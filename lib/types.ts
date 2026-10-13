@@ -643,8 +643,8 @@ export interface Settings {
 }
 
 export interface AppData {
-  /** Bump when the shape changes and add a step in lib/backup.ts `migrate`. 2 = repeats are series + occurrences, 3 = the assistant pass. */
-  version: 1 | 2 | 3;
+  /** Bump when the shape changes and add a step in lib/backup.ts `migrate`. 2 = repeats are series + occurrences, 3 = the assistant pass, 4 = the final feature pass (cleared windows, Other work, notes, learning log…: all optional, so the step is only a backup and a stamp). */
+  version: 1 | 2 | 3 | 4;
   tasks: Task[];
   settings: Settings;
   /** "Me": routines, areas and shortcuts. Missing = defaults (see lib/profile.ts). */

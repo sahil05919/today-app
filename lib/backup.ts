@@ -40,7 +40,7 @@ export const BACKUP_EVERY_DAYS = 14;
 const DAY = 86_400_000;
 
 export function emptyData(now = Date.now()): AppData {
-  return { version: 3, tasks: [], settings: { firstRunAt: now } };
+  return { version: 4, tasks: [], settings: { firstRunAt: now } };
 }
 
 export function backupDue(data: AppData, now = Date.now()): boolean {
@@ -626,7 +626,7 @@ export function migrate(raw: unknown): AppData {
   const r = raw as any;
   const s = r.settings ?? {};
   const out: AppData = {
-    version: 3,
+    version: 4,
     series: cleanSeries(r.series),
     occurrences: cleanOccurrences(r.occurrences),
     history: cleanHistory(r.history),
@@ -756,7 +756,7 @@ export function migrate(raw: unknown): AppData {
 }
 
 /** The schema version this build writes. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /** True for data saved by an older build: the raw copy must be backed up first (see lib/store.ts). */
 export function needsUpgrade(raw: unknown): boolean {
@@ -764,9 +764,9 @@ export function needsUpgrade(raw: unknown): boolean {
 }
 
 /** Which backup keys the raw data of an older build must be copied to before it is migrated. */
-export function backupKeysFor(raw: unknown, keys: { v2: string; v3: string }): string[] {
+export function backupKeysFor(raw: unknown, keys: { v2: string; v3: string; v4: string }): string[] {
   const v = (raw && typeof raw === "object" ? ((raw as any).version ?? 1) : 1) as number;
-  return [...(v < 2 ? [keys.v2] : []), ...(v < 3 ? [keys.v3] : [])];
+  return [...(v < 2 ? [keys.v2] : []), ...(v < 3 ? [keys.v3] : []), ...(v < 4 ? [keys.v4] : [])];
 }
 
 export async function readBackupFile(file: File): Promise<AppData> {

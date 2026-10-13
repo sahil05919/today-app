@@ -4,7 +4,7 @@ import { addDays } from "../lib/dates";
 import { completeTaskIn } from "../lib/done";
 import { hashId, planNotifications } from "../lib/notifications/plan";
 import { getOccurrences, editSeries, makeSeries, occKey, seriesDates, sweepMissed, withOccurrences } from "../lib/series";
-import { BACKUP_KEY, BACKUP_KEY_V3, KEY, localStorageAdapter } from "../lib/store";
+import { BACKUP_KEY, BACKUP_KEY_V3, BACKUP_KEY_V4, KEY, localStorageAdapter } from "../lib/store";
 import { buildTimeline } from "../lib/timeline";
 import { upcomingDays } from "../lib/upcoming";
 import type { AppData, Series } from "../lib/types";
@@ -168,7 +168,7 @@ describe("A6. migration of the old model", () => {
 
   it("turns the task and its copies into ONE series with the done days kept", () => {
     const out = migrate(old);
-    expect(out.version).toBe(3);
+    expect(out.version).toBe(4);
     expect(out.tasks.map((t) => t.title)).toEqual(["Buy milk"]);
     expect(out.series).toHaveLength(1);
     expect(out.series![0]).toMatchObject({ title: "Vitamin", time: "11:00", area: "health", rule: DAILY, startDate: "2026-10-09" });
@@ -203,15 +203,17 @@ describe("A6b. the old data is backed up under its own key before anything chang
 
   const raw = JSON.stringify({ version: 1, settings: { firstRunAt: 1 }, tasks: [{ id: "a", title: "Vitamin", important: false, tags: [], steps: [], focus: false, status: "open", createdAt: 1, due: "2026-10-12", dueTime: "11:00", recur: DAILY }] });
 
-  it("copies the exact old JSON (under both the v2 and the v3 key), migrates, saves v3, and never overwrites a backup", () => {
+  it("copies the exact old JSON (under the v2, v3 and v4 keys), migrates, saves v4, and never overwrites a backup", () => {
     store.set(KEY, raw);
     const loaded = localStorageAdapter.load()!;
     expect(BACKUP_KEY).toBe("today:v1:backup-pre-v2");
     expect(store.get(BACKUP_KEY)).toBe(raw);
     expect(BACKUP_KEY_V3).toBe("today:v1:backup-pre-v3");
     expect(store.get(BACKUP_KEY_V3)).toBe(raw);
-    expect(loaded.version).toBe(3);
-    expect(JSON.parse(store.get(KEY)!).version).toBe(3);
+    expect(BACKUP_KEY_V4).toBe("today:v1:backup-pre-v4");
+    expect(store.get(BACKUP_KEY_V4)).toBe(raw);
+    expect(loaded.version).toBe(4);
+    expect(JSON.parse(store.get(KEY)!).version).toBe(4);
     expect(loaded.series).toHaveLength(1);
     // A second load (already v2) leaves the backup alone; even a different v1 save would not replace it.
     localStorageAdapter.load();
@@ -219,6 +221,20 @@ describe("A6b. the old data is backed up under its own key before anything chang
     store.set(KEY, raw.replace("Vitamin", "Other"));
     localStorageAdapter.load();
     expect(store.get(BACKUP_KEY)).toBe(raw);
+    expect(store.get(BACKUP_KEY_V4)).toBe(raw);
+  });
+
+  it("a v3 save (the assistant pass) is backed up under the v4 key only, and migrating twice changes nothing", () => {
+    const v3 = JSON.stringify({ version: 3, settings: { firstRunAt: 1 }, tasks: [] });
+    store.set(KEY, v3);
+    const first = localStorageAdapter.load()!;
+    expect(store.get(BACKUP_KEY_V4)).toBe(v3);
+    expect(store.has(BACKUP_KEY)).toBe(false);
+    expect(store.has(BACKUP_KEY_V3)).toBe(false);
+    expect(first.version).toBe(4);
+    const again = localStorageAdapter.load()!;
+    expect(JSON.stringify(again)).toBe(JSON.stringify(first));
+    expect(store.get(BACKUP_KEY_V4)).toBe(v3);
   });
 });
 

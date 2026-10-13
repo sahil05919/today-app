@@ -72,6 +72,8 @@ export const KEY = "today:v1";
 export const BACKUP_KEY = "today:v1:backup-pre-v2";
 /** Same again before the v3 (assistant pass) migration. */
 export const BACKUP_KEY_V3 = "today:v1:backup-pre-v3";
+/** Same again before the v4 (final feature pass) step. */
+export const BACKUP_KEY_V4 = "today:v1:backup-pre-v4";
 /** "Do it now": a small first push. */
 export const DO_NOW_MIN = 15;
 
@@ -83,7 +85,7 @@ export const localStorageAdapter: StorageAdapter = {
       const parsed = JSON.parse(raw);
       const upgrade = needsUpgrade(parsed);
       // Schema change: keep the old data first (never overwriting an earlier backup), then migrate and save.
-      if (upgrade) for (const k of backupKeysFor(parsed, { v2: BACKUP_KEY, v3: BACKUP_KEY_V3 })) if (localStorage.getItem(k) == null) localStorage.setItem(k, raw);
+      if (upgrade) for (const k of backupKeysFor(parsed, { v2: BACKUP_KEY, v3: BACKUP_KEY_V3, v4: BACKUP_KEY_V4 })) if (localStorage.getItem(k) == null) localStorage.setItem(k, raw);
       const data = migrate(parsed);
       if (upgrade) localStorage.setItem(KEY, JSON.stringify(data));
       return data;
@@ -111,7 +113,7 @@ async function loadNative(): Promise<AppData | null> {
       const upgrade = needsUpgrade(parsed);
       if (upgrade) {
         // Schema change: the old data is copied to its own key FIRST (an earlier backup is never overwritten).
-        for (const k of backupKeysFor(parsed, { v2: BACKUP_KEY, v3: BACKUP_KEY_V3 })) {
+        for (const k of backupKeysFor(parsed, { v2: BACKUP_KEY, v3: BACKUP_KEY_V3, v4: BACKUP_KEY_V4 })) {
           const have = await safely("Preferences.get", () => Preferences.get({ key: k }), { value: null }, 10_000);
           if (!have.value) await safely("Preferences.set", () => Preferences.set({ key: k, value }), undefined, 15_000);
         }
