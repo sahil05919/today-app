@@ -1,5 +1,5 @@
 import type { ParsedCapture } from "./parse";
-import type { LearnedRule } from "./types";
+import type { LearnedRule, SubLabel } from "./types";
 
 /**
  * Learning from your fixes. When you change a task's category or time, the app remembers it:
@@ -32,15 +32,18 @@ const sameWords = (a: string[], b: string[]) => a.length === b.length && a.every
 export function learnFix(
   rules: LearnedRule[] | undefined,
   title: string,
-  fix: { areaId?: string; time?: string },
+  fix: { areaId?: string; time?: string; sub?: SubLabel },
   now = Date.now(),
+  /** The words to remember instead of all the title's (the ones the dictionary knows: "gym", not "evening gym with Sam"). */
+  keyWords?: string[],
 ): LearnedRule[] {
-  const words = significantWords(title);
+  const words = keyWords?.length ? keyWords.slice(0, 5) : significantWords(title);
   if (!words.length || (!fix.areaId && !fix.time)) return rules ?? [];
   const list = [...(rules ?? [])];
   const i = list.findIndex((r) => sameWords(r.words, words));
   if (i >= 0) {
-    list[i] = { ...list[i], ...(fix.areaId ? { areaId: fix.areaId } : {}), ...(fix.time ? { time: fix.time } : {}), hits: list[i].hits + 1, at: now };
+    // A new area replaces the old sub-label too (Other · Building → Health must not keep "Building").
+    list[i] = { ...list[i], ...(fix.areaId ? { areaId: fix.areaId, sub: fix.sub } : {}), ...(fix.time ? { time: fix.time } : {}), hits: list[i].hits + 1, at: now };
   } else {
     list.push({ id: `l-${now.toString(36)}-${list.length}`, words, ...fix, hits: 1, at: now });
   }
@@ -56,7 +59,11 @@ export function matchLearned(rules: LearnedRule[] | undefined, title: string): L
   return bestRule(rules?.filter((r) => !r.item), title);
 }
 
-function bestRule(rules: LearnedRule[] | undefined, title: string): LearnedRule | null {
+/** The remembered area fix that fits this title (rules with an area only), or null. Used by lib/categorise.ts. */
+export const matchLearnedArea = (rules: readonly LearnedRule[] | undefined, title: string): LearnedRule | null =>
+  bestRule(rules?.filter((r) => !r.item && r.areaId), title);
+
+function bestRule(rules: readonly LearnedRule[] | undefined, title: string): LearnedRule | null {
   if (!rules?.length) return null;
   const have = significantWords(title).map(stem);
   let best: { rule: LearnedRule; hit: number; ratio: number } | null = null;

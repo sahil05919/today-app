@@ -1,4 +1,5 @@
 import { addDays, isISO, toISO } from "./dates";
+import { annotateHistory } from "./catHistory";
 import { eventMarkKey } from "./fixed";
 import { withDefaults } from "./profile";
 import { sessionTitle } from "./sessions";
@@ -172,7 +173,7 @@ export function diffHistory(prev: AppData, next: AppData, now: number): HistoryE
 export function withHistory(prev: AppData, next: AppData, now: number = Date.now()): AppData {
   const added = diffHistory(prev, next, now);
   if (!added.length) return next;
-  return { ...next, history: [...(next.history ?? []), ...added].slice(-MAX_HISTORY) };
+  return { ...next, history: [...(next.history ?? []), ...annotateHistory(added, next)].slice(-MAX_HISTORY) };
 }
 
 /**

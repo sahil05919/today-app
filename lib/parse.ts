@@ -5,7 +5,7 @@ import { inferArea } from "./areas";
 import { inferCountsFor } from "./fixed";
 import { expandShortcuts, findArea, withDefaults } from "./profile";
 import { extractRecurrence, firstOccurrence } from "./recur";
-import type { ISODate, Profile, Recurrence, TemplateId } from "./types";
+import type { ISODate, ItemSource, Profile, Recurrence, TemplateId } from "./types";
 
 export interface ParsedCapture {
   /**
@@ -19,6 +19,8 @@ export interface ParsedCapture {
   session?: { areaId: string; date: ISODate };
   /** For "paid rent": which bill. */
   paidBillId?: string;
+  /** Who made it (the Gmail import, the calendar…). Left out = you typed it. */
+  src?: ItemSource;
   /** Where the area came from. A typed @area beats anything learned or guessed. */
   areaSource?: "explicit" | "learned" | "ai" | "guess";
   /** Where the time came from. A typed time beats anything suggested. */

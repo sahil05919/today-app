@@ -682,8 +682,8 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
         </Section>
 
         <Section
-          title="What I've learned from you"
-          hint={learned.length + (data.userWords?.length ?? 0) ? `${learned.length} fix${learned.length === 1 ? "" : "es"} · ${data.userWords?.length ?? 0} word${(data.userWords?.length ?? 0) === 1 ? "" : "s"}` : "Fix a category or time once and I remember"}
+          title="Categories: what I've learned from you"
+          hint={learned.length + (data.userWords?.length ?? 0) ? `${learned.length} fix${learned.length === 1 ? "" : "es"} · ${data.userWords?.length ?? 0} word${(data.userWords?.length ?? 0) === 1 ? "" : "s"}` : "Tap a category chip on any item to teach me"}
         >
           {(data.userWords?.length ?? 0) > 0 && (
             <div>
@@ -704,7 +704,7 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
             </div>
           )}
           {learned.length === 0 ? (
-            <p className="text-sm text-muted">Nothing yet. When you correct an area or a time on the “Got it” card, it shows up here and is used next time, online or offline.</p>
+            <p className="text-sm text-muted">Nothing yet. When you change a category (the small chip on any task or event) or fix an area on the “Got it” card, the words are remembered here and used next time, online or offline. They beat the built-in word list.</p>
           ) : (
             <ul className="space-y-1.5">
               {learned.map((r) => {
@@ -712,7 +712,7 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
                 return (
                   <li key={r.id} className="flex min-h-11 items-center gap-2 rounded-xl bg-bg px-3 text-sm">
                     <span className="min-w-0 flex-1 truncate">
-                      “{r.words.join(" ")}” → {a ? `${a.emoji} ${a.name}` : ""}
+                      “{r.words.join(" ")}” → {a ? `${a.emoji} ${a.name}${r.areaId === "others" && r.sub && r.sub !== "Other" ? ` · ${r.sub}` : ""}` : ""}
                       {a && r.time ? " · " : ""}
                       {r.time ? `at ${r.time}` : ""}
                     </span>

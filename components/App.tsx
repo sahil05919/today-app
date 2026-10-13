@@ -16,6 +16,7 @@ import { readWithGemini } from "@/lib/shareAi";
 import { dateInKey, resolveTap } from "@/lib/tap";
 import { markOpen, timed } from "@/lib/devTiming";
 import { addedLine } from "@/lib/inbox";
+import { runCategoryLookups } from "@/lib/catAi";
 import { closeAllSheets } from "@/lib/sheetStack";
 import { settleNote, settleOverflow } from "@/lib/settle";
 import { findTask, seriesOf } from "@/lib/series";
@@ -30,6 +31,7 @@ import type { ISODate, SessionLog, Task } from "@/lib/types";
 import { AdjustSheet } from "./AdjustSheet";
 import { AlarmRinger } from "./AlarmRinger";
 import { CalendarSheet } from "./CalendarSheet";
+import { CategoryPickerHost } from "./CategoryChip";
 import { startItem } from "./itemActions";
 import { Capture, type CaptureCommand } from "./Capture";
 import { CheckIn } from "./CheckIn";
@@ -240,6 +242,14 @@ export default function App() {
     if (l) setLearnFor(l);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionsNow]);
+
+  // Titles the phone could not place are asked about in the background (Gemini, online only, 20 at most per app open; lib/catAi.ts).
+  const loadedForCategories = !!data;
+  useEffect(() => {
+    if (!loadedForCategories) return;
+    const id = setTimeout(() => void runCategoryLookups(), 6000);
+    return () => clearTimeout(id);
+  }, [loadedForCategories]);
 
   // Tasks the Gmail add-on sent (lib/inboxRun.ts): say so once, then forget it.
   const addedFromGmail = data?.settings.inboxAdded;
@@ -455,6 +465,7 @@ export default function App() {
       {share && <ShareEventSheet key={share.date + share.title} share={share} data={data} ctx={ctx} onClose={() => setShare(null)} />}
       {invite && <ImportSheet events={invite} ctx={ctx} onClose={() => setInvite(null)} />}
       {checkIn && <CheckIn tasks={checkIn} today={today} onFinish={() => setCheckIn(null)} />}
+      <CategoryPickerHost notify={notify} />
     </div>
   );
 }

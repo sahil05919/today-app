@@ -13,6 +13,7 @@ import type { TLItem } from "@/lib/timeline";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
 import { completeItem, skipItem, startItem, undoItem, unskipItem } from "./itemActions";
 import { AlarmButton } from "./AlarmButton";
+import { EventChip, TLChip } from "./CategoryChip";
 import { OtherRow } from "./OtherWork";
 import { btn, field, Sheet, type Panel, type ViewCtx } from "./ui";
 
@@ -63,7 +64,10 @@ export function ItemSheet({
   const btnClass = (k: keyof typeof btn) => `${btn[k]} min-h-12 w-full`;
   return (
     <Sheet title={item.title} onClose={onClose}>
-      <p className={`-mt-1 mb-4 text-sm ${missed ? "font-medium text-warn" : "text-muted"}`}>{sub}</p>
+      <p className={`-mt-1 mb-2 text-sm ${missed ? "font-medium text-warn" : "text-muted"}`}>{sub}</p>
+      <div className="mb-4">
+        <TLChip it={item} />
+      </div>
       <div className="space-y-2">
         {!item.done && !item.allDay && <AlarmButton ctx={ctx} itemKey={item.key} title={item.title} date={date} startMin={item.start} />}
         {groceries && openPanel && (
@@ -219,6 +223,7 @@ export function EventSheet({ event, data, ctx, onClose }: { event: FixedEvent; d
           ✓ {isEventDone(data, event) ? "Not done after all" : "Done"}
         </button>
         <input value={event.title} onChange={(e) => set({ title: e.target.value })} aria-label="Title" className={`${field} text-lg font-semibold`} />
+        <EventChip event={event} />
         <div className="grid grid-cols-2 gap-3">
           <label>
             <span className={label}>Date</span>

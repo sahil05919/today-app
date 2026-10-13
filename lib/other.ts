@@ -1,3 +1,4 @@
+import { subFromText } from "./catDict";
 import { toISO, addDays } from "./dates";
 import { eventSpan, eventMarkKey } from "./fixed";
 import { withDefaults } from "./profile";
@@ -28,7 +29,10 @@ const WORDS: Array<[SubLabel, RegExp]> = [
 
 /** Which sub-label a title belongs to, guessed from its words. */
 export function guessSub(text: string): SubLabel {
-  for (const [sub, re] of WORDS) if (re.test(text)) return sub;
+  // The shared category words first (English + Hinglish, lib/catDict.ts), then the older lists.
+  const sub = subFromText(text);
+  if (sub !== "Other") return sub;
+  for (const [s, re] of WORDS) if (re.test(text)) return s;
   return "Other";
 }
 

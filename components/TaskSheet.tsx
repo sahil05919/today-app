@@ -14,6 +14,7 @@ import { CheckIcon, CloseIcon, TrashIcon } from "./icons";
 import { RepeatEditor } from "./RepeatEditor";
 import { completeWithToast } from "./TaskCard";
 import { AlarmButton } from "./AlarmButton";
+import { TaskChip } from "./CategoryChip";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
 
 /** The unsaved edits of a repeating task, shown on top of the stored occurrence. */
@@ -91,6 +92,10 @@ export function TaskSheet({ task: live, ctx, onClose, timerOn = false }: { task:
           aria-label="Title"
           className={`${field} text-lg font-semibold`}
         />
+
+        <div className="-mt-3">
+          <TaskChip task={live} />
+        </div>
 
         {isSeries && task.recur && (
           <p className="-mt-3 text-sm text-muted">

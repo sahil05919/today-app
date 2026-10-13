@@ -7,6 +7,7 @@ import { buzz } from "@/lib/haptics";
 import { recurLabel } from "@/lib/recur";
 import { actions } from "@/lib/store";
 import type { Task } from "@/lib/types";
+import { TaskChip } from "./CategoryChip";
 import { CheckIcon } from "./icons";
 import { Chip, type ViewCtx } from "./ui";
 
@@ -44,7 +45,6 @@ export function TaskCard({
   const prog = stepProgress(task);
   const overdue = !done && task.due != null && diffDays(task.due, ctx.today) < 0;
   const rem = remainingMinutes(task);
-  const area = task.area ? ctx.profile.areas.find((a) => a.id === task.area) : undefined;
 
   // --- swipe: right = done, left = reschedule -------------------------------
   const [dx, setDx] = useState(0);
@@ -161,11 +161,7 @@ export function TaskCard({
             )}
             {task.slot && task.slot.date === ctx.today && !done && <Chip tone="accent">🕘 {task.slot.start}</Chip>}
             {task.recur && <Chip tone="accent">↻ {recurLabel(task.recur)}</Chip>}
-            {area && (
-              <Chip>
-                {area.emoji} {area.name}
-              </Chip>
-            )}
+            <TaskChip task={task} />
             {!done && (
               <Chip>
                 {rem.guessed ? "~" : ""}

@@ -1,12 +1,14 @@
 import { isISO, toISO } from "./dates";
 import { downloadText } from "./ics";
 import { withDefaults } from "./profile";
+import { annotateHistory } from "./catHistory";
 import { backfillHistory, MAX_HISTORY } from "./history";
 import { upgradeRecurring } from "./series";
 import { cleanupData } from "./cleanup";
 import type {
   AppData,
   AreaTarget,
+  AutoEntry,
   Bill,
   BoredIdea,
   CheckInAnswer,
@@ -40,7 +42,7 @@ export const BACKUP_EVERY_DAYS = 14;
 const DAY = 86_400_000;
 
 export function emptyData(now = Date.now()): AppData {
-  return { version: 4, tasks: [], settings: { firstRunAt: now } };
+  return { version: 5, tasks: [], settings: { firstRunAt: now } };
 }
 
 export function backupDue(data: AppData, now = Date.now()): boolean {
@@ -125,6 +127,8 @@ function cleanTask(v: any): Task | null {
     sessionLogId: str(v.sessionLogId, 64),
     generated: v.generated === true ? true : undefined,
     origin: cleanOrigin(v.origin),
+    src: SOURCES.includes(v.src) ? v.src : undefined,
+    catHow: CAT_HOWS.includes(v.catHow) ? v.catHow : undefined,
   };
 }
 
@@ -174,6 +178,51 @@ function cleanSeries(v: any): Series[] | undefined {
 }
 
 const SUB_LABELS = ["Building", "Chores", "Admin", "Learning", "Other"];
+const CONFIDENCES = ["high", "medium", "low"];
+const CAT_HOWS = ["explicit", "inherited", "learned", "dictionary", "gemini", "fallback"];
+const SOURCES = ["me", "gmail-star", "gmail-task", "gmail-shift", "gmail-interview", "gmail-bill", "gmail-booking", "gmail-digest", "phone-calendar", "planner-move", "planner-pull", "life-admin", "recurring"];
+
+function cleanPicks(v: any): AppData["catPicks"] {
+  if (!v || typeof v !== "object") return undefined;
+  const out: NonNullable<AppData["catPicks"]> = {};
+  for (const [k, p] of Object.entries(v).slice(-2000) as Array<[string, any]>) {
+    if (k.length > 140 || !p || typeof p.area !== "string") continue;
+    out[k] = { area: p.area.slice(0, 40), sub: SUB_LABELS.includes(p.sub) ? p.sub : undefined, at: num(p.at) ?? Date.now() };
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function cleanCatCache(v: any): AppData["catCache"] {
+  if (!v || typeof v !== "object") return undefined;
+  const out: NonNullable<AppData["catCache"]> = {};
+  for (const [k, p] of Object.entries(v).slice(-1500) as Array<[string, any]>) {
+    if (k.length > 140 || !p || typeof p.area !== "string") continue;
+    out[k] = { area: p.area.slice(0, 40), sub: SUB_LABELS.includes(p.sub) ? p.sub : "Other", at: num(p.at) ?? Date.now() };
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function cleanAuto(v: any): AutoEntry[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const day = (d: any) => (d && isISO(d.date) ? { date: d.date as string, time: hhmmOf(d.time) } : undefined);
+  return v
+    .filter((e: any) => e && typeof e.key === "string" && typeof e.title === "string" && SOURCES.includes(e.src) && ["added", "moved", "pulled"].includes(e.kind))
+    .slice(-500)
+    .map((e: any) => ({
+      id: str(e.id, 64) || crypto.randomUUID(),
+      at: num(e.at) ?? Date.now(),
+      src: e.src,
+      kind: e.kind,
+      key: e.key.slice(0, 140),
+      title: e.title.slice(0, 200),
+      date: isISO(e.date) ? e.date : undefined,
+      from: day(e.from),
+      to: day(e.to),
+      group: str(e.group, 64),
+      reviewed: e.reviewed === true,
+      removed: e.removed === true ? true : undefined,
+    }));
+}
 const HIST_KINDS = ["done", "skipped", "missed", "rescheduled", "reopened", "pulled", "cleared"];
 const HIST_TYPES = ["session", "task", "event", "bill", "routine"];
 
@@ -193,6 +242,8 @@ function cleanHistory(v: any): HistoryEvent[] | undefined {
       area: str(e.area, 40),
       createdByMe: e.createdByMe === true,
       to: e.to && isISO(e.to.date) ? { date: e.to.date, time: hhmmOf(e.to.time) } : undefined,
+      cat: e.cat && typeof e.cat.area === "string" && SUB_LABELS.includes(e.cat.sub) && CONFIDENCES.includes(e.cat.conf) ? { area: e.cat.area.slice(0, 40), sub: e.cat.sub, conf: e.cat.conf } : undefined,
+      src: SOURCES.includes(e.src) ? e.src : undefined,
     }));
 }
 
@@ -378,6 +429,7 @@ function cleanEvents(v: any): FixedEvent[] | undefined {
       shift: e.shift === true ? true : undefined,
       remind: e.remind === true ? true : undefined,
       calEventId: str(e.calEventId, 80),
+      src: SOURCES.includes(e.src) ? e.src : undefined,
     }));
 }
 
@@ -452,6 +504,7 @@ function cleanLearned(v: any): LearnedRule[] | undefined {
       hits: Number.isInteger(r.hits) && r.hits > 0 ? r.hits : 1,
       at: num(r.at) ?? Date.now(),
       item: str(r.item, 100),
+      sub: SUB_LABELS.includes(r.sub) ? r.sub : undefined,
     }));
 }
 
@@ -631,8 +684,11 @@ export function migrate(raw: unknown): AppData {
   const r = raw as any;
   const s = r.settings ?? {};
   const out: AppData = {
-    version: 4,
+    version: 5,
     series: cleanSeries(r.series),
+    catPicks: cleanPicks(r.catPicks),
+    catCache: cleanCatCache(r.catCache),
+    auto: cleanAuto(r.auto),
     occurrences: cleanOccurrences(r.occurrences),
     history: cleanHistory(r.history),
     sideWork: cleanSideWork(r.sideWork),
@@ -736,6 +792,8 @@ export function migrate(raw: unknown): AppData {
           : undefined,
       digestDismissed: isISO(s.digestDismissed) ? s.digestDismissed : undefined,
       inboxAdded: s.inboxAdded && Number.isFinite(s.inboxAdded.n) && Number.isFinite(s.inboxAdded.at) ? { n: Math.min(99, Math.max(1, Math.round(s.inboxAdded.n))), at: s.inboxAdded.at } : undefined,
+      calSeen: Array.isArray(s.calSeen) ? s.calSeen.filter((x: unknown) => typeof x === "string" && x.length < 100).slice(-1500) : undefined,
+      digestLogged: isISO(s.digestLogged) ? s.digestLogged : undefined,
       clashDismissed: Array.isArray(s.clashDismissed) ? s.clashDismissed.filter((x: unknown) => typeof x === "string" && x.length < 120).slice(-100) : undefined,
       alarmsSet:
         s.alarmsSet && typeof s.alarmsSet === "object"
@@ -767,12 +825,17 @@ export function migrate(raw: unknown): AppData {
     // The Sunday review used to default to 18:30; the new default for both reviews is 21:00. A changed time is left alone.
     if (upgraded.profile && upgraded.profile.reviewTime === "18:30") upgraded = { ...upgraded, profile: { ...upgraded.profile, reviewTime: "21:00" } };
   }
+  // v5: every history entry carries its category (the built-in words only, never the network). Idempotent: an entry that already has one is left alone.
+  if (upgraded.history?.length) {
+    const h = annotateHistory(upgraded.history, upgraded);
+    if (h !== upgraded.history) upgraded = { ...upgraded, history: h };
+  }
   // v3: a repeat that exists twice (an old copy, a migration that ran twice) is one repeat; a typed command is not a task.
   return cleanupData(upgraded);
 }
 
 /** The schema version this build writes. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /** True for data saved by an older build: the raw copy must be backed up first (see lib/store.ts). */
 export function needsUpgrade(raw: unknown): boolean {
@@ -780,9 +843,9 @@ export function needsUpgrade(raw: unknown): boolean {
 }
 
 /** Which backup keys the raw data of an older build must be copied to before it is migrated. */
-export function backupKeysFor(raw: unknown, keys: { v2: string; v3: string; v4: string }): string[] {
+export function backupKeysFor(raw: unknown, keys: { v2: string; v3: string; v4: string; v5: string }): string[] {
   const v = (raw && typeof raw === "object" ? ((raw as any).version ?? 1) : 1) as number;
-  return [...(v < 2 ? [keys.v2] : []), ...(v < 3 ? [keys.v3] : []), ...(v < 4 ? [keys.v4] : [])];
+  return [...(v < 2 ? [keys.v2] : []), ...(v < 3 ? [keys.v3] : []), ...(v < 4 ? [keys.v4] : []), ...(v < 5 ? [keys.v5] : [])];
 }
 
 export async function readBackupFile(file: File): Promise<AppData> {

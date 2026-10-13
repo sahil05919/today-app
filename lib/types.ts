@@ -173,6 +173,8 @@ export interface FixedEvent {
   remind?: boolean;
   /** The id of the same event in the phone's calendar (written by Today), so an edit or a delete updates it and a re-read never duplicates it. */
   calEventId?: string;
+  /** Who made it (see ItemSource). Missing = you. */
+  src?: ItemSource;
 }
 
 /** A word you taught the dictionary: "pehchaan karna" → Admin. Used offline, before the built-in words. */
@@ -250,6 +252,8 @@ export interface LearnedRule {
   time?: string;
   hits: number;
   at: number;
+  /** With areaId "others": the sub-label to use (Building, Chores, Admin, Learning). */
+  sub?: SubLabel;
   /** A "done" phrase remembered for an item: "session:guitar", "bill:groceries", "rhythm:emails" or "task:finance review". */
   item?: string;
 }
@@ -423,6 +427,10 @@ export interface Task {
   /** Occurrence view of a repeating series (never stored in `tasks`): the series and the day it belongs to. */
   seriesId?: string;
   occDate?: ISODate;
+  /** Who made it (see ItemSource). Missing = you. */
+  src?: ItemSource;
+  /** How `area` was decided at the time (see lib/categorise.ts). Missing = you chose it. */
+  catHow?: CatHow;
 }
 
 /** A session, chore or bill that was rescheduled into a one-off task. */
@@ -522,6 +530,9 @@ export interface HistoryEvent {
   createdByMe: boolean;
   /** Rescheduled: the new day and time. */
   to?: { date: ISODate; time?: string };
+  /** The item's category when this was recorded (lib/categorise.ts), so old history stays searchable after the item is gone. */
+  cat?: { area: string; sub: SubLabel; conf: Confidence };
+  src?: ItemSource;
 }
 
 /** A tweak to one routine block on one day ("Commute is 120 min today"). */
@@ -652,12 +663,16 @@ export interface Settings {
   inboxAdded?: { n: number; at: number };
   /** Event ids whose "clashes with work" card was answered. */
   clashDismissed?: string[];
+  /** Phone-calendar events already seen ("<calId>@<date>"), so only a genuinely new one is listed in "What the app did". */
+  calSeen?: string[];
+  /** The day a Gmail digest was last listed in "What the app did" (once per digest). */
+  digestLogged?: ISODate;
   mirror?: { at: number; status: "ok" | "off" | "no-calendar" | "not-google" | "pick-calendar" | "no-permission" | "error" | "unsupported"; calendar?: string; written?: number };
 }
 
 export interface AppData {
-  /** Bump when the shape changes and add a step in lib/backup.ts `migrate`. 2 = repeats are series + occurrences, 3 = the assistant pass, 4 = the final feature pass (cleared windows, Other work, notes, learning log…: all optional, so the step is only a backup and a stamp). */
-  version: 1 | 2 | 3 | 4;
+  /** Bump when the shape changes and add a step in lib/backup.ts `migrate`. 2 = repeats are series + occurrences, 3 = the assistant pass, 4 = the final feature pass (cleared windows, Other work, notes, learning log…: all optional, so the step is only a backup and a stamp), 5 = categories + "what the app did" (history entries get their category). */
+  version: 1 | 2 | 3 | 4 | 5;
   tasks: Task[];
   settings: Settings;
   /** "Me": routines, areas and shortcuts. Missing = defaults (see lib/profile.ts). */
@@ -708,6 +723,12 @@ export interface AppData {
   eventMarks?: Record<string, EventMark>;
   /** One snapshot per Friday / Sunday review (last 26 kept). */
   weeks?: WeekSnapshot[];
+  /** Categories you picked by hand, by item key ("task:<id>", "event:<key>", "log:<id>"). The strongest rule there is. */
+  catPicks?: Record<string, CatPick>;
+  /** What Gemini said about a title the phone could not place (never asked offline, never asked twice). Keyed by the lower-cased title. */
+  catCache?: Record<string, CatCacheEntry>;
+  /** Everything the app added or moved by itself (Gmail, calendar, planner, life admin). Append-only apart from `reviewed`. */
+  auto?: AutoEntry[];
   /** Runtime only, never saved: the window in which repeat occurrences were added to `tasks` (see withOccurrences). */
   expanded?: { from: ISODate; to: ISODate };
 }
@@ -756,3 +777,63 @@ export interface WorkLog {
 }
 
 export const MAX_FOCUS = 3;
+
+/** How sure a category is: you chose it / inherited / learned = high, the built-in words = medium, Gemini or a fallback = low. */
+export type Confidence = "high" | "medium" | "low";
+/** Why an item has its category (the priority order of lib/categorise.ts). */
+export type CatHow = "explicit" | "inherited" | "learned" | "dictionary" | "gemini" | "fallback";
+
+/** Where an item came from. "me" = you typed it; "recurring" = your own repeating series (never listed as app activity). */
+export type ItemSource =
+  | "me"
+  | "gmail-star"
+  | "gmail-task"
+  | "gmail-shift"
+  | "gmail-interview"
+  | "gmail-bill"
+  | "gmail-booking"
+  | "gmail-digest"
+  | "phone-calendar"
+  | "planner-move"
+  | "planner-pull"
+  | "life-admin"
+  | "recurring";
+
+export interface CatPick {
+  area: string;
+  sub?: SubLabel;
+  at: number;
+}
+export interface CatCacheEntry {
+  area: string;
+  sub: SubLabel;
+  at: number;
+}
+
+/** One thing the app did by itself (shown in "What the app did"). */
+export interface AutoEntry {
+  id: string;
+  at: number;
+  src: ItemSource;
+  kind: "added" | "moved" | "pulled";
+  /** The item: a task id, "occ:<series>@<date>", "event:<id>", "digest:<date>". */
+  key: string;
+  title: string;
+  /** The day it is on (added) or moved to. */
+  date?: ISODate;
+  from?: { date: ISODate; time?: string };
+  to?: { date: ISODate; time?: string };
+  /** Moves made in one re-plan share a group; the sheet shows them as one line. */
+  group?: string;
+  reviewed: boolean;
+  /** Removed (or the move undone) from the sheet. */
+  removed?: boolean;
+}
+
+/** The answer of `categorise` (lib/categorise.ts): the area, the Other sub-label, how sure, and why. */
+export interface Category {
+  area: string;
+  sub: SubLabel;
+  conf: Confidence;
+  how: CatHow;
+}

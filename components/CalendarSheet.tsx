@@ -10,6 +10,7 @@ import { buildTimeline, type TLItem, type Timeline } from "@/lib/timeline";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
 import type { RescheduleTarget } from "@/lib/reschedule";
 import { AlarmButton } from "./AlarmButton";
+import { EventChip } from "./CategoryChip";
 import { RescheduleSheet } from "./RescheduleSheet";
 import { EventSheet, ItemSheet } from "./TodayPlan";
 import { LaterView } from "./LaterView";
@@ -238,6 +239,9 @@ export function CalendarEventInfo({ event: raw, onClose, notify, ctx }: { event:
         🗓️ {raw.date} · {raw.start ? `${mark?.start ?? raw.start}${(mark?.end ?? raw.end) ? `–${mark?.end ?? raw.end}` : ""}` : "all day"}
         {overridden ? " · time changed here" : ""}
       </p>
+      <div className="-mt-2 mb-3">
+        <EventChip event={raw} />
+      </div>
       <div className="space-y-2">
         {raw.start && ctx && <AlarmButton ctx={ctx} itemKey={`event:${raw.id}`} title={raw.title} date={raw.date} startMin={toMinutes(mark?.start ?? raw.start)} />}
         <button

@@ -6,6 +6,7 @@ import { buzz } from "@/lib/haptics";
 import { toHHMM } from "@/lib/profile";
 import type { Timeline as TL, TLItem } from "@/lib/timeline";
 import type { AppData, Goal } from "@/lib/types";
+import { TLChip } from "./CategoryChip";
 import { CheckIcon } from "./icons";
 import { completeItem, entryKeyOf, openCount, skipItem, startItem, undoItem } from "./itemActions";
 import { Chip, type ViewCtx } from "./ui";
@@ -214,6 +215,7 @@ function Row({ it, ctx, tl, nowMin, onOpen, onReschedule }: { it: TLItem; ctx: V
           {it.carried && <Chip tone="warn">carried over</Chip>}
           {it.late && !it.done && <Chip tone="warn">earlier</Chip>}
           {it.fromCalendar && <Chip>calendar</Chip>}
+          <TLChip it={it} />
         </span>
       </button>
     </div>

@@ -41,7 +41,9 @@ import { billKey } from "./bills";
 import { applyMoves } from "./moves";
 import { applyClear, clearedEvent, clearedToast } from "./clear";
 import type { ClearWindow } from "./clearParse";
-import { forget, learnFix, learnItem } from "./learn";
+import { dictionaryHits } from "./catDict";
+import { scoreAreas } from "./dictionary";
+import { forget, learnFix, learnItem, significantWords } from "./learn";
 import { taskEvent, withHistory } from "./history";
 import { type BlockId } from "./busy";
 import { withMark } from "./fixed";
@@ -53,6 +55,7 @@ import { withLetter } from "./letters";
 import { applyPull, lighterLine, type PullCandidate } from "./lighten";
 import { ensureLifeSeries } from "./lifeAdmin";
 import { addCustomSource, setTick, toggleHidden, toggleWeekly } from "./sideWork";
+import type { CatHow } from "./types";
 import type { AppData, AppNote, Bill, Learning, SubLabel, WorkLog, BoredIdea, CheckResult, EventMark, CheckInAnswer, CheckInStatus, CoachLetter, DayEntry, FixedEvent, Goal, ISODate, Profile, Recurrence, SessionLog, Settings, Step, Task, TemplateId } from "./types";
 import { MAX_FOCUS } from "./types";
 
@@ -74,6 +77,15 @@ export const BACKUP_KEY = "today:v1:backup-pre-v2";
 export const BACKUP_KEY_V3 = "today:v1:backup-pre-v3";
 /** Same again before the v4 (final feature pass) step. */
 export const BACKUP_KEY_V4 = "today:v1:backup-pre-v4";
+/** Same again before the v5 (categories + "what the app did") step. */
+export const BACKUP_KEY_V5 = "today:v1:backup-pre-v5";
+/** The words of a title that mean something to the dictionary (so a rule is short and catches more), or [] when none do. */
+function keyWordsOf(title: string): string[] {
+  return significantWords(title).filter((w) => dictionaryHits(w).length > 0 || Object.keys(scoreAreas(w)).length > 0);
+}
+
+/** What the capture said about where its area came from → the `catHow` kept on the task. */
+const HOW_OF_SOURCE: Record<NonNullable<ParsedCapture["areaSource"]>, CatHow> = { explicit: "explicit", learned: "learned", ai: "gemini", guess: "dictionary" };
 /** "Do it now": a small first push. */
 export const DO_NOW_MIN = 15;
 
@@ -85,7 +97,7 @@ export const localStorageAdapter: StorageAdapter = {
       const parsed = JSON.parse(raw);
       const upgrade = needsUpgrade(parsed);
       // Schema change: keep the old data first (never overwriting an earlier backup), then migrate and save.
-      if (upgrade) for (const k of backupKeysFor(parsed, { v2: BACKUP_KEY, v3: BACKUP_KEY_V3, v4: BACKUP_KEY_V4 })) if (localStorage.getItem(k) == null) localStorage.setItem(k, raw);
+      if (upgrade) for (const k of backupKeysFor(parsed, { v2: BACKUP_KEY, v3: BACKUP_KEY_V3, v4: BACKUP_KEY_V4, v5: BACKUP_KEY_V5 })) if (localStorage.getItem(k) == null) localStorage.setItem(k, raw);
       const data = migrate(parsed);
       if (upgrade) localStorage.setItem(KEY, JSON.stringify(data));
       return data;
@@ -113,7 +125,7 @@ async function loadNative(): Promise<AppData | null> {
       const upgrade = needsUpgrade(parsed);
       if (upgrade) {
         // Schema change: the old data is copied to its own key FIRST (an earlier backup is never overwritten).
-        for (const k of backupKeysFor(parsed, { v2: BACKUP_KEY, v3: BACKUP_KEY_V3, v4: BACKUP_KEY_V4 })) {
+        for (const k of backupKeysFor(parsed, { v2: BACKUP_KEY, v3: BACKUP_KEY_V3, v4: BACKUP_KEY_V4, v5: BACKUP_KEY_V5 })) {
           const have = await safely("Preferences.get", () => Preferences.get({ key: k }), { value: null }, 10_000);
           if (!have.value) await safely("Preferences.set", () => Preferences.set({ key: k, value }), undefined, 15_000);
         }
@@ -379,6 +391,9 @@ export const actions = {
       focus: false,
       status: "open",
       createdAt: Date.now(),
+      ...(p.src && p.src !== "me" ? { src: p.src } : {}),
+      // How sure the area is (lib/categorise.ts): a guess is the dictionary's own earlier answer and can be overruled by a learned rule.
+      ...(p.area && p.areaSource && p.areaSource !== "explicit" ? { catHow: HOW_OF_SOURCE[p.areaSource] } : {}),
     };
     if (p.template) applyTemplateTo(task, p.template);
     if (p.recur) {
@@ -393,7 +408,8 @@ export const actions = {
   },
 
   update(id: string, patch: Partial<Task>) {
-    mapTask(id, (t) => withPostponeCount(t, patch));
+    // Changing the area by hand is an explicit choice: forget how it was guessed before.
+    mapTask(id, (t) => withPostponeCount(t, "area" in patch && !("catHow" in patch) ? { ...patch, catHow: undefined } : patch));
   },
 
   setDue(id: string, due?: ISODate, dueTime?: string) {
@@ -977,6 +993,44 @@ export const actions = {
   learn(title: string, fix: { areaId?: string; time?: string }) {
     const d = ensure();
     commit({ ...d, learned: learnFix(d.learned, title, fix) });
+  },
+
+  /**
+   * You changed an item's category: it is kept for that item (the strongest rule), and the words of its title are remembered, so the next
+   * item with them lands there too (lib/categorise.ts, rule 3). Where the item has a field of its own (a task's area, a repeat's, a
+   * logged entry's sub-label) that is updated as well.
+   */
+  setCategory(item: { key: string; title: string }, choice: { area: string; sub?: SubLabel }, now: number = Date.now()) {
+    const d = ensure();
+    const sub = choice.area === "others" ? choice.sub : undefined;
+    let next: AppData = {
+      ...d,
+      catPicks: { ...(d.catPicks ?? {}), [item.key]: { area: choice.area, sub, at: now } },
+      // What is remembered is "gym", not "evening gym with Sam": the words the dictionary knows are the ones that matter next time.
+      learned: learnFix(d.learned, item.title, { areaId: choice.area, sub }, now, keyWordsOf(item.title)),
+    };
+    if (item.key.startsWith("task:")) {
+      const id = item.key.slice(5);
+      next = { ...next, tasks: next.tasks.map((t) => (t.id === id ? { ...t, area: choice.area, catHow: undefined } : t)) };
+    } else if (item.key.startsWith("log:")) {
+      const id = item.key.slice(4);
+      const label = sub ?? "Other";
+      next = { ...next, worklog: (next.worklog ?? []).map((w) => (w.id === id ? { ...w, sub: label } : w)), workSubs: { ...(next.workSubs ?? {}), [item.key]: label } };
+    }
+    commit(next);
+    // A day of a repeat: the repeat itself moves too, from this day on.
+    if (item.key.startsWith("occ:")) actions.editRepeating(item.key.slice(4), { area: choice.area }, "future");
+  },
+
+  /** Gemini's answers for titles the phone could not place (kept so it is never asked twice). Bookkeeping: no sync, no history. */
+  cacheCategories(found: Record<string, { area: string; sub: SubLabel }>, now: number = Date.now()) {
+    const d = ensure();
+    const cache = { ...(d.catCache ?? {}) };
+    for (const [k, v] of Object.entries(found)) cache[k] = { ...v, at: now };
+    const keys = Object.keys(cache);
+    // Keep the newest 1500.
+    if (keys.length > 1500) for (const k of keys.sort((a, b) => cache[a].at - cache[b].at).slice(0, keys.length - 1500)) delete cache[k];
+    commit({ ...d, catCache: cache }, { quiet: true, history: false });
   },
 
   /** "Add to my dictionary?": these words now mean this area, offline, from then on. */
