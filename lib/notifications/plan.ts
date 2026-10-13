@@ -268,7 +268,7 @@ export function planNotifications(raw: AppData, now: Date = new Date(), opts: { 
       at: at(addDays(e.date, -1), "21:00"),
       kind: "eventprep",
       title: "Tomorrow",
-      body: alarm ? `Tomorrow ${e.start}: ${short}. Alarm for ${alarm.time}?` : `Tomorrow ${e.start} ${e.shift || e.remind ? "shift" : short}: ${morning ? "set an alarm" : "all set?"}`,
+      body: alarm && !(e.shift || e.remind) ? `Tomorrow ${e.start}: ${short}. Alarm for ${alarm.time}?` : `Tomorrow ${e.start} ${e.shift || e.remind ? "shift" : short}: ${morning ? "set an alarm" : "all set?"}`,
       actions: false,
       exact: true,
       exactTime: true,

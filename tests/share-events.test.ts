@@ -72,8 +72,12 @@ describe("6. the lead-up reminders", () => {
   });
 
   it("an ordinary event gets no lead-up, and a shift in the past gets none", () => {
-    const plain = base({ events: [{ ...shiftEvent(), shift: undefined }] });
+    const plain = base({ events: [{ ...shiftEvent(), shift: undefined, start: "10:00", end: "15:00" }] });
     expect(planNotifications(plain, SOON, { budget: Infinity }).some((n) => n.kind === "eventprep")).toBe(false);
+    // …except an early start (before 08:00): that one gets only its night-before reminder, with the "Set alarm" button.
+    const early = planNotifications(base({ events: [{ ...shiftEvent(), shift: undefined }] }), SOON, { budget: Infinity }).filter((n) => n.kind === "eventprep");
+    expect(early.map((n) => n.key)).toEqual(["prep1:wtm"]);
+    expect(early[0].setAlarm).toBeDefined();
     expect(planNotifications(d, new Date(2026, 10, 3, 8, 0), { budget: Infinity }).some((n) => n.kind === "eventprep")).toBe(false);
     expect(shortShift("WTM Exhibition shift (Pinnacle) — Standby")).toBe("WTM shift");
     expect(shortShift("Dentist")).toBe("Dentist");
