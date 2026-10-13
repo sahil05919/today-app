@@ -148,6 +148,11 @@ lib/            All logic, mostly pure functions (no React):
   notifications/  plan.ts decides what to notify; native.ts talks to Android.
   mirror.ts / mirrorRun.ts            "Today – Plan": what to write, and the diff.
   inbox.ts / inboxRun.ts              The Gmail add-on contract (TASK:, DIGEST:, #today-remind).
+  dayCapacity.ts  What you really finish in a day (the planner's caps).
+  clear.ts / clearParse.ts   The "clear" command: words → windows, preview, apply.
+  other.ts / workLog.ts      "Other work" and logging time by typing. progress.ts: the minutes-based percentage.
+  earlyAlarm.ts / earlyAlarmRun.ts   One-tap alarms for early starts.
+  learning.ts / winjar.ts / shareWeek.ts   Learning log + post draft, win jar, "Share my week".
   sheetStack.ts   The one manager for sheets (z-index, backdrop, Back button, scroll lock).
   nativeBridge.ts Every call into the Android plugin, each with a 5-second limit (nativeGuard.ts).
   debugLog.ts     The "Recent errors" log.   compact.ts: history older than 8 weeks.
@@ -160,3 +165,23 @@ NOTES-*.md      Earlier code maps and design decisions. Read NOTES-assistant.md 
 ```
 
 Rules of the house: new data fields go in `types.ts` **and** `backup.ts`; nothing talks to Android except through `nativeBridge.ts`; nothing schedules reminders or calendar writes except through the sync pipeline; every sheet is a `<Sheet>`.
+
+## 8. The final feature pass: what each new thing does and where its settings are
+
+All of these live in **Menu (☰) → Settings** unless it says otherwise.
+
+| Feature | What it does | Settings |
+|---|---|---|
+| **No planning before 11:00** | The planner never places anything automatically before 11:00 on any day (the old 8–9 morning slot is gone; Meditation and the others move to later free time). Things you timed yourself (a 09:00 dentist, a 07:00 shift, phone-calendar events) stay exactly where you put them. "Reschedule → Tomorrow morning" means the first free slot from 11:00. No default check-in or session ping is sent before 11:00; the 09:30 brief stays (only if you haven't opened the app). | Planning rules → **Earliest auto-planning time** |
+| **Clear command** | Type `clear until 7pm`, `clear rest of today`, `clear tomorrow`, `clear tomorrow morning`, `clear 13 oct 2-4pm`, `clear wed evening`, `clear 2 to 4`, `aaj 7 baje tak clear`, `kal clear karo`. As soon as you type "clear" chips appear (Clear rest of today / Clear until … / Clear tomorrow / Clear a time range…). A **preview** shows what will move and where, and what is fixed in that window (phone-calendar events, tasks you timed, bills) with Keep (default) or Move / Hide for today. Nothing changes before **Confirm**. Then the time shows on Today as a muted "🧹 Cleared" block that the planner will not refill; tap it to put it back. The toast has **Undo**, which restores everything. "clear the garage" (anything that isn't a time) is still just a task. | none |
+| **Plan to what I really finish** | From the last 28 days the app works out how many flexible things (and minutes) you really finish on a weekday and on a weekend (the median; off days and cleared days are ignored). The planner never gives a day more than that (never fewer than 2 items), and the extra goes to lighter days. Weekly targets stay a hard rule: what cannot fit is shown in "This week's targets" ("Power BI: 2 of 4 fit"), never dropped quietly. Until 14 days of history exist it uses the old limits. | Planning rules → one quiet line ("Planning about 3 items on weekdays, 4 on weekends…") and **Items a day (0 = Auto)** |
+| **Set alarm** | For anything that starts before 08:00 (a 07:00 shift, an early event, a task you timed): a **Set alarm** button on its sheet, and on the night-before 21:00 reminder, makes a real alarm in your clock app, "wake-up lead" minutes before (default 90: a 07:00 shift rings at 05:30). Android alarms have no date, so the button appears within 24 hours of the alarm time ("Available the evening before" until then). Afterwards the item shows "⏰ alarm set 05:30". | Planning rules → **Alarm lead before an early start** |
+| **Learning log** | After a Power BI session is done (or its timer ends) a small prompt asks "What did you learn?" (one line, Save / Skip). **Menu → Learning log** lists them by date (edit, delete, Copy all, Share). With 5 or more unused learnings the Sunday review shows "You have 8 learnings — turn 3 into a LinkedIn post?": a draft built offline (hook, bullets, short close, at most 2 hashtags), an optional **Polish with Gemini** (only the chosen lines are sent, nothing is stored), Copy and Share. Sharing (or "I posted it") marks those learnings used. | **Learning log** (which areas ask; Power BI by default) |
+| **Win jar** | On a slow day (after 18:00 with less than half done, or yesterday under 50%, or an off day / skipped session today) a quiet card shows your three strongest numbers from the last 30 days. Once a day, dismissible, never a notification. **Menu → Win jar**: this month against last month, best streaks, your biggest week. | none |
+| **Share my week** | On the Sunday review, **Share my week** builds a short friendly text (done/target per area with ✅, Other, tasks finished, a highlight, next week's focus) and opens the share sheet. The app never sends anything itself. | **Accountability** (on/off, buddy name for "Hey Rahul, my week:") |
+| **Other work** | The week view (This week) has an **Other** row after the five areas: everything productive that isn't a tracked area: your own tasks, repeats and life admin, Gmail tasks, bills and chores, calendar events you ticked, and logged time. Tap it for the breakdown by Building / Chores / Admin / Learning / Other (labels are guessed from the words and can be changed). **Log time you already spent** by typing `spent 2 hrs building the app`, `2h app build`, `worked 45 min on CV`, `did 1 hour cleaning`, `aaj 2 ghante app pe kaam kiya`, `yesterday spent 90 min on forms` — it is saved straight away as done (never a to-do), with a toast and **Undo**. The percentage is measured in minutes: each area up to its own target, Other up to its weekly hours; time beyond a target is shown as a bonus ("+2h extra 💪") and never pushes the percentage past 100. | Planning rules → **Other work target (hours a week)** (default 5; 0 = none) |
+
+**Phone permission added:** `com.android.alarm.permission.SET_ALARM` (a normal permission: Android does not ask).
+
+### Data and updates
+This version stores a few new things (cleared stretches, logged time, learnings, notes, alarm marks). The app's data version is now **4**. The first time it opens it copies your old data to a safety key (`today:v1:backup-pre-v4`) and then continues; doing it twice changes nothing. The weekly file backups include everything.
