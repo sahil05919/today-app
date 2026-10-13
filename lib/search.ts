@@ -115,7 +115,7 @@ function answerFor(data: AppData, pq: ParsedQuery, entries: Entry[], today: ISOD
       lead.week = `${row.done} of ${row.target}`;
       lead.left = `${left} left`;
     }
-    if (!isWeek) {
+    if (!isWeek && r.kind !== "month") {
       const n = jarBetween(data, r.from, r.to).sessions[id] ?? 0;
       const min = sessionMinutes(data, id, r.from, r.to);
       lines.push(`${r.label[0].toUpperCase()}${r.label.slice(1)}: ${noun(id, a.name, n)}${min ? ` · ${fmtMinutes(min)}` : ""}.`);

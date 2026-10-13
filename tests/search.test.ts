@@ -116,6 +116,7 @@ describe("the answer card agrees with the weekly review", () => {
     const r = search(d, "how many walks this month", NOW);
     expect(r.answer?.lead).toBe("2 walks");
     expect(r.answer?.lines[0]).toMatch(/^This month: 2 walks · 1h 10m/);
+    expect(new Set(r.answer?.lines).size).toBe(r.answer?.lines.length);
   });
 
   it("last week uses last week's row; missed leads when asked", () => {

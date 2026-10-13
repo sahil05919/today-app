@@ -111,11 +111,18 @@ The Gmail add-on and its nightly Google Apps Script talk to the app **only** thr
 
 | The script creates | What the app does |
 |---|---|
-| An event titled `TASK: Reply to Pinnacle about shift`, on the due date. Optional lines in the notes: `area: Job`, `time: 14:00`, `duration: 20`, `important: yes`, `source: <email subject>` | Makes one normal task (once only; it remembers the event), deletes the event from the Inbox, and shows "1 task added from Gmail". An unknown `area` is left for the normal classifier. |
-| An event titled `DIGEST: 3 emails need you`, today's date, 20:00. Notes: one email per line, `• Sender — Subject — reason` | From 19:00 Today shows an **Emails that need you** card (tap to open the list, ✕ to dismiss). The 20:00 evening check-in says "…3 emails need you". The app never deletes digests, so the script should clean them up. Only today's digest is shown. |
+| An event titled `TASK: Reply to Pinnacle about shift`, on the due date. Optional lines in the notes: `area: Job`, `time: 14:00`, `duration: 20`, `important: yes`, `source: <email subject>`, `kind: star | shift | interview | bill | booking` (says what kind of email it was; without it the task counts as `gmail-task`) | Makes one normal task (once only; it remembers the event), deletes the event from the Inbox, and shows "1 task added from Gmail". An unknown `area` is left for the normal classifier. |
+| An event titled `DIGEST: 3 emails need you`, today's date, 20:00. Notes: one email per line, `• Sender — Subject — reason` | As soon as a digest exists for today (any time of day, so a midday one works too) Today shows an **Emails that need you** card (tap to open the list, ✕ to dismiss; dismissing one digest does not hide a different one the same day). The 20:00 evening check-in says "…3 emails need you". The app never deletes digests, so the script should clean them up. Only today's digest is shown. |
 
 ### `#today-remind`
 Events the add-on puts in your **main** calendar (shifts, bookings) carry `#today-remind` in their notes. For those the app sends reminders 2 days before at 19:00, the evening before at 21:00 and 1 hour before. It checks for a clash with work hours (a card appears on Today with *Adjust work start* / *Keep anyway*), and the day re-plans around them. Other calendar events behave as before (they block time but have no reminders from Today).
+
+### If Gmail tasks do not arrive
+Open **Settings → Calendar → Gmail inbox**. It says when the app last looked, whether it found the calendar, how many `TASK:` events it saw and how many it imported. Tap **Check Gmail inbox now** to look again (it may ask for calendar permission once; the "change my calendar" permission is only needed to delete imported events from the Inbox, and importing works without it).
+- *Calendar not found* / *searched all your calendars*: the calendar must be named "Today – Inbox" (a hyphen, any case, is fine) in the Google account on the phone. If it has another name the app still finds `TASK:` events by searching every calendar, but it will not delete them.
+- *Not syncing*: open the Google Calendar app, tap the menu, Settings, the Inbox calendar, and switch on **Sync**.
+- *Android is not allowing calendar access*: Settings → Apps → Today → Permissions → Calendar.
+Imported tasks appear in To-do on their date, are tagged as coming from Gmail, and are listed in **What the app did** (section 9).
 
 ## 6. When something breaks
 
@@ -153,6 +160,9 @@ lib/            All logic, mostly pure functions (no React):
   other.ts / workLog.ts      "Other work" and logging time by typing. progress.ts: the minutes-based percentage.
   earlyAlarm.ts / earlyAlarmRun.ts   One-tap alarms for early starts.
   learning.ts / winjar.ts / shareWeek.ts   Learning log + post draft, win jar, "Share my week".
+  categorise.ts / catDict.ts   THE category decision (explicit, inherited, learned, dictionary, Gemini cache, fallback); catAi.ts = the Gemini last resort.
+  entries.ts / query.ts / search.ts   The search: one index of every item, the query reader, the answer card.
+  autoLog.ts      "What the app did": the auto-activity list, the Home chip, grouping, Seen / Remove / Undo move.
   sheetStack.ts   The one manager for sheets (z-index, backdrop, Back button, scroll lock).
   nativeBridge.ts Every call into the Android plugin, each with a 5-second limit (nativeGuard.ts).
   debugLog.ts     The "Recent errors" log.   compact.ts: history older than 8 weeks.
@@ -161,7 +171,7 @@ android/        The Android project. app/src/main/java/com/sahil/today/:
                 TodayNativePlugin.java (calendar, backups, widget, recorder), BackupStore.java (weekly files),
                 MirrorStore.java (Plan calendar), BackupReceiver.java (the Sunday 21:30 and daily 06:00 alarms).
 scripts/        android-build.mjs (npm run android:release), verify-signature.mjs, jdk.mjs.
-NOTES-*.md      Earlier code maps and design decisions. Read NOTES-assistant.md first.
+NOTES-*.md      Earlier code maps and design decisions. Read NOTES-assistant.md first (then NOTES-search.md for search, categories and the feed).
 ```
 
 Rules of the house: new data fields go in `types.ts` **and** `backup.ts`; nothing talks to Android except through `nativeBridge.ts`; nothing schedules reminders or calendar writes except through the sync pipeline; every sheet is a `<Sheet>`.
@@ -185,3 +195,35 @@ All of these live in **Menu (☰) → Settings** unless it says otherwise.
 
 ### Data and updates
 This version stores a few new things (cleared stretches, logged time, learnings, notes, alarm marks). The app's data version is now **4**. The first time it opens it copies your old data to a safety key (`today:v1:backup-pre-v4`) and then continues; doing it twice changes nothing. The weekly file backups include everything.
+
+## 9. Smart search, categories and "What the app did"
+
+All of this is offline except one optional Gemini lookup, and it keeps working with no key.
+
+### Categories
+Every task, repeat, event, session, logged time and history entry has a **category** (an area, and for Other a kind: Building, Chores, Admin, Learning). You see it as a small chip (for example "📊 Power BI" or "📥 Other · Building") on rows and on the item sheets. A faint chip with a "?" is a guess; tap it to choose the right one. Choosing teaches the app: the next item with the same words goes there too.
+
+How it decides, in this fixed order:
+1. **What you chose**: an area you picked, a `#health` / `#job` / `#pbi` tag in the text, an `area:` line from a Gmail task.
+2. **Inherited**: sessions, repeats and their days, bills keep their own area.
+3. **Learned**: words from something you re-categorised before ("gym" → Health). **These beat the built-in words.** See and delete them in **Settings → Categories: what I've learned from you**.
+4. **Built-in words**: English and Hinglish, whole words and plurals, any case. Power BI (pbi, dax, dashboard, report), Meditation (dhyan, breathing), Job (mock, leetcode, linkedin apply), English Reading (read, book, padhai), Walking (walk, chalna, steps, outing), Health (gym, doctor, dentist, dawai), Finance (bill, rent, bank, budget), Family (call mum, papa, ghar), Life / chores (clean, laundry, kapde, sabzi, iron), Side work (shift, pinnacle), and for Other: Building (app, code, deploy), Admin (email, form, council, hmrc), Learning (course, study, udemy).
+5. **Gemini** (only online, only with a key, only for titles still unplaced): asked in the background, at most 20 titles each time the app opens. Only the **title** is sent (no notes, dates or anything else), and the answer is remembered so it is never asked twice. Offline, nothing is sent and the item stays Other / Other.
+The first time the new version opens it gives every history entry its category (built-in words only, no Gemini) and keeps a safety copy first (`today:v1:backup-pre-v5`). Doing it twice changes nothing.
+
+### Search
+The 🔎 icon at the top of Today (and **Menu → Search**) opens a search with the keyboard up. The answer comes first, then the items behind it.
+- Area words: `pbi`, `walk`, `chalna`, `padhai`, `gym`, `other`, `building`; time words: today, yesterday, this week (the default), last week, this month, last month, a month name, this year, last 30 days; question words: how many, left, missed, skipped, next, streak, hours.
+- Examples: `pbi` → "Power BI — this week: 2 of 4 done, 2 left (next: Thu 18:45). This month: 9 sessions · 9h. Best streak: 5 days. Missed: 1."; `how many walks this month` → leads with the number; `other this month` → total time and Building / Chores / Admin / Learning; `what's left this week`; `missed last week`; `passport` (any words: tasks, notes, the learning log, Gmail tasks, app notes, calendar events, even old history); `added by app` and `from gmail` list what the app did.
+- The numbers come from the **same** functions as the weekly review and the percentage, so the two always agree.
+- Under the card: Upcoming, Done and Missed / skipped lists (newest first). Tap a row to open it. The chip on a row changes its category.
+
+### What the app did today
+Everything the app brings in or moves by itself, so nothing slips in unseen. Things you type yourself, and your own repeats, are never listed.
+- **Home chip** "🤖 App added 4 today": unreviewed entries from the last 3 days (a re-plan of several items counts once). Hidden when there are none. Also in **Menu → What the app did**.
+- The sheet lists, for the last 7 days: **From Gmail** (tasks, shifts, bookings, the digest), **From your calendar** (new events in your phone calendar), **Planner moves** (the evening was full and things moved, a missed session carried over, a clear command), **Life admin** (laundry, haircut… on the day they come up). Each line has **Seen ✓**; added things have **Open** and **Remove** (with Undo); moves have **Undo move** (it puts the item back, unless you moved it again since). Several moves from one re-plan are one line ("Re-planned: moved 3 items") that expands. **Mark all seen** clears the chip. Older than 7 days drops off the sheet but stays in your history.
+- The 20:00 evening check-in gets one extra sentence when something was added today and not seen: "The app added 3 things today — have a look." (no new notification).
+- Where each thing came from is kept on it: me, gmail-star, gmail-task, gmail-shift, gmail-interview, gmail-bill, gmail-booking, gmail-digest, phone-calendar, planner-move, planner-pull, life-admin, recurring.
+
+### Data version
+The app's data version is now **5**. The first time it opens it copies your data to `today:v1:backup-pre-v5`, then continues. New things stored: category picks and Gemini answers, the "what the app did" list, the last Gmail inbox check, and which calendar events the app has already seen.
