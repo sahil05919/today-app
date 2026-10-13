@@ -640,6 +640,8 @@ export interface Settings {
   /** History compaction (lib/compact.ts): the day it last ran, and when an archive write last failed (retry later). */
   compactedDate?: ISODate;
   compactFailedAt?: number;
+  /** The day the win-jar card was dismissed (it shows at most once a day). */
+  winJarDismissed?: ISODate;
   /** Alarms already set from the app, by item and day ("event:<id>@2026-10-14" → "05:30"): so it is not offered twice. */
   alarmsSet?: Record<string, string>;
   /** The "Today – Plan" mirror: when it last ran and how it went (shown in Settings and the Health check). */

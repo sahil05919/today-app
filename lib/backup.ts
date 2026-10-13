@@ -741,6 +741,7 @@ export function migrate(raw: unknown): AppData {
         s.alarmsSet && typeof s.alarmsSet === "object"
           ? (Object.fromEntries(Object.entries(s.alarmsSet).filter(([k, v]) => k.length < 120 && typeof v === "string" && /^\d{2}:\d{2}$/.test(v)).slice(-60)) as Record<string, string>)
           : undefined,
+      winJarDismissed: isISO(s.winJarDismissed) ? s.winJarDismissed : undefined,
       compactedDate: isISO(s.compactedDate) ? s.compactedDate : undefined,
       compactFailedAt: num(s.compactFailedAt),
       mirror:

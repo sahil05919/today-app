@@ -39,6 +39,7 @@ import { BackupsSheet } from "./BackupSettings";
 import { LearningLogSheet, LearningPrompt } from "./Learning";
 import { learnPromptFor } from "@/lib/learning";
 import { LightenSheet } from "./LightenSheet";
+import { WinJarSheet } from "./WinJar";
 import { ShareEventSheet } from "./ShareEventSheet";
 import { SideWorkSheet } from "./SideWorkSheet";
 import { ImportSheet } from "./ImportSheet";
@@ -442,6 +443,7 @@ export default function App() {
       {panel === "reviews" && <ReviewsSheet data={data} ctx={ctx} onClose={closePanel} openPanel={setPanel} />}
       {panel === "feeling" && <FeelingSheet data={data} ctx={ctx} onClose={closePanel} />}
       {panel === "quotes" && <QuotesSheet onClose={closePanel} />}
+      {panel === "winjar" && <WinJarSheet data={data} ctx={ctx} onClose={closePanel} />}
       {panel === "learning" && <LearningLogSheet data={data} ctx={ctx} onClose={closePanel} />}
       {learnFor && <LearningPrompt log={learnFor} data={data} ctx={ctx} onClose={() => setLearnFor(null)} />}
       {panel === "quote" && <QuoteCard date={quoteDate} onClose={closePanel} />}
