@@ -567,6 +567,7 @@ function cleanProfile(p: any): Profile {
       earliestAuto: hhmm(p.earliestAuto),
       otherHours: n(p.otherHours, 0, 40),
       capacityItems: n(p.capacityItems, 0, 20),
+      wakeLeadMin: n(p.wakeLeadMin, 0, 600),
       planCalendarId: typeof p.planCalendarId === "string" && /^\d{1,12}$/.test(p.planCalendarId) ? p.planCalendarId : undefined,
       inboxCalendarId: typeof p.inboxCalendarId === "string" && /^\d{1,12}$/.test(p.inboxCalendarId) ? p.inboxCalendarId : undefined,
       officeDays: days(p.officeDays),
@@ -727,6 +728,10 @@ export function migrate(raw: unknown): AppData {
       digestDismissed: isISO(s.digestDismissed) ? s.digestDismissed : undefined,
       inboxAdded: s.inboxAdded && Number.isFinite(s.inboxAdded.n) && Number.isFinite(s.inboxAdded.at) ? { n: Math.min(99, Math.max(1, Math.round(s.inboxAdded.n))), at: s.inboxAdded.at } : undefined,
       clashDismissed: Array.isArray(s.clashDismissed) ? s.clashDismissed.filter((x: unknown) => typeof x === "string" && x.length < 120).slice(-100) : undefined,
+      alarmsSet:
+        s.alarmsSet && typeof s.alarmsSet === "object"
+          ? (Object.fromEntries(Object.entries(s.alarmsSet).filter(([k, v]) => k.length < 120 && typeof v === "string" && /^\d{2}:\d{2}$/.test(v)).slice(-60)) as Record<string, string>)
+          : undefined,
       compactedDate: isISO(s.compactedDate) ? s.compactedDate : undefined,
       compactFailedAt: num(s.compactFailedAt),
       mirror:

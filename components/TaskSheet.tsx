@@ -13,6 +13,7 @@ import type { Task } from "@/lib/types";
 import { CheckIcon, CloseIcon, TrashIcon } from "./icons";
 import { RepeatEditor } from "./RepeatEditor";
 import { completeWithToast } from "./TaskCard";
+import { AlarmButton } from "./AlarmButton";
 import { btn, field, Sheet, type ViewCtx } from "./ui";
 
 /** The unsaved edits of a repeating task, shown on top of the stored occurrence. */
@@ -82,6 +83,7 @@ export function TaskSheet({ task: live, ctx, onClose, timerOn = false }: { task:
 
   return (
     <Sheet title="Task" onClose={onClose}>
+      {task.status === "open" && task.due && task.dueTime && <div className="mb-3"><AlarmButton ctx={ctx} itemKey={`task:${task.id}`} title={task.title} date={task.due} startMin={Number(task.dueTime.slice(0, 2)) * 60 + Number(task.dueTime.slice(3, 5))} /></div>}
       <div className="space-y-5">
         <input
           value={task.title}

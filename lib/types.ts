@@ -325,6 +325,8 @@ export interface Profile {
   /** Which phone calendar is the Plan / Inbox one (the phone's own id). Empty = found by its name. */
   planCalendarId?: string;
   inboxCalendarId?: string;
+  /** How long before an early start (before 08:00) the "Set alarm" button rings, in minutes. */
+  wakeLeadMin: number;
   /** Items the planner puts in a day: 0 = Auto (learned from what you really finish, see lib/dayCapacity.ts), or a number. */
   capacityItems: number;
   /** The weekly target for "Other work", in hours (0 = no target). */
@@ -633,6 +635,8 @@ export interface Settings {
   /** History compaction (lib/compact.ts): the day it last ran, and when an archive write last failed (retry later). */
   compactedDate?: ISODate;
   compactFailedAt?: number;
+  /** Alarms already set from the app, by item and day ("event:<id>@2026-10-14" → "05:30"): so it is not offered twice. */
+  alarmsSet?: Record<string, string>;
   /** The "Today – Plan" mirror: when it last ran and how it went (shown in Settings and the Health check). */
   /** Gmail add-on (lib/inbox.ts): TASK: events already imported (never twice), today's DIGEST, whether its card was dismissed, tasks added since the toast. */
   inboxSeen?: string[];

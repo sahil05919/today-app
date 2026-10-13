@@ -60,6 +60,7 @@ export function defaultProfile(): Profile {
     earliestAuto: "11:00",
     otherHours: 5,
     capacityItems: 0,
+    wakeLeadMin: 90,
     notify: { morning: true, taskCheckIns: true, wrap: true, reminders: true, slots: true, events: true, bills: true, nudges: true, review: true, weekSoFar: true, quote: true, tonight: true, sessionNudges: true, dayDone: true },
   };
 }

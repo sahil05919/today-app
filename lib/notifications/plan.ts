@@ -6,6 +6,7 @@ import { backupDue } from "../backup";
 import { billReminders, reminderText } from "../bills";
 import { eventsOn, isEventDone, markOf } from "../fixed";
 import { digestLine } from "../inbox";
+import { alarmActionFor, isEarlyStart, type AlarmAction } from "../earlyAlarm";
 import { computeNudges } from "../nudges";
 import { isOffDay } from "../offday";
 import { eveningLine } from "../cheer";
@@ -51,6 +52,8 @@ export interface PlannedNotification {
   alarm?: boolean;
   /** The running timer reached its goal: buttons are Done / +5 min. */
   timer?: boolean;
+  /** The night-before reminder of an early start: its "Set alarm" button makes the real Android alarm. */
+  setAlarm?: AlarmAction;
   /** How much it is worth when a day is over its notification budget (see ./budget): higher stays. */
   value?: number;
 }
@@ -252,12 +255,25 @@ export function planNotifications(raw: AppData, now: Date = new Date(), opts: { 
 
   // --- Shifts and bookings from an email: the lead-up. The 1-hour heads-up is the event reminder above. -----------------------
   for (const e of remindable(data)) {
-    if ((!e.shift && !e.remind) || !e.start || e.date < today || e.date > horizonDay) continue;
+    // A shift or booking gets the lead-up; so does ANY event that starts before 08:00 (its night-before reminder carries "Set alarm").
+    const early = !!e.start && isEarlyStart(toMin(e.start));
+    if ((!e.shift && !e.remind && !early) || !e.start || e.date < today || e.date > horizonDay) continue;
     const morning = toMin(e.start) < 12 * 60;
     const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][fromISO(e.date).getDay()];
     const short = shortShift(e.title);
-    push({ key: `prep2:${e.id}`, at: at(addDays(e.date, -2), "19:00"), kind: "eventprep", title: "Coming up", body: `${wd} ${e.start}: ${short}. ${morning ? "Plan your morning" : "Plan your day"}`, actions: false, exact: true, exactTime: true });
-    push({ key: `prep1:${e.id}`, at: at(addDays(e.date, -1), "21:00"), kind: "eventprep", title: "Tomorrow", body: `Tomorrow ${e.start} shift: ${morning ? "set an alarm" : "all set?"}`, actions: false, exact: true, exactTime: true });
+    const alarm = early && !data.settings.alarmsSet?.[`event:${e.id}@${e.date}`] ? alarmActionFor(`event:${e.id}`, short, e.date, toMin(e.start), p.wakeLeadMin) : null;
+    if (e.shift || e.remind) push({ key: `prep2:${e.id}`, at: at(addDays(e.date, -2), "19:00"), kind: "eventprep", title: "Coming up", body: `${wd} ${e.start}: ${short}. ${morning ? "Plan your morning" : "Plan your day"}`, actions: false, exact: true, exactTime: true });
+    push({
+      key: `prep1:${e.id}`,
+      at: at(addDays(e.date, -1), "21:00"),
+      kind: "eventprep",
+      title: "Tomorrow",
+      body: alarm ? `Tomorrow ${e.start}: ${short}. Alarm for ${alarm.time}?` : `Tomorrow ${e.start} ${e.shift || e.remind ? "shift" : short}: ${morning ? "set an alarm" : "all set?"}`,
+      actions: false,
+      exact: true,
+      exactTime: true,
+      setAlarm: alarm ?? undefined,
+    });
   }
 
   // --- Bills and chores: "N days before", never for autopay ---------------------------

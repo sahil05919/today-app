@@ -12,6 +12,7 @@ import { actions, useData } from "@/lib/store";
 import type { TLItem } from "@/lib/timeline";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
 import { completeItem, skipItem, startItem, undoItem, unskipItem } from "./itemActions";
+import { AlarmButton } from "./AlarmButton";
 import { OtherRow } from "./OtherWork";
 import { btn, field, Sheet, type Panel, type ViewCtx } from "./ui";
 
@@ -64,6 +65,7 @@ export function ItemSheet({
     <Sheet title={item.title} onClose={onClose}>
       <p className={`-mt-1 mb-4 text-sm ${missed ? "font-medium text-warn" : "text-muted"}`}>{sub}</p>
       <div className="space-y-2">
+        {!item.done && !item.allDay && <AlarmButton ctx={ctx} itemKey={item.key} title={item.title} date={date} startMin={item.start} />}
         {groceries && openPanel && (
           <button
             className={btnClass("soft")}
@@ -206,6 +208,7 @@ export function EventSheet({ event, data, ctx, onClose }: { event: FixedEvent; d
   return (
     <Sheet title="Fixed event" onClose={onClose}>
       <div className="space-y-4">
+        {event.start && <AlarmButton ctx={ctx} itemKey={`event:${event.id}`} title={event.title} date={event.date} startMin={Number(event.start.slice(0, 2)) * 60 + Number(event.start.slice(3, 5))} />}
         <button
           className={`${isEventDone(data, event) ? btn.ghost : btn.primary} min-h-12 w-full`}
           onClick={() => {

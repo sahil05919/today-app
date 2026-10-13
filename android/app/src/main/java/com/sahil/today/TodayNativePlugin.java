@@ -19,6 +19,7 @@ import android.os.Build;
 import android.os.PowerManager;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.provider.AlarmClock;
 import android.provider.CalendarContract;
 import android.provider.Settings;
 import android.util.Base64;
@@ -389,6 +390,36 @@ public class TodayNativePlugin extends Plugin {
             call.reject("Calendar permission is not granted");
         } catch (Exception e) {
             call.reject("Could not update the Plan calendar");
+        }
+    }
+
+    /**
+     * A real alarm in the phone's clock app: { hour, minutes, message }. No screen is shown (EXTRA_SKIP_UI). The clock rings it at the next
+     * such time of day, which is why the app only offers it within 24 hours of the alarm time.
+     */
+    @PluginMethod
+    public void setAlarm(PluginCall call) {
+        Integer hour = call.getInt("hour");
+        Integer minutes = call.getInt("minutes");
+        if (hour == null || minutes == null || hour < 0 || hour > 23 || minutes < 0 || minutes > 59) {
+            call.reject("hour (0-23) and minutes (0-59) are required");
+            return;
+        }
+        try {
+            Intent intent = new Intent(AlarmClock.ACTION_SET_ALARM)
+                .putExtra(AlarmClock.EXTRA_HOUR, hour)
+                .putExtra(AlarmClock.EXTRA_MINUTES, minutes)
+                .putExtra(AlarmClock.EXTRA_MESSAGE, call.getString("message", "Today"))
+                .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (intent.resolveActivity(getContext().getPackageManager()) == null) {
+                call.reject("No clock app can set an alarm");
+                return;
+            }
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not set the alarm");
         }
     }
 

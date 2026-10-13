@@ -9,12 +9,14 @@ import { actions, useData } from "@/lib/store";
 import { buildTimeline, type TLItem, type Timeline } from "@/lib/timeline";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
 import type { RescheduleTarget } from "@/lib/reschedule";
+import { AlarmButton } from "./AlarmButton";
 import { RescheduleSheet } from "./RescheduleSheet";
 import { EventSheet, ItemSheet } from "./TodayPlan";
 import { LaterView } from "./LaterView";
 import { btn, Chip, field, Sheet, type ViewCtx } from "./ui";
 
 type View = "week" | "month" | "someday";
+const toMinutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 /** The things worth showing in a calendar (no breaks, no commute). */
@@ -211,7 +213,7 @@ export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppDat
 
       {item && <ItemSheet item={item.it} date={item.date} left={1} ctx={ctx} onClose={() => setItem(null)} onReschedule={(it) => setResched({ kind: "item", item: it, date: item.date })} />}
       {resched && <RescheduleSheet target={resched} ctx={ctx} onClose={() => setResched(null)} />}
-      {event && (event.source === "calendar" ? <CalendarEventInfo event={event} onClose={() => setEvent(null)} notify={ctx.notify} /> : <EventSheet event={event} data={data} ctx={ctx} onClose={() => setEvent(null)} />)}
+      {event && (event.source === "calendar" ? <CalendarEventInfo event={event} onClose={() => setEvent(null)} notify={ctx.notify} ctx={ctx} /> : <EventSheet event={event} data={data} ctx={ctx} onClose={() => setEvent(null)} />)}
     </Sheet>
   );
 }
@@ -220,7 +222,7 @@ export function CalendarSheet({ data, ctx, onClose, initialDay }: { data: AppDat
  * An event from the phone's calendar. Tick it done, hide it for the day, or give it a different time here. These marks live
  * only on this phone: nothing is ever written to your calendar. (Change the event itself in your calendar app.)
  */
-export function CalendarEventInfo({ event: raw, onClose, notify }: { event: FixedEvent; onClose: () => void; notify?: (msg: string, undo?: () => void) => void }) {
+export function CalendarEventInfo({ event: raw, onClose, notify, ctx }: { event: FixedEvent; onClose: () => void; notify?: (msg: string, undo?: () => void) => void; ctx?: ViewCtx }) {
   const data = useData();
   const key = eventMarkKey(raw);
   const mark = data ? markOf(data, raw) : undefined;
@@ -237,6 +239,7 @@ export function CalendarEventInfo({ event: raw, onClose, notify }: { event: Fixe
         {overridden ? " · time changed here" : ""}
       </p>
       <div className="space-y-2">
+        {raw.start && ctx && <AlarmButton ctx={ctx} itemKey={`event:${raw.id}`} title={raw.title} date={raw.date} startMin={toMinutes(mark?.start ?? raw.start)} />}
         <button
           className={`${done ? btn.ghost : btn.primary} flex min-h-12 w-full items-center justify-center gap-1.5`}
           onClick={() => {

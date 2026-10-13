@@ -111,6 +111,8 @@
     <!-- Recording what you say, for transcription -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- "Set alarm" on an early start creates an alarm in the clock app (a normal permission: no prompt) -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <!-- Notifications permissions (POST_NOTIFICATIONS, SCHEDULE_EXACT_ALARM, boot restore) and
          RECORD_AUDIO come from the Capacitor plugins. -->
 </manifest>

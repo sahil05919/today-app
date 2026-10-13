@@ -102,6 +102,7 @@ interface TodayNativePlugin {
   mirrorState(): Promise<MirrorState>;
   mirrorApply(opts: { calendarId: number; ops: MirrorOp[]; plan: MirrorEntry[] }): Promise<MirrorResult>;
   scheduleDailyMirror(): Promise<{ at: number }>;
+  setAlarm(opts: { hour: number; minutes: number; message: string }): Promise<void>;
   saveBackup(opts: { name: string; text: string }): Promise<{ name: string; uri: string }>;
   listBackups(): Promise<{ backups: BackupFile[] }>;
   pruneBackups(opts: { keep: number; kind?: "weekly" | "restore" | "history" }): Promise<{ deleted: number }>;
@@ -239,6 +240,15 @@ export async function mirrorApply(calendarId: number, ops: MirrorOp[], plan: Mir
 export async function armDailyMirror(): Promise<number | null> {
   if (!isNative()) return null;
   return safely<number | null>("scheduleDailyMirror", async () => (await TodayNative.scheduleDailyMirror()).at, null);
+}
+
+// ---- Alarms ---------------------------------------------------------------------------------------------------
+
+/** Creates a real alarm in the phone's clock app (no screen shown). It rings at the next such time of day. false when it could not. */
+export async function setPhoneAlarm(hour: number, minutes: number, message: string): Promise<boolean> {
+  if (!isNative()) return false;
+  if (!Number.isInteger(hour) || !Number.isInteger(minutes) || hour < 0 || hour > 23 || minutes < 0 || minutes > 59) return false;
+  return safely("setAlarm", async () => (await TodayNative.setAlarm({ hour, minutes, message }), true), false);
 }
 
 // ---- Backups (Documents/TodayBackups) ---------------------------------------------------------------------

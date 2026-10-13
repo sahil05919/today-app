@@ -1,5 +1,7 @@
 import { LocalNotifications, type ActionPerformed } from "@capacitor/local-notifications";
 import { createAlarmChannel } from "../nativeBridge";
+import { setEarlyAlarm } from "../earlyAlarmRun";
+import type { AlarmAction } from "../earlyAlarm";
 import { toISO } from "../dates";
 import { isNative } from "../platform";
 import { findTask, parseOccKey } from "../series";
@@ -24,6 +26,8 @@ const CH_ALARM = "today-alarm";
 const TASK_ACTIONS = "TASK";
 const ALARM_ACTIONS = "ALARM";
 const CHECKIN_ACTIONS = "CHECKIN";
+/** The night-before reminder of an early start: one button, "Set alarm". */
+const PREP_ACTIONS = "PREP";
 const TIMER_ACTIONS = "TIMER";
 /** The old Snooze buttons are Reschedule +1 hour now. */
 export const RESCHEDULE_BUTTON = "+1 hour";
@@ -165,6 +169,10 @@ async function setUp() {
         },
         // Sessions, chores ("Have you sorted your email?") and the end-of-day question.
         {
+          id: PREP_ACTIONS,
+          actions: [{ id: "setalarm", title: "⏰ Set alarm" }],
+        },
+        {
           id: CHECKIN_ACTIONS,
           actions: [
             { id: "done", title: "✓ Done" },
@@ -192,11 +200,11 @@ const toSchema = (n: PlannedNotification, exactAllowed: boolean) => ({
   largeBody: n.largeBody,
   schedule: { at: n.at, allowWhileIdle: true },
   channelId: n.alarm ? CH_ALARM : n.exact ? CH_REMINDERS : CH_GENTLE,
-  actionTypeId: n.actions ? (n.timer ? TIMER_ACTIONS : n.alarm ? ALARM_ACTIONS : n.ref ? CHECKIN_ACTIONS : TASK_ACTIONS) : undefined,
+  actionTypeId: n.setAlarm ? PREP_ACTIONS : n.actions ? (n.timer ? TIMER_ACTIONS : n.alarm ? ALARM_ACTIONS : n.ref ? CHECKIN_ACTIONS : TASK_ACTIONS) : undefined,
   smallIcon: "ic_stat_today",
   autoCancel: true,
   // A repeat's notification says exactly which day it is for: { id: seriesId, date }, so a tap opens THAT occurrence.
-  extra: { taskId: n.taskId, kind: n.kind, key: n.key, ref: n.ref, at: n.at.getTime(), occ: occOf(n.taskId) },
+  extra: { taskId: n.taskId, kind: n.kind, key: n.key, ref: n.ref, at: n.at.getTime(), occ: occOf(n.taskId), setAlarm: n.setAlarm },
   // Only ask for a precise alarm when it's already allowed, so rescheduling never throws up a settings screen.
   isExactNotification: n.exact && exactAllowed,
   isExactMandatory: false,
@@ -346,8 +354,19 @@ export const markActivated = () => {
 export async function listenForActions(onTap: (t: TapTarget) => void): Promise<() => void> {
   if (!isNative()) return () => {};
   const handle = await safely("addListener(actions)", () => LocalNotifications.addListener("localNotificationActionPerformed", async (e: ActionPerformed) => {
-    const extra = (e.notification.extra ?? {}) as { taskId?: string; kind?: TapTarget["kind"]; key?: string; ref?: string; at?: number; occ?: { id: string; date: string } };
+    const extra = (e.notification.extra ?? {}) as { setAlarm?: AlarmAction; taskId?: string; kind?: TapTarget["kind"]; key?: string; ref?: string; at?: number; occ?: { id: string; date: string } };
     const { actionId } = e;
+
+    // "Set alarm" on the night-before reminder of an early start: a real Android alarm, then straight back to where you were.
+    if (actionId === "setalarm" && extra.setAlarm) {
+      await whenLoaded();
+      await setEarlyAlarm(extra.setAlarm);
+      if (Date.now() - activatedAt < 5000) {
+        const { App } = await import("@capacitor/app");
+        void safely("minimizeApp", () => App.minimizeApp(), undefined, 2000);
+      }
+      return;
+    }
 
     // "Time's up" on a timer: Done logs it, +5 min keeps going.
     if (extra.kind === "timer" && ["done", "extend"].includes(actionId)) {

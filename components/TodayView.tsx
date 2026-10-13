@@ -294,7 +294,7 @@ export function TodayView({
       {sheet?.k === "item" && <ItemSheet item={sheet.it} date={sheet.date} left={sheet.date === tl.date ? openCount(tl.items, sheet.it.key) : 1} ctx={ctx} onClose={() => setSheet(null)} onReschedule={reschedule} openPanel={openPanel} />}
       {sheet?.k === "cleared" && <ClearedSheet id={sheet.id} data={data} ctx={ctx} onClose={() => setSheet(null)} />}
       {sheet?.k === "block" && <BlockSheet id={sheet.id} date={sheet.date} ctx={ctx} onClose={() => setSheet(null)} />}
-      {sheet?.k === "event" && (sheet.e.source === "calendar" ? <CalendarEventInfo event={sheet.e} onClose={() => setSheet(null)} notify={ctx.notify} /> : <EventSheet event={sheet.e} data={data} ctx={ctx} onClose={() => setSheet(null)} />)}
+      {sheet?.k === "event" && (sheet.e.source === "calendar" ? <CalendarEventInfo event={sheet.e} onClose={() => setSheet(null)} notify={ctx.notify} ctx={ctx} /> : <EventSheet event={sheet.e} data={data} ctx={ctx} onClose={() => setSheet(null)} />)}
       {sheet?.k === "reschedule" && <RescheduleSheet target={sheet.target} ctx={ctx} onClose={() => setSheet(null)} />}
     </div>
   );
