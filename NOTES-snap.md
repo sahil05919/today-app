@@ -39,3 +39,13 @@
 - **Real recogniser output found two bugs the fixtures could not**: a stray accent glued to "£" made a price line taller and it won the title (fixed: stray glyphs are dropped, a price line can never be the title), and "O2" read as "02" (fixed for the well-known O2 venues).
 - **Not verified**: the **camera** path end to end (the emulator was too loaded to drive its camera app; the code compiles and is a plain `ACTION_IMAGE_CAPTURE` with a FileProvider temp file); **several pictures in one share** (`SEND_MULTIPLE`, `am start` cannot send a list; the loop that reads them one by one is covered by tests); **Gemini online** (no key was available: the call, schema, merge and every failure path are covered by tests with a fake Gemini); the real photo picker UI. One "Today isn't responding" dialog appeared while the app cold-started on a heavily loaded emulator (system load 15-21, "no focused window"); it did not recur during interaction, but it was not possible to prove it unrelated on an emulator, so please watch app start on the phone.
 - One transient "Could not read the text in that picture" appeared once on the 8th picture in a row while Gradle was saturating the emulator's CPU; it did not repeat. The phone side now logs the cause (`adb logcat -s TodaySnap`) and the page retries that error once.
+
+## APK size (release, signed with the same key as every earlier build)
+
+| Build | Bytes | vs before |
+|---|---|---|
+| Before Snap to Today (`main`) | 3,753,693 | |
+| `npm run android:release` (64-bit + 32-bit ARM) | 23,797,124 | +20.0 MB |
+| `npm run android:release -- --arm64` | 17,004,035 | +13.3 MB |
+
+What the extra is, uncompressed: ML Kit's text library (about 11.1 MB for 64-bit ARM, 6.8 MB for 32-bit ARM), its bundled model files (about 1.9 MB) and about 2.1 MB of extra code. Release APKs store native libraries uncompressed so the phone can map them directly, which is why the APK is as big as they are. That is the price of a recogniser that is inside the app and works offline from install; an unbundled model that downloads on first use would be far smaller but would not work offline the first time. The copies are in `apk/today-snap-to-today.apk` and `apk/today-snap-to-today-arm64.apk` (the folder is not in git).
