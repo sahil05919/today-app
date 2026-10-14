@@ -2,6 +2,7 @@
 //   node scripts/android-build.mjs            -> web build + `cap sync android`
 //   node scripts/android-build.mjs --apk      -> ...and then a debug APK
 //   node scripts/android-build.mjs --release  -> ...and then the optimised RELEASE APK (npm run android:release)
+//   add --arm64 to a release build for the smaller APK with only the 64-bit ARM text-reading library (npm run android:release -- --arm64)
 //
 // The release APK is signed with the same debug keystore as the debug build, so `adb install -r` installs it over the
 // current app and keeps your data. It then checks that the two certificates really are the same.
@@ -14,6 +15,7 @@ import { checkSignature } from "./verify-signature.mjs";
 const win = process.platform === "win32";
 const release = process.argv.includes("--release");
 const apkWanted = release || process.argv.includes("--apk");
+const arm64 = process.argv.includes("--arm64");
 
 // Gradle needs a JDK it supports: Java 25 (Android Studio's bundled one after an update) makes it fail with
 // "Unsupported class file major version 69". See scripts/jdk.mjs.
@@ -40,7 +42,8 @@ run("npx", ["cap", "sync", "android"]);
 if (apkWanted) {
   const task = release ? "assembleRelease" : "assembleDebug";
   console.log(`3/3  Building the ${release ? "release" : "debug"} APK...`);
-  run(win ? ".\\gradlew.bat" : "./gradlew", [task], { cwd: "android" });
+  // --arm64: only the 64-bit ARM copy of ML Kit's text library (about 7 MB smaller; every phone of the last several years is 64-bit).
+  run(win ? ".\\gradlew.bat" : "./gradlew", [task, ...(arm64 ? ["-PsnapAbis=arm64-v8a"] : [])], { cwd: "android" });
   const apk = resolve(join("android", "app", "build", "outputs", "apk", release ? "release" : "debug", release ? "app-release.apk" : "app-debug.apk"));
   if (!existsSync(apk)) {
     console.log("\nBuild finished, but I couldn't find the APK.");

@@ -175,6 +175,9 @@ export interface FixedEvent {
   calEventId?: string;
   /** Who made it (see ItemSource). Missing = you. */
   src?: ItemSource;
+  /** Where it is, and anything else worth keeping (Snap to Today). Written to the phone calendar's location and notes. */
+  location?: string;
+  notes?: string;
 }
 
 /** A word you taught the dictionary: "pehchaan karna" → Admin. Used offline, before the built-in words. */
@@ -800,6 +803,8 @@ export type ItemSource =
   | "planner-move"
   | "planner-pull"
   | "life-admin"
+  /** Snap to Today: read from a photo or screenshot and confirmed by you. Not the app's own doing, so never listed in "What the app did". */
+  | "snap"
   | "recurring";
 
 export interface CatPick {

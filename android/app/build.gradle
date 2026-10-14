@@ -28,6 +28,12 @@ android {
             minifyEnabled false
             shrinkResources false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // ML Kit's text model ships a native library per CPU type (about 11 MB for 64-bit ARM, 7 MB for 32-bit ARM). Phones are ARM, so
+            // the release APK carries only those two (a debug build keeps every type, so it still runs on an x86 emulator). Every phone of the
+            // last several years is 64-bit: `npm run android:release -- --arm64` builds with only that one (about 7 MB smaller).
+            ndk {
+                (project.findProperty('snapAbis') ?: 'arm64-v8a,armeabi-v7a').toString().split(',').each { abiFilters it.trim() }
+            }
         }
     }
 }
@@ -44,6 +50,8 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // Snap to Today: on-device text recognition, the BUNDLED Latin model (works offline from install; not the Play-services download).
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

@@ -34,15 +34,17 @@ const hm = (s: string) => ({ h: Number(s.slice(0, 2)), m: Number(s.slice(3, 5)) 
 /** An event as the Android calendar wants it: epoch ms, all-day events as UTC midnights (Android's rule). */
 export function toNativeEvent(e: FixedEvent, calendarId: number): NativeEvent {
   const [y, mo, d] = e.date.split("-").map(Number);
-  const note = ["Added by Today", e.status, e.area === "sidework" ? "Side work" : ""].filter(Boolean).join(" · ");
+  const head = ["Added by Today", e.status, e.area === "sidework" ? "Side work" : ""].filter(Boolean).join(" · ");
+  const note = e.notes ? `${head}\n${e.notes}` : head;
+  const place = e.location ? { location: e.location } : {};
   if (!e.start) {
     const start = Date.UTC(y, mo - 1, d);
-    return { calendarId, title: e.title, start, end: start + 86_400_000, allDay: true, description: note };
+    return { calendarId, title: e.title, start, end: start + 86_400_000, allDay: true, description: note, ...place };
   }
   const s = hm(e.start);
   const start = new Date(y, mo - 1, d, s.h, s.m).getTime();
   const endAt = e.end ? new Date(y, mo - 1, d, hm(e.end).h, hm(e.end).m).getTime() : 0;
-  return { calendarId, title: e.title, start, end: endAt > start ? endAt : start + 60 * 60_000, allDay: false, description: note };
+  return { calendarId, title: e.title, start, end: endAt > start ? endAt : start + 60 * 60_000, allDay: false, description: note, ...place };
 }
 
 /** Asked for once (Android shows its own dialog); after that it is the person's call in Settings. */

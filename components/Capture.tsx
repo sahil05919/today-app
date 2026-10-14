@@ -18,7 +18,8 @@ import { voiceSupported } from "@/lib/voice";
 import type { AppData, FixedEvent, ISODate } from "@/lib/types";
 import { ClearFlow, type ClearFlowState } from "./ClearSheet";
 import { ConfirmCard, type CaptureResult } from "./ConfirmCard";
-import { ArrowUpIcon, MicIcon } from "./icons";
+import { isNative } from "@/lib/platform";
+import { ArrowUpIcon, ImageIcon, MicIcon } from "./icons";
 import { ParsePreview } from "./ParsePreview";
 import { EventSheet } from "./TodayPlan";
 import { type ViewCtx } from "./ui";
@@ -48,6 +49,7 @@ export function Capture({
   defaultDate,
   command,
   onLighten,
+  onSnap,
 }: {
   ctx: ViewCtx;
   data: AppData;
@@ -55,8 +57,14 @@ export function Capture({
   command?: CaptureCommand;
   /** "work done", "I'm free", "lighten my week"…: a command, never a task. */
   onLighten?: () => void;
+  /** Snap to Today: read a photo or screenshot. Camera or Gallery. */
+  onSnap?: (source: "camera" | "gallery") => void;
 }) {
   const [text, setText] = useState("");
+  const [snapMenu, setSnapMenu] = useState(false);
+  // Only where a picture can be read (the Android app); the desktop preview shows it too so the sheet can be looked at.
+  const [snapOk, setSnapOk] = useState(false);
+  useEffect(() => setSnapOk(isNative() || process.env.NODE_ENV !== "production"), []);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [autoStart, setAutoStart] = useState(false);
   const [voiceOk, setVoiceOk] = useState(false);
@@ -301,6 +309,23 @@ export function Capture({
           <ParsePreview parsed={parsed} today={ctx.today} defaultDate={defaultDate} areas={ctx.profile.areas} />
         </div>
       )}
+      {snapMenu && onSnap && !voiceOpen && (
+        <div className="mb-2 flex flex-wrap gap-1.5" role="group" aria-label="Snap to Today">
+          {(["camera", "gallery"] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              className="min-h-10 rounded-full bg-accent-soft px-4 text-sm font-medium text-accent"
+              onClick={() => {
+                setSnapMenu(false);
+                onSnap(s);
+              }}
+            >
+              {s === "camera" ? "Take a photo" : "Choose a picture"}
+            </button>
+          ))}
+        </div>
+      )}
       {chips && !voiceOpen && (
         <div className="mb-2 flex flex-wrap gap-1.5" role="group" aria-label="Clear suggestions">
           {chips.map((c) => (
@@ -355,12 +380,23 @@ export function Capture({
           ref={input}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Type or speak anything…"
+          placeholder={onSnap && snapOk ? "Type, speak or snap…" : "Type or speak anything…"}
           aria-label="Capture a task"
           enterKeyHint="done"
           autoComplete="off"
           className="min-w-0 flex-1 bg-transparent py-3 text-[17px] placeholder:text-muted/70 focus:outline-none"
         />
+        {onSnap && snapOk && !text && (
+          <button
+            type="button"
+            onClick={() => setSnapMenu((o) => !o)}
+            aria-label="Snap a photo or screenshot"
+            aria-expanded={snapMenu}
+            className={`flex h-12 w-10 shrink-0 items-center justify-center rounded-xl ${snapMenu ? "bg-accent-soft text-accent" : "text-muted"}`}
+          >
+            <ImageIcon width={24} height={24} />
+          </button>
+        )}
         {voiceOk && !text && (
           <button
             type="button"

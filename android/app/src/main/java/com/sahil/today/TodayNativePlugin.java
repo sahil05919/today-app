@@ -1,8 +1,10 @@
 package com.sahil.today;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.content.ClipData;
 import android.content.ContentResolver;
 import android.content.ContentUris;
 import android.content.ContentValues;
@@ -21,8 +23,11 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.AlarmClock;
 import android.provider.CalendarContract;
+import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.Base64;
+
+import androidx.activity.result.ActivityResult;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -30,6 +35,7 @@ import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
@@ -73,6 +79,8 @@ public class TodayNativePlugin extends Plugin {
     public void load() {
         // Cold start: the app was opened by a share or a shortcut.
         pending = parse(getActivity().getIntent());
+        // Snap to Today: a camera temp file left by a crash or a kill is removed (nothing of a picture is ever kept).
+        SnapNative.POOL.execute(() -> SnapNative.sweep(getContext(), 0));
     }
 
     @Override
@@ -157,6 +165,23 @@ public class TodayNativePlugin extends Plugin {
             return out;
         }
 
+        // Pictures shared from the gallery, WhatsApp, a screenshot's share button… (Snap to Today). Only the addresses are passed on:
+        // the pictures are opened one at a time, in memory, and never copied.
+        if ((Intent.ACTION_SEND.equals(action) || Intent.ACTION_SEND_MULTIPLE.equals(action)) && type != null && type.startsWith("image/")) {
+            JSArray uris = new JSArray();
+            if (Intent.ACTION_SEND.equals(action)) {
+                Uri one = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+                if (one != null) uris.put(one.toString());
+            } else {
+                java.util.ArrayList<Uri> many = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+                if (many != null) for (Uri u : many) if (u != null && uris.length() < 8) uris.put(u.toString());
+            }
+            if (uris.length() == 0) return null;
+            out.put("kind", "images");
+            out.put("uris", uris);
+            return out;
+        }
+
         // Text shared from WhatsApp, Gmail, Chrome…
         if (Intent.ACTION_SEND.equals(action)) {
             String text = intent.getStringExtra(Intent.EXTRA_TEXT);
@@ -234,6 +259,135 @@ public class TodayNativePlugin extends Plugin {
             pending = null;
         }
         call.resolve(result);
+    }
+
+    // ---- Snap to Today: pick, read, release ---------------------------------------------------------------
+
+    private static final int MAX_PICKED = 6;
+
+    /**
+     * { source: "camera" | "gallery" }. Opens the camera app (the picture goes to a temp file in the app's cache, which is deleted
+     * as soon as it has been read) or the photo picker. Resolves { uris: [...] } or { cancelled: true }. Nothing is saved to the gallery.
+     */
+    @PluginMethod
+    public void snapPick(PluginCall call) {
+        String source = call.getString("source", "gallery");
+        try {
+            if ("camera".equals(source)) {
+                java.io.File file = SnapNative.newCaptureFile(getContext());
+                Uri uri = androidx.core.content.FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+                SnapNative.own(uri.toString(), file);
+                Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                intent.putExtra(MediaStore.EXTRA_OUTPUT, uri);
+                intent.setClipData(ClipData.newRawUri("", uri));
+                intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivityForResult(call, intent, "snapPickResult");
+                return;
+            }
+            Intent intent;
+            if (Build.VERSION.SDK_INT >= 33) {
+                intent = new Intent(MediaStore.ACTION_PICK_IMAGES);
+                intent.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, MAX_PICKED);
+            } else {
+                intent = new Intent(Intent.ACTION_GET_CONTENT);
+                intent.setType("image/*");
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            }
+            startActivityForResult(call, intent, "snapPickResult");
+        } catch (android.content.ActivityNotFoundException nf) {
+            call.reject("camera".equals(source) ? "No camera app is available" : "No photo picker is available");
+        } catch (Exception e) {
+            call.reject("Could not open the " + ("camera".equals(source) ? "camera" : "gallery"));
+        }
+    }
+
+    @ActivityCallback
+    private void snapPickResult(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        JSObject r = new JSObject();
+        JSArray uris = new JSArray();
+        Intent data = result.getData();
+        if (result.getResultCode() == Activity.RESULT_OK) {
+            if (data != null && data.getClipData() != null) {
+                ClipData clip = data.getClipData();
+                for (int i = 0; i < clip.getItemCount() && uris.length() < MAX_PICKED; i++) {
+                    Uri u = clip.getItemAt(i).getUri();
+                    if (u != null) uris.put(u.toString());
+                }
+            } else if (data != null && data.getData() != null) {
+                uris.put(data.getData().toString());
+            } else {
+                // The camera returns no data: the picture is in the file we named.
+                for (String owned : SnapNative.OWNED) uris.put(owned);
+            }
+        }
+        if (uris.length() == 0) {
+            // Cancelled or empty: whatever temp file was made for the camera goes now.
+            for (String owned : new java.util.ArrayList<>(SnapNative.OWNED)) SnapNative.dropOwned(owned);
+            r.put("cancelled", true);
+        }
+        r.put("uris", uris);
+        call.resolve(r);
+    }
+
+    /**
+     * { uri }. Prepares the picture (upright, at most 1600 px, in memory) and reads its text with ML Kit's bundled Latin model.
+     * Resolves { width, height, lines: [{ text, x0, y0, x1, y1, conf }], takenAt?, takenFrom?, handle }. Off the main thread.
+     */
+    @PluginMethod
+    public void snapRead(PluginCall call) {
+        final String uriText = call.getString("uri");
+        if (uriText == null) {
+            call.reject("uri is required");
+            return;
+        }
+        SnapNative.POOL.execute(() -> {
+            try {
+                call.resolve(SnapNative.read(getContext(), Uri.parse(uriText)));
+            } catch (SecurityException se) {
+                SnapNative.dropOwned(uriText);
+                call.reject("Today is not allowed to open that picture");
+            } catch (java.io.FileNotFoundException fnf) {
+                SnapNative.dropOwned(uriText);
+                call.reject("That picture is no longer there");
+            } catch (java.io.IOException io) {
+                SnapNative.dropOwned(uriText);
+                call.reject(io.getMessage() == null ? "Could not open that picture" : io.getMessage());
+            } catch (java.util.concurrent.TimeoutException te) {
+                SnapNative.dropOwned(uriText);
+                android.util.Log.e("TodaySnap", "text recognition timed out", te);
+                call.reject("Reading that picture took too long");
+            } catch (Throwable t) {
+                SnapNative.dropOwned(uriText);
+                // Said calmly to the person; the real cause goes to the log so it can be found.
+                android.util.Log.e("TodaySnap", "snapRead failed: " + t, t);
+                call.reject("Could not read the text in that picture");
+            }
+        });
+    }
+
+    /** { handle }. The prepared picture as base64 JPEG, for Gemini when the text was too weak. Resolves { base64 } (missing when gone). */
+    @PluginMethod
+    public void snapJpeg(PluginCall call) {
+        String handle = call.getString("handle");
+        byte[] jpeg = handle == null ? null : SnapNative.jpegOf(handle);
+        JSObject r = new JSObject();
+        if (jpeg != null) r.put("base64", Base64.encodeToString(jpeg, Base64.NO_WRAP));
+        call.resolve(r);
+    }
+
+    /** { handles }. Forgets the prepared pictures and removes any camera temp file left in the cache. */
+    @PluginMethod
+    public void snapRelease(PluginCall call) {
+        JSArray handles = arrayOf(call, "handles");
+        try {
+            if (handles != null) for (int i = 0; i < handles.length(); i++) SnapNative.release(handles.getString(i));
+        } catch (Exception ignored) {
+            // a bad handle is already gone
+        }
+        SnapNative.POOL.execute(() -> SnapNative.sweep(getContext(), 5 * 60_000L));
+        call.resolve();
     }
 
     // ---- Calendar (read-only) --------------------------------------------------------------------------

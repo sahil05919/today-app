@@ -6,9 +6,11 @@ import { isNative } from "./platform";
 import type { WidgetAction } from "./widget";
 
 export interface LaunchIntent {
-  kind: "share" | "new" | "voice" | "ics" | "start";
+  kind: "share" | "new" | "voice" | "ics" | "start" | "images";
   text?: string;
   title?: string;
+  /** "images" (Share → Today with pictures): the addresses of the pictures. They are opened one at a time, in memory. */
+  uris?: string[];
   /** "start" (the widget's Start button): which item to open with its timer running. */
   itemKind?: string;
   ref?: string;
@@ -107,6 +109,10 @@ interface TodayNativePlugin {
   mirrorState(): Promise<MirrorState>;
   mirrorApply(opts: { calendarId: number; ops: MirrorOp[]; plan: MirrorEntry[] }): Promise<MirrorResult>;
   scheduleDailyMirror(): Promise<{ at: number }>;
+  snapPick(opts: { source: "camera" | "gallery" }): Promise<{ uris: string[]; cancelled?: boolean }>;
+  snapRead(opts: { uri: string }): Promise<SnapPage>;
+  snapJpeg(opts: { handle: string }): Promise<{ base64?: string }>;
+  snapRelease(opts: { handles: string[] }): Promise<void>;
   setAlarm(opts: { hour: number; minutes: number; message: string }): Promise<void>;
   saveBackup(opts: { name: string; text: string }): Promise<{ name: string; uri: string }>;
   listBackups(): Promise<{ backups: BackupFile[] }>;
@@ -251,6 +257,55 @@ export async function mirrorApply(calendarId: number, ops: MirrorOp[], plan: Mir
 export async function armDailyMirror(): Promise<number | null> {
   if (!isNative()) return null;
   return safely<number | null>("scheduleDailyMirror", async () => (await TodayNative.scheduleDailyMirror()).at, null);
+}
+
+// ---- Snap to Today (pictures read on the phone) ---------------------------------------------------------------
+
+/** What the phone read in one picture (lib/snap/types.ts `OcrPage`, plus the handle of the prepared picture). */
+export interface SnapPage {
+  width: number;
+  height: number;
+  lines: Array<{ text: string; x0: number; y0: number; x1: number; y1: number; conf?: number }>;
+  takenAt?: number;
+  takenFrom?: "exif" | "file";
+  handle?: string;
+}
+
+/**
+ * Opens the camera or the photo picker. { uris } when pictures were chosen, { cancelled: true } when not, null when it could not be
+ * opened (the reason is in Settings → Health → Recent errors). The person is in another app meanwhile, so there is no 5 s limit.
+ */
+export async function snapPick(source: "camera" | "gallery"): Promise<{ uris: string[]; cancelled?: boolean } | null> {
+  if (!isNative()) return null;
+  return safely<{ uris: string[]; cancelled?: boolean } | null>("snapPick", () => TodayNative.snapPick({ source }), null, 10 * 60_000);
+}
+
+/** Prepares one picture and reads its text on the phone. Throws a readable Error (the card shows it calmly). */
+export async function snapRead(uri: string): Promise<SnapPage> {
+  if (!isNative()) throw new Error("Reading pictures needs the Android app");
+  // The recogniser can fail once on a busy phone and work the next moment: the generic failure gets exactly one more try.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await withTimeout(TodayNative.snapRead({ uri }), "snapRead", 40_000);
+    } catch (e) {
+      logError("native:snapRead", e);
+      const m = String((e as { message?: string })?.message ?? "");
+      if (attempt === 0 && /Could not read the text/.test(m)) continue;
+      throw new Error(m && !/did not answer/.test(m) ? m : "Reading that picture took too long");
+    }
+  }
+}
+
+/** The prepared picture as base64 JPEG (for Gemini, only when the text was too weak). */
+export async function snapJpeg(handle: string): Promise<string | null> {
+  if (!isNative()) return null;
+  return safely<string | null>("snapJpeg", async () => (await TodayNative.snapJpeg({ handle })).base64 ?? null, null, 10_000);
+}
+
+/** Frees the prepared pictures and removes any temp file. Never throws. */
+export async function snapRelease(handles: string[]): Promise<void> {
+  if (!isNative()) return;
+  await safely("snapRelease", () => TodayNative.snapRelease({ handles }), undefined);
 }
 
 // ---- Alarms ---------------------------------------------------------------------------------------------------

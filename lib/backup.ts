@@ -181,7 +181,7 @@ function cleanSeries(v: any): Series[] | undefined {
 const SUB_LABELS = ["Building", "Chores", "Admin", "Learning", "Other"];
 const CONFIDENCES = ["high", "medium", "low"];
 const CAT_HOWS = ["explicit", "inherited", "learned", "dictionary", "gemini", "fallback"];
-const SOURCES = ["me", "gmail-star", "gmail-task", "gmail-shift", "gmail-interview", "gmail-bill", "gmail-booking", "gmail-digest", "phone-calendar", "planner-move", "planner-pull", "life-admin", "recurring"];
+const SOURCES = ["me", "gmail-star", "gmail-task", "gmail-shift", "gmail-interview", "gmail-bill", "gmail-booking", "gmail-digest", "phone-calendar", "planner-move", "planner-pull", "life-admin", "snap", "recurring"];
 
 function cleanInboxCheck(v: any): InboxCheck | undefined {
   if (!v || typeof v !== "object" || !Number.isFinite(v.at) || !["ok", "no-permission", "error"].includes(v.status) || !["found", "scanned", "missing"].includes(v.calendar)) return undefined;
@@ -437,6 +437,8 @@ function cleanEvents(v: any): FixedEvent[] | undefined {
       remind: e.remind === true ? true : undefined,
       calEventId: str(e.calEventId, 80),
       src: SOURCES.includes(e.src) ? e.src : undefined,
+      location: str(e.location, 120),
+      notes: str(e.notes, 600),
     }));
 }
 

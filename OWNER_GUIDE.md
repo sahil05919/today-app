@@ -30,6 +30,7 @@ Open **Menu (☰, top right) → Settings** for almost everything. Each heading 
 | **Health** | The morning self-check, and **Recent errors**. | Settings → Health |
 | **Weekly review** | Sunday letter, "Week so far" on Friday. | Menu → Weekly review |
 | **Lighten my week** | Finished early? Pulls work forward. Type "I'm free" or "work done". | Capture bar, or Today's card |
+| **Snap to Today** | Reads a photo or screenshot (a ticket, bill, letter, shift offer, chat) and offers events, tasks or bills. Always a review card first. | The picture button in the capture bar, or Share → Today. Settings → Smart parsing: "Never send the picture" |
 
 ### Things worth knowing
 - **Done** is instant and is saved about a third of a second later. If the phone is switched off at that exact moment, the last tap could be lost. Leaving the app saves immediately.
@@ -55,6 +56,8 @@ npm run android:release
 ```
 This makes the web build, copies it into the Android project, builds the release APK, checks its signature, and prints the file path:
 `android\app\build\outputs\apk\release\app-release.apk`
+
+**A smaller app, if your phone is 64-bit** (every phone of the last several years is; check with `& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" shell getprop ro.product.cpu.abilist`, it should start with `arm64-v8a`): `npm run android:release -- --arm64`. Reading photos on the phone (Snap to Today) ships a text-reading library per CPU type; this drops the 32-bit copy (about 7 MB). If the phone were 32-bit only, that build would refuse to install, so the plain command stays the default.
 
 **Install it on the phone** (USB cable, USB debugging on, phone unlocked). `-r` means "replace", which keeps all your data:
 ```powershell
@@ -227,3 +230,40 @@ Everything the app brings in or moves by itself, so nothing slips in unseen. Thi
 
 ### Data version
 The app's data version is now **5**. The first time it opens it copies your data to `today:v1:backup-pre-v5`, then continues. New things stored: category picks and Gemini answers, the "what the app did" list, the last Gmail inbox check, and which calendar events the app has already seen.
+
+
+## 10. Snap to Today (photos and screenshots)
+
+Point the app at a picture and it offers to add what is in it: a ticket becomes an event, a bill becomes a "Pay …" task with its amount and due date, a letter with a deadline becomes a task, a shift offer becomes a task in Side work, a chat message like "party sat 8pm at mine" or "kal 5 baje call karna" becomes a plan. **Nothing is saved until you tap Add.**
+
+### How to use it
+- **The picture button** next to the capture box: **Take a photo** or **Choose a picture**.
+- **Share → Today** from the gallery, WhatsApp, Gmail, a screenshot's own share button: one picture or several. (Several are read one after the other into one list.)
+- A card opens at once saying "Reading…" with a **Cancel** button. Each thing found has a title, a kind (Event / Task / Bill / Note), a date, a time, a place and an amount. Anything the app was not sure of is highlighted. Tap **Edit** to change it, **Add** to save it, **Discard** to drop it, or **Add all**.
+- An event with no time asks "What time?" (a time picker, or **All day**).
+- If you already have the same thing on that day, it says so and offers **Skip it** or **Add anyway**.
+- If it flags **Check the date**, either the picture's day has already passed, or Gemini read a different day or time from the phone (it shows what Gemini read, with **Use that**).
+- If nothing useful is found, you get the text it read, so you can still **save it as a note**.
+
+### What happens when you add
+It goes through exactly the same path as typing it: events are fixed blocks (the day re-plans around them, they are written to your phone calendar, and reminders, the widget, backups and the "Today – Plan" copy all follow); tasks follow the usual rules (nothing is scheduled before 11:00 unless you set a time); a bill is "Pay <name> (£amount)" due on its due date, which gets the normal due-day check-in; a shift offer is a task in Side work (switch it to Event on the card if you have accepted it). Only the details are kept: **never the picture, never a thumbnail**.
+
+### Privacy: what stays on the phone
+1. **A picture is always read on the phone first** (Google ML Kit, its Latin model is inside the app, so it works with no internet, even the first time). The result is on screen before anything goes online.
+2. **Gemini only improves it**, and only if you have a key (Settings → Smart parsing) and a connection. It is sent the **cleaned text** the phone read, not the picture. The picture goes only if the text was too weak to read, and never if you tick **Settings → Smart parsing → Never send the picture itself to Gemini**. If Gemini is slow (8 seconds), fails, or sends rubbish, you never see it: the phone's reading stands.
+3. **Sensitive pictures never leave the phone.** If the text has a card number, a sort code with an account number, an IBAN, a National Insurance number, a passport or ID number, a CVV, or a password / PIN / one-time code, nothing about that picture is sent (not the text, not the picture), the card says "read on this phone only", and those values are masked (a card shows only its last four digits) in anything shown or saved.
+4. **Gemini never swaps a date or time quietly.** If it reads a different day or time from the phone, the phone's value stays, with a **Check the date** flag.
+5. **No picture is kept.** The camera's temporary file is deleted as soon as it has been read, and also when the app starts (in case a crash left one). A picture you choose or share belongs to the other app: it is only read, never copied. The prepared copy exists only in memory, only so it can go to Gemini when the text was weak, and is freed when you close the card. Nothing is saved to your gallery.
+6. The Gemini key stays on the phone as before (not in the backup, not in any log).
+
+### Things to know
+- It reads **printed text in Roman letters** (English and Hinglish typed in Roman letters). Not handwriting, not Devanagari.
+- "Tomorrow", "Sat", "next Friday" count from the day the picture was **taken** (its photo date, else the file's date). A screenshot kept for a week still gets the right day, and is flagged if that day has passed.
+- UK dates: 03/11/2026 is **3 November**. (Typing "03/11/2026" in the capture bar still reads it the American way, as it always did.)
+- The phone's status bar clock (12:45), battery, the keyboard, app buttons and a chat bubble's own time are ignored, so they can never become an event time.
+- A list (two shifts, a poster with two nights) becomes several items, one per day.
+
+### If it does not work
+- **Menu → Settings → Health → Recent errors** lists any problem (a picture that could not be opened, for example).
+- "I couldn't find any text in that picture": the picture is blank, blurry, or handwriting. Try a screenshot, or retake the photo flat and in good light.
+- Share → Today does not offer Today: update the app (the share list is part of the install).

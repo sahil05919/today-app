@@ -1,4 +1,5 @@
 "use client";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { eveningLine, greetingFor } from "@/lib/cheer";
 import { longDate, todayISO } from "@/lib/dates";
@@ -65,6 +66,10 @@ import { ReviewsSheet, WeekSoFarSheet } from "./ReviewsSheet";
 import { WeeklyReview } from "./WeeklyReview";
 import { WhenSheet } from "./WhenSheet";
 import { type Panel, type ViewCtx } from "./ui";
+import type { SnapRequest } from "./SnapSheet";
+
+// Snap to Today is loaded the first time it is used, so it costs nothing at start-up.
+const SnapSheet = dynamic(() => import("./SnapSheet"), { ssr: false });
 
 /** Re-renders when the date rolls over (e.g. app left open overnight). */
 function useToday(): ISODate {
@@ -117,6 +122,7 @@ export default function App() {
   const [shareHint, setShareHint] = useState(false);
   const [share, setShare] = useState<ParsedShare | null>(null);
   const [invite, setInvite] = useState<IcsEvent[] | null>(null);
+  const [snap, setSnap] = useState<SnapRequest | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // "What did you learn?": right after a session of a chosen area is done (not on load, not for backfilled days). A prompt, not a notification.
   const [learnFor, setLearnFor] = useState<SessionLog | null>(null);
@@ -208,6 +214,15 @@ export default function App() {
     window.history.replaceState(null, "", window.location.pathname);
   }, []);
 
+  // Development only: ?snapdemo=ticket|gem|shifts|bill|chat|multi|none|error shows the Snap sheet with canned pictures (see lib/snap/demo.ts).
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") {
+      const q = new URLSearchParams(window.location.search).get("snapdemo");
+      if (!q) return;
+      void import("@/lib/snap/demo").then(({ demoDeps, demoUris }) => setSnap({ id: Date.now(), uris: demoUris(q), deps: demoDeps() }));
+    }
+  }, []);
+
   // Android: "Share to Today" and the New task / Voice task app-icon shortcuts arrive as native intents.
   useEffect(
     () =>
@@ -217,6 +232,9 @@ export default function App() {
           const parts = [i.title, i.text].filter((v): v is string => !!v?.trim());
           const dedup = parts.filter((p, k) => !parts.some((o, j) => j !== k && o.includes(p) && (o.length > p.length || j < k)));
           onSharedRef.current(dedup.join("\n").trim());
+        } else if (i.kind === "images" && i.uris?.length) {
+          // "Share → Today" with a screenshot or pictures: read them on the phone, then a review card. Nothing is saved without a tap.
+          setSnap({ id: nonce, uris: i.uris });
         } else if (i.kind === "ics") {
           // "Open with Today" on a calendar invite: show what's in it before adding.
           setInvite(parseICS(i.text ?? ""));
@@ -425,7 +443,7 @@ export default function App() {
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-bg/92 backdrop-blur">
         <div className="mx-auto max-w-md px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2.5">
           {hasTimer && <TimerBar data={data} ctx={ctx} />}
-          <Capture ctx={ctx} data={data} command={command} onLighten={() => setPanel("lighten")} />
+          <Capture ctx={ctx} data={data} command={command} onLighten={() => setPanel("lighten")} onSnap={(source) => setSnap({ id: Date.now(), source })} />
         </div>
       </div>
 
@@ -476,6 +494,7 @@ export default function App() {
       {when && when.mode === "schedule" && findTask(data, when.id) && <WhenSheet task={findTask(data, when.id)!} mode="schedule" ctx={ctx} onClose={() => setWhen(null)} />}
       {share && <ShareEventSheet key={share.date + share.title} share={share} data={data} ctx={ctx} onClose={() => setShare(null)} />}
       {invite && <ImportSheet events={invite} ctx={ctx} onClose={() => setInvite(null)} />}
+      {snap && <SnapSheet key={snap.id} request={snap} data={data} ctx={ctx} onClose={() => setSnap(null)} />}
       {checkIn && <CheckIn tasks={checkIn} today={today} onFinish={() => setCheckIn(null)} />}
       <CategoryPickerHost notify={notify} />
     </div>

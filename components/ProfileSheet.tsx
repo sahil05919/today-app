@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { cleanKey, getAutoModel, getGeminiKey, getGeminiModel, setGeminiKey, setGeminiModel, testGeminiKey } from "@/lib/ai";
+import { getNeverSendImage, setNeverSendImage } from "@/lib/snap/settings";
 import { exportBackup, readBackupFile } from "@/lib/backup";
 import { getTheme, setTheme, type ThemePref } from "@/lib/theme";
 import { builtInShortcuts } from "@/lib/profile";
@@ -181,6 +182,7 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
   const [bs, setBs] = useState<Bill[]>(bills);
   const [aiKey, setAiKey] = useState(() => getGeminiKey());
   const [aiModel, setAiModel] = useState(() => getGeminiModel());
+  const [neverImage, setNeverImage] = useState(() => getNeverSendImage());
   const [aiTest, setAiTest] = useState<{ busy?: boolean; ok?: boolean; lines: string[] }>({ lines: [] });
   const [autoModel, setAutoModel] = useState(() => getAutoModel());
   const set = <K extends keyof Profile>(k: K, v: Profile[K]) => setP((x) => ({ ...x, [k]: v }));
@@ -679,6 +681,22 @@ export function ProfileSheet({ profile, bills, learned, data, ctx, onClose }: { 
             With a key, what you type or say is sent to Google (with today's date, your area names and today's schedule) so it can be understood.
             If it's slow, offline or fails, the built-in rules answer instead, silently. Leave the key empty to keep everything on the phone.
           </p>
+          <div className="rounded-2xl bg-bg p-3">
+            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">Snap to Today (photos and screenshots)</h4>
+            <p className="mb-1 text-xs text-muted">
+              A picture is always read on this phone first. With a key, Gemini only double-checks the text that was read, never the picture, unless the text was too weak to
+              read. A picture with card numbers, account details, ID numbers or passwords never leaves the phone.
+            </p>
+            <Check
+              checked={neverImage}
+              onChange={(v) => {
+                setNeverImage(v);
+                setNeverSendImage(v);
+              }}
+            >
+              Never send the picture itself to Gemini
+            </Check>
+          </div>
         </Section>
 
         <Section
